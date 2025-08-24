@@ -471,7 +471,7 @@ fastify.post('/api/send-notification', async (request, reply) => {
 });
 
 // Start server
-fastify.listen({ port: process.env.PORT || 5000, host: '0.0.0.0' }, (err, address) => {
+fastify.listen({ port: process.env.PORT || 8080, host: '0.0.0.0' }, (err, address) => {
   if (err) {
     fastify.log.error(err);
     process.exit(1);
