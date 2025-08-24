@@ -8,7 +8,7 @@ const { HfInference } = require('@huggingface/inference');
 const { OpenAI } = require('openai');
 const ffmpeg = require('fluent-ffmpeg');
 const cloudinary = require('cloudinary').v2;
-const axios = require('axios');
+const path = require('path');
 require('dotenv').config();
 
 // VAPID keys setup for push notifications
@@ -29,6 +29,13 @@ let subscriptions = [];
 // Middleware
 fastify.register(require('@fastify/cors'));
 fastify.register(require('@fastify/helmet'));
+
+// Serve frontend static files
+fastify.register(require('@fastify/static'), {
+  root: path.join(__dirname, '../frontend/out'),
+  prefix: '/',
+  decorateReply: false
+});
 
 // MongoDB Connection
 mongoose.connect(process.env.MONGO_URI)
@@ -76,11 +83,6 @@ const updateLeaderboard = async (username, points = 10) => {
 };
 
 // Routes
-// Root endpoint
-fastify.get('/', async (request, reply) => {
-  reply.send({ message: 'SparkVibe API is running!', status: 'OK' });
-});
-
 // Health check
 fastify.get('/api/health', async (request, reply) => {
   reply.send({ 
@@ -138,7 +140,7 @@ fastify.post('/api/login', async (request, reply) => {
   }
 });
 
-// Add this to your server.js temporarily for testing
+// Test endpoint
 fastify.get('/api/test', async (request, reply) => {
   try {
     reply.send({ 
@@ -155,7 +157,7 @@ fastify.get('/api/test', async (request, reply) => {
   }
 });
 
-// Generate Capsule (Protected) - SIMPLIFIED VERSION
+// Generate Capsule (Protected)
 fastify.post('/api/generate-capsule', {
   preHandler: async (request, reply) => {
     const token = request.headers.authorization?.split(' ')[1];
@@ -171,7 +173,6 @@ fastify.post('/api/generate-capsule', {
   try {
     console.log('🎯 GENERATE-CAPSULE called with:', { mood, interests });
 
-    // Cache check
     const cacheKey = `capsule:${mood}:${interests.join(',')}`;
     const cachedCapsule = await redisClient.get(cacheKey);
     if (cachedCapsule) {
@@ -179,43 +180,39 @@ fastify.post('/api/generate-capsule', {
       return reply.send(JSON.parse(cachedCapsule));
     }
 
-    // Simple mood mapping
     const moodScore = ['happy', 'excited', 'energetic'].includes(mood.toLowerCase()) ? 'positive' : 'neutral';
     console.log('✅ Mood analyzed:', moodScore);
 
-    // Hugging Face inference using env token
     const hf = new HfInference(process.env.HF_TOKEN);
-
-    // OpenAI for capsule content
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
     const prompt = `Generate a 5-min interactive capsule for someone feeling ${mood} with interests in ${interests.join(', ')}. Include:
     
-1. Micro-adventure: title, engaging prompt, 2 meaningful choices with outcomes
-2. Mood boost: personalized uplifting message for ${moodScore} mood
-3. Brain bite: interesting quiz question with 4 multiple choice options and correct answer
-4. Habit nudge: small positive action relevant to their interests
+    1. Micro-adventure: title, engaging prompt, 2 meaningful choices with outcomes
+    2. Mood boost: personalized uplifting message for ${moodScore} mood
+    3. Brain bite: interesting quiz question with 4 multiple choice options and correct answer
+    4. Habit nudge: small positive action relevant to their interests
     
-Format as valid JSON with this exact structure:
-{
-  "adventure": {
-    "title": "Adventure Title",
-    "prompt": "Story setup...",
-    "options": [
-      {"text": "Choice 1", "outcome": "Result 1"},
-      {"text": "Choice 2", "outcome": "Result 2"}
-    ]
-  },
-  "moodBoost": "Encouraging message",
-  "brainBite": {
-    "question": "Quiz question?",
-    "options": ["A", "B", "C", "D"],
-    "answer": "Correct answer with explanation"
-  },
-  "habitNudge": {
-    "task": "Simple positive action",
-    "benefit": "Why it helps"
-  }
-}`;
+    Format as valid JSON with this exact structure:
+    {
+      "adventure": {
+        "title": "Adventure Title",
+        "prompt": "Story setup...",
+        "options": [
+          {"text": "Choice 1", "outcome": "Result 1"},
+          {"text": "Choice 2", "outcome": "Result 2"}
+        ]
+      },
+      "moodBoost": "Encouraging message",
+      "brainBite": {
+        "question": "Quiz question?",
+        "options": ["A", "B", "C", "D"],
+        "answer": "Correct answer with explanation"
+      },
+      "habitNudge": {
+        "task": "Simple positive action",
+        "benefit": "Why it helps"
+      }
+    }`;
 
     console.log('✅ Calling OpenAI...');
     const response = await openai.chat.completions.create({
@@ -253,10 +250,7 @@ Format as valid JSON with this exact structure:
       };
     }
 
-    // Add unique ID for tracking
     capsule.id = `capsule_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-    // Cache for 1 hour
     await redisClient.setEx(cacheKey, 3600, JSON.stringify(capsule));
 
     console.log('✅ GENERATE-CAPSULE sending response');
@@ -272,8 +266,7 @@ Format as valid JSON with this exact structure:
   }
 });
 
-
-// Simple capsule generation without authentication or database
+// Simple capsule generation without authentication
 fastify.post('/api/generate-capsule-simple', async (request, reply) => {
   const { mood, interests } = request.body;
   
@@ -344,7 +337,6 @@ fastify.post('/api/generate-vibe-card-simple', async (request, reply) => {
   
   console.log('🎯 Generating Vibe Card:', { capsuleData: capsuleData?.adventure?.title });
   
-  // Template selection logic
   const templates = {
     cosmic: {
       name: 'Cosmic Adventure',
@@ -376,7 +368,6 @@ fastify.post('/api/generate-vibe-card-simple', async (request, reply) => {
     }
   };
 
-  // Select template based on adventure or random
   const templateNames = Object.keys(templates);
   const selectedTemplate = templateNames[Math.floor(Math.random() * templateNames.length)];
   const template = templates[selectedTemplate];
@@ -429,9 +420,9 @@ fastify.post('/api/generate-vibe-card-simple', async (request, reply) => {
     },
     metadata: {
       createdAt: new Date(),
-      duration: 15, // 15-second video
+      duration: 15,
       format: 'mp4',
-      dimensions: { width: 1080, height: 1920 }, // 9:16 for mobile
+      dimensions: { width: 1080, height: 1920 },
       fps: 30
     }
   };
@@ -468,24 +459,28 @@ fastify.post('/api/send-notification', async (request, reply) => {
   await Promise.all(promises);
   reply.send({ success: true, sent: subscriptions.length });
 });
-const path = require('path');
 
-// Add this to handle non-API routes
+// Handle non-API routes
 fastify.setNotFoundHandler((request, reply) => {
-  reply.code(404).send({ error: 'API route not found' });
+  try {
+    return reply.sendFile('index.html', path.join(__dirname, '../frontend/out'));
+  } catch (err) {
+    fastify.log.error('Failed to serve index.html:', err);
+    reply.code(500).send({ error: 'Frontend not found', details: err.message });
+  }
 });
 
 // Start server
+const startTime = Date.now();
 fastify.listen({ port: process.env.PORT || 8080, host: '0.0.0.0' }, (err, address) => {
   if (err) {
     fastify.log.error(err);
     process.exit(1);
   }
-  fastify.log.info(`🚀 Server running at ${address}`);
+  fastify.log.info(`🚀 Server running at ${address} in ${Date.now() - startTime}ms`);
   console.log('🔍 Debug - Process PORT:', process.env.PORT);
   console.log('🔍 Debug - Actual port:', address);
   console.log('🎯 Available endpoints:');
-  console.log('  GET  /');
   console.log('  GET  /api/health');
   console.log('  GET  /api/leaderboard');
   console.log('  POST /api/register');
@@ -496,4 +491,3 @@ fastify.listen({ port: process.env.PORT || 8080, host: '0.0.0.0' }, (err, addres
   console.log('  POST /api/subscribe');
   console.log('  POST /api/send-notification');
 });
-
