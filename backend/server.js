@@ -515,12 +515,3 @@ fastify.listen({ port: process.env.PORT || 8080, host: '0.0.0.0' }, (err, addres
   console.log('  POST /api/send-notification');
 });
 
-// Handle Next.js pages
-fastify.get('*', async (request, reply) => {
-  // Skip API routes
-  if (request.url.startsWith('/api/')) {
-    return reply.code(404).send({ error: 'API route not found' });
-  }
-  
-  return reply.sendFile('index.html');
-});
