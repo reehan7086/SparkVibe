@@ -1,3 +1,5 @@
 module.exports = {
-  output: 'export'
+  output: 'export',
+  basePath: '',
+  trailingSlash: true
 };
