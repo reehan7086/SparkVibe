@@ -469,6 +469,30 @@ fastify.post('/api/send-notification', async (request, reply) => {
   reply.send({ success: true, sent: subscriptions.length });
 });
 
+const path = require('path');
+
+// Serve Next.js static files
+fastify.register(require('@fastify/static'), {
+  root: path.join(__dirname, '../frontend/.next'),
+  prefix: '/_next/'
+});
+
+// Serve frontend build output
+fastify.register(require('@fastify/static'), {
+  root: path.join(__dirname, '../frontend/out'),
+  prefix: '/'
+});
+
+// Catch-all for Next.js routes (add this AFTER all your API routes)
+fastify.get('*', async (request, reply) => {
+  // Skip API routes
+  if (request.url.startsWith('/api/')) {
+    return reply.code(404).send({ error: 'API route not found' });
+  }
+  
+  return reply.sendFile('index.html');
+});
+
 // Start server
 fastify.listen({ port: process.env.PORT || 8080, host: '0.0.0.0' }, (err, address) => {
   if (err) {
