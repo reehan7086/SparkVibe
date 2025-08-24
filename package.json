@@ -1,0 +1,9 @@
+{
+  "name": "sparkvibe",
+  "version": "1.0.0",
+  "scripts": {
+    "start-backend": "node backend/server.js",
+    "start-frontend": "cd frontend && npm start",
+    "start": "npm run start-backend"
+  }
+}
