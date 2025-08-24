@@ -31,13 +31,11 @@ export default NextAuth({
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
-        token.accessToken = (user as any).accessToken;
         token.user = user;
       }
       return token;
     },
     async session({ session, token }) {
-      session.accessToken = token.accessToken;
       session.user = token.user;
       return session;
     },
