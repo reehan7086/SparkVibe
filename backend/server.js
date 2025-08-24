@@ -9,6 +9,7 @@ const { OpenAI } = require('openai');
 const ffmpeg = require('fluent-ffmpeg');
 const cloudinary = require('cloudinary').v2;
 const axios = require('axios');
+const path = require('path');
 require('dotenv').config();
 
 // VAPID keys setup for push notifications
@@ -487,4 +488,25 @@ fastify.listen({ port: process.env.PORT || 5000, host: '0.0.0.0' }, (err, addres
   console.log('  POST /api/generate-vibe-card');
   console.log('  POST /api/subscribe');
   console.log('  POST /api/send-notification');
+});
+
+// Serve built frontend files
+fastify.register(require('@fastify/static'), {
+  root: path.join(__dirname, '../frontend/.next/static'),
+  prefix: '/_next/static/'
+});
+
+fastify.register(require('@fastify/static'), {
+  root: path.join(__dirname, '../frontend/out'),
+  prefix: '/'
+});
+
+// Handle Next.js pages
+fastify.get('*', async (request, reply) => {
+  // Skip API routes
+  if (request.url.startsWith('/api/')) {
+    return reply.code(404).send({ error: 'API route not found' });
+  }
+  
+  return reply.sendFile('index.html');
 });

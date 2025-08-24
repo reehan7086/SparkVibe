@@ -88,7 +88,7 @@ export default function Home() {
       // Use the simple endpoint that we know works - UPDATED URL
       const res = await axios.post(`${API_BASE_URL}/api/generate-capsule-simple`, { 
         mood: moodInput, 
-        interests: session?.user?.interests || [] 
+        interests: ['general', 'adventure']
       });
       
       setCapsule(res.data);
