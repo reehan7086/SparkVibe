@@ -4,11 +4,11 @@ import axios from 'axios';
 import VibeCardGenerator from '@/components/VibeCardGenerator';
 import Leaderboard from '@/components/leaderboard';
 
-const App: React.FC = () => {
-  const [health, setHealth] = useState<string>('');
-  const [capsuleData, setCapsuleData] = useState<any>(null);
-  const [userChoices, setUserChoices] = useState<any>({});
-  const [completionStats, setCompletionStats] = useState<any>({ vibePointsEarned: 0 });
+const App = () => {
+  const [health, setHealth] = useState('');
+  const [capsuleData, setCapsuleData] = useState(null);
+  const [userChoices, setUserChoices] = useState({});
+  const [completionStats, setCompletionStats] = useState({ vibePointsEarned: 0 });
 
   useEffect(() => {
     // Fetch backend health status
@@ -23,7 +23,7 @@ const App: React.FC = () => {
   }, []);
 
   // Example function to handle user choice updates (can be expanded)
-  const handleUserChoice = (choice: string) => {
+  const handleUserChoice = (choice) => {
     setUserChoices(prev => ({ ...prev, [Date.now()]: choice }));
     setCompletionStats(prev => ({ ...prev, vibePointsEarned: prev.vibePointsEarned + 10 }));
   };
