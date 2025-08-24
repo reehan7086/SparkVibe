@@ -5,7 +5,9 @@ import { motion } from 'framer-motion';
 import html2canvas from 'html2canvas';
 import VibeCardGenerator from '../../components/VibeCardGenerator';
 
-const VAPID_PUBLIC_KEY = 'BJcKE2vz5Gku0jKW-5boZcJWAQ7thRjCr3Ema_8grFqlW3T2cI-s2WFWmcoDDPAd7arwbS1iAXTVF7CkSn5PkME'; // Replace with your generated VAPID key
+const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+// API Base URL - automatically uses the correct URL
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://sparkvibe-app-nyowz.ondigitalocean.app';
 
 export default function Home() {
   const { data: session } = useSession();
@@ -50,8 +52,8 @@ export default function Home() {
         applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
       });
 
-      // Send subscription to backend
-      await fetch('http://localhost:5000/api/subscribe', {
+      // Send subscription to backend - UPDATED URL
+      await fetch(`${API_BASE_URL}/api/subscribe`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -83,8 +85,8 @@ export default function Home() {
 
   const generateCapsule = async () => {
     try {
-      // Use the simple endpoint that we know works
-      const res = await axios.post('http://localhost:5000/api/generate-capsule-simple', { 
+      // Use the simple endpoint that we know works - UPDATED URL
+      const res = await axios.post(`${API_BASE_URL}/api/generate-capsule-simple`, { 
         mood: moodInput, 
         interests: session?.user?.interests || [] 
       });
@@ -111,8 +113,8 @@ export default function Home() {
 
   const completeCapsule = async (option: string, optionIndex: number) => {
     try {
-      // Update points using the working endpoint
-      const res = await axios.post('http://localhost:5000/api/update-points', {
+      // Update points using the working endpoint - UPDATED URL
+      const res = await axios.post(`${API_BASE_URL}/api/update-points`, {
         username: session?.user?.name || 'TestUser'
       });
       
