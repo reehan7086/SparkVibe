@@ -11,23 +11,56 @@ const App = () => {
   const [completionStats, setCompletionStats] = useState({ vibePointsEarned: 0 });
 
   useEffect(() => {
-    // Fetch backend health status
-    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+    // Get API URL from environment or detect from current URL
+    const getApiUrl = () => {
+      if (import.meta.env.VITE_API_URL) {
+        return import.meta.env.VITE_API_URL;
+      }
+      
+      // Auto-detect for GitHub Codespaces
+      const hostname = window.location.hostname;
+      if (hostname.includes('app.github.dev')) {
+        const baseUrl = hostname.replace('-4173', '-8080');
+        return `https://${baseUrl}`;
+      }
+      
+      return 'http://localhost:8080';
+    };
+
+    const apiUrl = getApiUrl();
+    console.log('🔗 Using API URL:', apiUrl);
     
+    // Fetch backend health status
     axios.get(`${apiUrl}/api/health`)
-      .then(response => setHealth(response.data.message))
+      .then(response => {
+        setHealth(response.data.message);
+        console.log('✅ Backend connected successfully');
+      })
       .catch(error => {
-        console.error('Health check failed:', error);
-        setHealth('Backend connection failed');
+        console.error('❌ Health check failed:', error);
+        setHealth(`Backend connection failed (${apiUrl})`);
       });
 
-    // Fetch initial capsule data (example endpoint, adjust as needed)
+    // Fetch initial capsule data
     axios.post(`${apiUrl}/api/generate-capsule-simple`, {
       mood: 'happy',
       interests: ['adventure', 'creativity']
     })
-      .then(response => setCapsuleData(response.data))
-      .catch(error => console.error('Capsule fetch failed:', error));
+      .then(response => {
+        setCapsuleData(response.data);
+        console.log('✅ Capsule data loaded');
+      })
+      .catch(error => {
+        console.error('❌ Capsule fetch failed:', error);
+        // Set fallback data for demo
+        setCapsuleData({
+          id: 'demo',
+          adventure: {
+            title: '✨ Demo Adventure',
+            prompt: 'Welcome to SparkVibe! This is a demo while we connect to the backend.'
+          }
+        });
+      });
   }, []);
 
   // Example function to handle user choice updates (can be expanded)
