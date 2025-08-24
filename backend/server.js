@@ -13,8 +13,8 @@ require('dotenv').config();
 
 // VAPID keys setup for push notifications
 const vapidKeys = {
-  publicKey: 'BJcKE2vz5Gku0jKW-5boZcJWAQ7thRjCr3Ema_8grFqlW3T2cI-s2WFWmcoDDPAd7arwbS1iAXTVF7CkSn5PkME',
-  privateKey: 'u9_qijPu5lLmuho_1YrOLH3092YBT-avMWazj1DrksQ'
+  publicKey: process.env.VAPID_PUBLIC_KEY,
+  privateKey: process.env.VAPID_PRIVATE_KEY
 };
 
 webpush.setVapidDetails(
@@ -31,10 +31,7 @@ fastify.register(require('@fastify/cors'));
 fastify.register(require('@fastify/helmet'));
 
 // MongoDB Connection
-mongoose.connect(process.env.MONGO_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-})
+mongoose.connect(process.env.MONGO_URI)
   .then(() => fastify.log.info('MongoDB connected'))
   .catch(err => fastify.log.error('MongoDB error:', err));
 
@@ -166,7 +163,7 @@ fastify.post('/api/generate-capsule', {
     try {
       jwt.verify(token, process.env.JWT_SECRET);
     } catch (err) {
-      reply.code(401).send({ error: 'Invalid token' });
+      return reply.code(401).send({ error: 'Invalid token' });
     }
   },
 }, async (request, reply) => {
@@ -182,41 +179,44 @@ fastify.post('/api/generate-capsule', {
       return reply.send(JSON.parse(cachedCapsule));
     }
 
-    // Skip Hugging Face - use simple mood mapping
+    // Simple mood mapping
     const moodScore = ['happy', 'excited', 'energetic'].includes(mood.toLowerCase()) ? 'positive' : 'neutral';
     console.log('✅ Mood analyzed:', moodScore);
 
-    // OpenAI/Grok for capsule content
+    // Hugging Face inference using env token
+    const hf = new HfInference(process.env.HF_TOKEN);
+
+    // OpenAI for capsule content
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
     const prompt = `Generate a 5-min interactive capsule for someone feeling ${mood} with interests in ${interests.join(', ')}. Include:
     
-    1. Micro-adventure: title, engaging prompt, 2 meaningful choices with outcomes
-    2. Mood boost: personalized uplifting message for ${moodScore} mood
-    3. Brain bite: interesting quiz question with 4 multiple choice options and correct answer
-    4. Habit nudge: small positive action relevant to their interests
+1. Micro-adventure: title, engaging prompt, 2 meaningful choices with outcomes
+2. Mood boost: personalized uplifting message for ${moodScore} mood
+3. Brain bite: interesting quiz question with 4 multiple choice options and correct answer
+4. Habit nudge: small positive action relevant to their interests
     
-    Format as valid JSON with this exact structure:
-    {
-      "adventure": {
-        "title": "Adventure Title",
-        "prompt": "Story setup...",
-        "options": [
-          {"text": "Choice 1", "outcome": "Result 1"},
-          {"text": "Choice 2", "outcome": "Result 2"}
-        ]
-      },
-      "moodBoost": "Encouraging message",
-      "brainBite": {
-        "question": "Quiz question?",
-        "options": ["A", "B", "C", "D"],
-        "answer": "Correct answer with explanation"
-      },
-      "habitNudge": {
-        "task": "Simple positive action",
-        "benefit": "Why it helps"
-      }
-    }`;
-    
+Format as valid JSON with this exact structure:
+{
+  "adventure": {
+    "title": "Adventure Title",
+    "prompt": "Story setup...",
+    "options": [
+      {"text": "Choice 1", "outcome": "Result 1"},
+      {"text": "Choice 2", "outcome": "Result 2"}
+    ]
+  },
+  "moodBoost": "Encouraging message",
+  "brainBite": {
+    "question": "Quiz question?",
+    "options": ["A", "B", "C", "D"],
+    "answer": "Correct answer with explanation"
+  },
+  "habitNudge": {
+    "task": "Simple positive action",
+    "benefit": "Why it helps"
+  }
+}`;
+
     console.log('✅ Calling OpenAI...');
     const response = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
@@ -225,11 +225,11 @@ fastify.post('/api/generate-capsule', {
     });
 
     console.log('✅ OpenAI response received');
-    
+
     let capsule;
     try {
       capsule = JSON.parse(response.choices[0].message.content);
-    } catch (parseError) {
+    } catch {
       console.log('⚠️ JSON parse failed, using fallback');
       capsule = {
         adventure: {
@@ -240,7 +240,7 @@ fastify.post('/api/generate-capsule', {
             { text: 'Look around first', outcome: 'You notice friendly voices coming from inside.' }
           ]
         },
-        moodBoost: `Your ${mood} energy is absolutely wonderful! Keep that positive momentum going! ✨`,
+        moodBoost: `Your ${mood} energy is wonderful! Keep that momentum going! ✨`,
         brainBite: { 
           question: 'Which is the largest ocean on Earth?', 
           options: ['Atlantic', 'Pacific', 'Indian', 'Arctic'],
@@ -256,11 +256,12 @@ fastify.post('/api/generate-capsule', {
     // Add unique ID for tracking
     capsule.id = `capsule_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-    // Cache for 1 hour (shorter than before to allow variety)
+    // Cache for 1 hour
     await redisClient.setEx(cacheKey, 3600, JSON.stringify(capsule));
-    
+
     console.log('✅ GENERATE-CAPSULE sending response');
     reply.send(capsule);
+
   } catch (err) {
     console.error('❌ GENERATE-CAPSULE error:', err);
     reply.code(500).send({ 
@@ -270,6 +271,7 @@ fastify.post('/api/generate-capsule', {
     });
   }
 });
+
 
 // Simple capsule generation without authentication or database
 fastify.post('/api/generate-capsule-simple', async (request, reply) => {
@@ -468,7 +470,7 @@ fastify.post('/api/send-notification', async (request, reply) => {
 });
 
 // Start server
-fastify.listen({ port: process.env.PORT || 5000 }, (err, address) => {
+fastify.listen({ port: process.env.PORT || 5000, host: '0.0.0.0' }, (err, address) => {
   if (err) {
     fastify.log.error(err);
     process.exit(1);
