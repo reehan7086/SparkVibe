@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "start": "echo 'Skipping frontend build for now' && node backend/server.js",
+    "start": "npm run build-frontend && node backend/server.js",
     "start-frontend": "cd frontend && npm run start",
     "dev-backend": "cd backend && nodemon server.js",
     "dev-frontend": "cd frontend && npm run dev",
