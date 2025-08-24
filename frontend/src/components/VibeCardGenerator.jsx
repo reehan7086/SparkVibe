@@ -45,7 +45,7 @@ const VibeCardGenerator = ({
   const generateVibeCard = async () => {
     setIsGenerating(true);
     try {
-      const response = await fetch('http://localhost:5000/api/generate-vibe-card-simple', {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/generate-vibe-card-simple`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -470,6 +470,7 @@ const VibeCardGenerator = ({
       )}
     </div>
   );
+
 };
 
 export default VibeCardGenerator;
