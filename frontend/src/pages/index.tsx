@@ -49,7 +49,7 @@ export default function Home() {
       
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY!)
       });
 
       // Send subscription to backend - UPDATED URL
@@ -105,7 +105,7 @@ export default function Home() {
       const canvas = await html2canvas(cardElement);
       const image = canvas.toDataURL('image/png');
       setVibeCard({
-        text: `I conquered ${capsule.adventure.title}! Vibe Points: ${(session?.user?.vibePoints || 0) + 10} #SparkVibe`,
+        text: `I conquered ${capsule.adventure.title}! Vibe Points: ${((session?.user as any)?.vibePoints || 0) + 10} #SparkVibe`,
         image,
       });
     }
@@ -120,8 +120,8 @@ export default function Home() {
       
       // Update session data
       if (session?.user) {
-        session.user.vibePoints = res.data.vibePoints;
-        session.user.streak = res.data.streak;
+        (session.user as any).vibePoints = res.data.vibePoints;
+        (session.user as any).streak = res.data.streak;
       }
 
       // Set up data for Vibe Card generation
@@ -200,7 +200,7 @@ export default function Home() {
           className="bg-white rounded-lg shadow-lg p-4 mb-4 w-full max-w-md"
         >
           <p className="text-lg font-semibold">Hey, {session.user?.name}!</p>
-          <p>Vibe Points: {session.user?.vibePoints} | Streak: {session.user?.streak} days</p>
+          <p>Vibe Points: {(session.user as any)?.vibePoints} | Streak: {(session.user as any)?.streak} days</p>
           
           {/* Notification Manager - Integrated */}
           <div className="mt-4 notification-manager">
