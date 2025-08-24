@@ -3,17 +3,18 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "start": "node backend/server.js",
+    "start": "concurrently \"npm run start-backend\" \"npm run start-frontend\"",
+    "start-backend": "node backend/server.js",
     "start-frontend": "cd frontend && npm run start",
     "dev-backend": "cd backend && nodemon server.js",
     "dev-frontend": "cd frontend && npm run dev",
     "install-backend": "npm install --prefix backend",
     "install-frontend": "cd frontend && npm ci",
     "install-all": "npm run install-backend && npm run install-frontend",
-    "build-frontend": "cd frontend && npm ci && npm run build && npm run export"
+    "build-frontend": "cd frontend && npm ci && npm run build"
   },
   "dependencies": {
-    "@fastify/static": "^6.12.0",
+    "@fastify/http-proxy": "^9.4.0",
     "@fastify/cors": "^9.0.0",
     "@fastify/helmet": "^11.0.0",
     "@fastify/jwt": "^7.2.0",

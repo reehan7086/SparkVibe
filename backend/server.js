@@ -8,7 +8,7 @@ const { HfInference } = require('@huggingface/inference');
 const { OpenAI } = require('openai');
 const ffmpeg = require('fluent-ffmpeg');
 const cloudinary = require('cloudinary').v2;
-const path = require('path');
+const httpProxy = require('@fastify/http-proxy');
 require('dotenv').config();
 
 // VAPID keys setup for push notifications
@@ -30,11 +30,25 @@ let subscriptions = [];
 fastify.register(require('@fastify/cors'));
 fastify.register(require('@fastify/helmet'));
 
-// Serve frontend static files
-fastify.register(require('@fastify/static'), {
-  root: path.join(__dirname, '../frontend/out'),
+// Proxy non-API routes to Next.js
+fastify.register(httpProxy, {
+  upstream: 'http://localhost:3000',
   prefix: '/',
-  decorateReply: false
+  httpMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  replyOptions: {
+    rewriteRequestHeaders: (originalReq, headers) => ({
+      ...headers,
+      'x-forwarded-host': originalReq.headers.host
+    })
+  },
+  preHandler: (request, reply, done) => {
+    if (request.url.startsWith('/api/')) {
+      done(); // Continue to API routes
+    } else {
+      // Proxy to Next.js
+      return;
+    }
+  }
 });
 
 // MongoDB Connection
@@ -458,16 +472,6 @@ fastify.post('/api/send-notification', async (request, reply) => {
 
   await Promise.all(promises);
   reply.send({ success: true, sent: subscriptions.length });
-});
-
-// Handle non-API routes
-fastify.setNotFoundHandler((request, reply) => {
-  try {
-    return reply.sendFile('index.html', path.join(__dirname, '../frontend/out'));
-  } catch (err) {
-    fastify.log.error('Failed to serve index.html:', err);
-    reply.code(500).send({ error: 'Frontend not found', details: err.message });
-  }
 });
 
 // Start server
