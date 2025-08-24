@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "start": "node backend/server.js",
-    "build": "cd frontend && npm install && npx vite build && cd ../backend && npm install",
-    "dev": "cd backend && npm start"
+    "install-all": "cd frontend && npm install && cd ../backend && npm install",
+    "build-frontend": "cd frontend && npm run build",
+    "build": "npm run install-all && npm run build-frontend"
   },
   "engines": {
     "node": ">=18.0.0"
