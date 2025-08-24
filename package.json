@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "start": "node backend/server.js",
+    "start": "npm run build-frontend && concurrently \"node backend/server.js\" \"cd frontend && npm start\"",
     "start-frontend": "cd frontend && npm run start",
     "dev-backend": "cd backend && nodemon server.js",
     "dev-frontend": "cd frontend && npm run dev",
@@ -40,7 +40,8 @@
     "framer-motion": "^12.23.12",
     "html2canvas": "^1.4.1",
     "lucide-react": "^0.427.0",
-    "next-auth": "^4.24.11"
+    "next-auth": "^4.24.11",
+    "concurrently": "^7.6.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.0",
