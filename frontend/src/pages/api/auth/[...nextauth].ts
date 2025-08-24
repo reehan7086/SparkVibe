@@ -31,7 +31,7 @@ export default NextAuth({
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
-        token.accessToken = user.accessToken;
+        token.accessToken = (user as any).accessToken;
         token.user = user;
       }
       return token;
