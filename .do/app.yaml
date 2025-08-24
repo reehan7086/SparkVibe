@@ -1,0 +1,29 @@
+name: sparkvibe
+services:
+- name: web
+  source_dir: /
+  github:
+    repo: yourusername/sparkvibe
+    branch: main
+    deploy_on_push: true
+  build_command: |
+    echo "Installing frontend dependencies..."
+    cd frontend
+    npm install
+    echo "Building frontend..."
+    npx vite build
+    echo "Installing backend dependencies..."
+    cd ../backend
+    npm install --production
+  run_command: node backend/server.js
+  environment_slug: node-js
+  instance_count: 1
+  instance_size_slug: basic-xxs
+  http_port: 8080
+  routes:
+  - path: /
+  envs:
+  - key: NODE_ENV
+    value: production
+  - key: PORT
+    value: "8080"
