@@ -471,18 +471,6 @@ fastify.post('/api/send-notification', async (request, reply) => {
 
 const path = require('path');
 
-// Serve Next.js static files
-fastify.register(require('@fastify/static'), {
-  root: path.join(__dirname, '../frontend/.next'),
-  prefix: '/_next/'
-});
-
-// Serve frontend build output
-fastify.register(require('@fastify/static'), {
-  root: path.join(__dirname, '../frontend/out'),
-  prefix: '/'
-});
-
 // Catch-all for Next.js routes (add this AFTER all your API routes)
 fastify.get('*', async (request, reply) => {
   // Skip API routes
