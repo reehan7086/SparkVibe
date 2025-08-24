@@ -470,26 +470,11 @@ fastify.post('/api/send-notification', async (request, reply) => {
 });
 const path = require('path');
 
-// Serve frontend static files
-fastify.register(require('@fastify/static'), {
-  root: path.join(__dirname, '../frontend/.next/static'),
-  prefix: '/_next/static/',
-  decorateReply: false
+// Add this to handle non-API routes
+fastify.setNotFoundHandler((request, reply) => {
+  reply.code(404).send({ error: 'API route not found' });
 });
 
-// Handle all non-API routes - serve frontend
-fastify.setNotFoundHandler(async (request, reply) => {
-  if (request.url.startsWith('/api/')) {
-    return reply.code(404).send({ error: 'API route not found' });
-  }
-  
-  // For all other routes, try to serve the frontend
-  try {
-    return reply.sendFile('index.html');
-  } catch (err) {
-    return reply.send('<h1>SparkVibe Frontend Loading...</h1><p>Frontend build in progress</p>');
-  }
-});
 // Start server
 fastify.listen({ port: process.env.PORT || 8080, host: '0.0.0.0' }, (err, address) => {
   if (err) {

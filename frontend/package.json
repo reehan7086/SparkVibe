@@ -1,39 +1,35 @@
 {
-  "name": "sparkvib-frontend",
-  "version": "0.1.0",
-  "private": true,
+  "name": "sparkvibe-frontend",
+  "version": "1.0.0",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "export": "next export"
   },
   "dependencies": {
+    "next": "14.2.5",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "next-auth": "^4.24.11",
+    "axios": "^1.6.0",
+    "html2canvas": "^1.4.1",
+    "framer-motion": "^12.23.12",
     "@headlessui/react": "^2.2.7",
     "@heroicons/react": "^2.2.0",
     "@next/font": "^14.2.5",
-    "@types/html2canvas": "^0.5.35",
-    "axios": "^1.11.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "framer-motion": "^12.23.12",
-    "html2canvas": "^1.4.1",
-    "lucide-react": "^0.427.0",
-    "next": "14.2.5",
-    "next-auth": "^4.24.11",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "lucide-react": "^0.427.0"
   },
   "devDependencies": {
-    "@types/bcryptjs": "^2.4.6",
-    "@types/node": "^22.5.0",
     "@types/react": "^18.3.4",
     "@types/react-dom": "^18.3.0",
     "autoprefixer": "^10.4.20",
-    "eslint": "^8.57.0",
-    "eslint-config-next": "14.2.5",
     "postcss": "^8.4.41",
     "tailwindcss": "^3.4.10",
-    "typescript": "^5.5.4"
+    "typescript": "^5.5.4",
+    "eslint": "^8.57.0",
+    "eslint-config-next": "14.2.5"
   }
 }
