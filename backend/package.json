@@ -1,7 +1,7 @@
 {
-  "name": "sparkvib-backend",
+  "name": "sparkvibe-backend",
   "version": "1.0.0",
-  "description": "SPARKVIB Backend Server with AI Integration",
+  "description": "SparkVibe Backend Server with AI Integration",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -9,10 +9,11 @@
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
-    "@fastify/cors": "^9.0.0",
-    "@fastify/helmet": "^11.0.0",
+    "@fastify/cors": "^8.5.0",
+    "@fastify/helmet": "^11.1.1",
     "@fastify/jwt": "^10.0.0",
     "@fastify/multipart": "^8.0.0",
+    "@fastify/static": "^6.12.0",
     "@huggingface/inference": "^2.8.1",
     "axios": "^1.6.0",
     "bcryptjs": "^2.4.3",
