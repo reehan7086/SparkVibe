@@ -223,9 +223,9 @@ fastify.post('/api/generate-vibe-card', async (request, reply) => {
         prefix: '/',
         decorateReply: false,
       }); */
-        fastify.get('/*', (request, reply) => {
-    /* reply.sendFile('index.html'); */
-  }); 
+fastify.get('/*', (request, reply) => {
+  reply.status(404).send({ error: 'Frontend not available, API only' });
+});
     }
 
     // 404 handler
