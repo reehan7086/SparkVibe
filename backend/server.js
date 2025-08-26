@@ -225,7 +225,7 @@ fastify.post('/api/generate-vibe-card', async (request, reply) => {
       });
         fastify.get('/*', (request, reply) => {
     reply.sendFile('index.html');
-  });
+  }); 
     }
 
     // 404 handler
