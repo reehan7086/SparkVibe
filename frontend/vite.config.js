@@ -4,7 +4,6 @@ import react from '@vitejs/plugin-react';
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   console.log('Loaded env in mode', mode, ':', env);
-
   return {
     plugins: [react()],
     resolve: {
@@ -34,6 +33,9 @@ export default defineConfig(({ mode }) => {
           rewrite: (path) => path.replace('/manifest.json', '/auth/postback/tunnel?rd=%2Fmanifest.json&tunnel=1'),
         },
       },
+    },
+    define: {
+      'process.env': env, // Expose env variables to the client
     },
   };
 });
