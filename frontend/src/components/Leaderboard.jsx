@@ -29,7 +29,8 @@ const Leaderboard = () => {
       const apiUrl = getApiUrl();
       console.log('Fetching leaderboard from:', `${apiUrl}/api/leaderboard`);
       
-      const response = await axios.get(`${apiUrl}/api/leaderboard`);
+/*       const response = await axios.get(`${apiUrl}/api/leaderboard`); */
+const response = await axios.get('/api/leaderboard');
       console.log('Leaderboard data received:', response.data);
       
       setLeaderboardData(response.data || []);

@@ -25,24 +25,31 @@ const startServer = async () => {
       reply.send();
     });
  */
-    await fastify.register(fastifyHelmet, {
-      contentSecurityPolicy: {
-        directives: {
-          defaultSrc: ["'self'"],
-          manifestSrc: ["'self'", /^https:\/\/.*\.github\.dev$/, /^https:\/\/.*\.app\.github\.dev$/],
-          scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
-          styleSrc: ["'self'", "'unsafe-inline'"],
-          imgSrc: ["'self'", "data:", "https:"],
-          connectSrc: [
-            "'self'",
-            /^https:\/\/.*\.github\.dev$/,
-            /^https:\/\/.*\.app\.github\.dev$/,
-          ],
-        },
-      },
-    });
-
+await fastify.register(fastifyHelmet, {
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      manifestSrc: ["'self'", "https://*.github.dev", "https://*.app.github.dev"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "https:"],
+      connectSrc: [
+        "'self'",
+        "https://*.github.dev",
+        "https://*.app.github.dev",
+      ],
+    },
+  },
+});
     // API Routes
+fastify.get('/', async (request, reply) => {
+  reply.send({ 
+    message: 'SparkVibe API Server',
+    version: '1.0.0',
+    endpoints: ['/api/health', '/api/leaderboard', '/api/generate-capsule-simple', '/api/generate-vibe-card']
+  });
+});
+
     fastify.get('/api/health', async (request, reply) => {
       console.log('Health check requested from:', request.headers.origin);
       reply.send({ status: 'OK', message: 'Health Check' });
