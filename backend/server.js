@@ -69,7 +69,7 @@ const startServer = async () => {
     });
 
     // Generate simple capsule
-    fastify.post('/api/generate-capsule-simple', async (request, reply) => {
+    fastify.post('/api/generate-capsule', async (request, reply) => {
       const { mood, interests } = request.body || {};
       
       const capsules = [

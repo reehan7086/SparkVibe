@@ -9,27 +9,22 @@ export default defineConfig(({ mode }) => {
       extensions: ['.js', '.jsx'],
     },
     server: {
-      port: 5173, // Development server port (optional, default is 5173)
+      port: 5173, // Development server port
       proxy: {
         '/api': {
-          target: env.VITE_API_URL || 'squid-app-e9rwe.ondigitalocean.app',
+          target: env.VITE_API_URL || 'http://localhost:5000', // Fallback for local development
           changeOrigin: true,
           secure: false,
         },
       },
     },
     preview: {
-      port: 8080, // Set preview port to match DigitalOcean readiness probe
+      port: 8080, // Match DigitalOcean readiness probe
       host: true, // Expose to network for containerized environments
-      allowedHosts: [
-      'squid-app-e9rwe.ondigitalocean.app',
-      'sparkvibe-app.ondigitalocean.app', // your main domain
-      'localhost' // for local development
-    ]
     },
     define: {
       'process.env': {
-        VITE_API_URL: JSON.stringify(env.VITE_API_URL || 'squid-app-e9rwe.ondigitalocean.app'),
+        VITE_API_URL: JSON.stringify(env.VITE_API_URL || 'http://localhost:5000'), // Fallback for local development
         VITE_ENV: JSON.stringify(env.VITE_ENV || 'production'),
       },
     },
