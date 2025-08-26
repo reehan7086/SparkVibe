@@ -3,70 +3,91 @@ import { motion } from 'framer-motion';
 import axios from 'axios';
 import VibeCardGenerator from './components/VibeCardGenerator';
 import Leaderboard from './components/Leaderboard';
+import { safeIncludes } from './utils/safeUtils';
+
+const safeMap = (array, callback) => {
+  return Array.isArray(array) ? array.map(callback) : [];
+};
 
 const App = () => {
-  const [health, setHealth] = useState('');
+  const [health, setHealth] = useState('Checking...');
   const [capsuleData, setCapsuleData] = useState(null);
   const [userChoices, setUserChoices] = useState({});
   const [completionStats, setCompletionStats] = useState({ vibePointsEarned: 0 });
 
   useEffect(() => {
-    // Get API URL from environment or detect from current URL
+    // API URL detection function
     const getApiUrl = () => {
+      // First check environment variable
       if (import.meta.env.VITE_API_URL) {
         return import.meta.env.VITE_API_URL;
       }
       
-      // Auto-detect for GitHub Codespaces
-      const hostname = window.location.hostname;
-      if (hostname.includes('app.github.dev')) {
-        const baseUrl = hostname.replace('-4173', '-8080');
+      // Fallback: construct from current hostname
+      const hostname = window.location.hostname || '';
+      if (safeIncludes(hostname, 'app.github.dev')) {
+        const baseUrl = hostname.replace('-5173', '-5000');
         return `https://${baseUrl}`;
       }
       
-      return 'http://localhost:8080';
+      return 'http://localhost:5000';
     };
 
-    const apiUrl = getApiUrl();
-    console.log('🔗 Using API URL:', apiUrl);
+    const apiUrl = getApiUrl(); // Call the function properly
+    console.log('Using API URL:', apiUrl);
     
-    // Fetch backend health status
+    // Health check - use full URL
     axios.get(`${apiUrl}/api/health`)
       .then(response => {
         setHealth(response.data.message);
-        console.log('✅ Backend connected successfully');
+        console.log('Backend connected successfully');
       })
       .catch(error => {
-        console.error('❌ Health check failed:', error);
-        setHealth(`Backend connection failed (${apiUrl})`);
+        console.error('Health check failed:', error);
+        setHealth('Backend connection failed');
       });
 
-    // Fetch initial capsule data
+    // Capsule fetch - use full URL
     axios.post(`${apiUrl}/api/generate-capsule-simple`, {
       mood: 'happy',
       interests: ['adventure', 'creativity']
     })
       .then(response => {
-        setCapsuleData(response.data);
-        console.log('✅ Capsule data loaded');
+        try {
+          setCapsuleData(response.data);
+          console.log('Capsule data loaded');
+        } catch (error) {
+          console.error('Error processing capsule data:', error);
+          setCapsuleData({ error: 'Failed to process data' });
+        }
       })
       .catch(error => {
-        console.error('❌ Capsule fetch failed:', error);
-        // Set fallback data for demo
+        console.error('Capsule fetch failed:', error);
         setCapsuleData({
           id: 'demo',
           adventure: {
-            title: '✨ Demo Adventure',
+            title: 'Demo Adventure',
             prompt: 'Welcome to SparkVibe! This is a demo while we connect to the backend.'
           }
         });
       });
   }, []);
 
-  // Example function to handle user choice updates (can be expanded)
   const handleUserChoice = (choice) => {
     setUserChoices(prev => ({ ...prev, [Date.now()]: choice }));
-    setCompletionStats(prev => ({ ...prev, vibePointsEarned: prev.vibePointsEarned + 10 }));
+    setCompletionStats(prev => ({ 
+      vibePointsEarned: (prev.vibePointsEarned || 0) + 10 
+    }));
+  };
+
+  const getHealthStatusColor = () => {
+    const healthStr = String(health || '');
+    if (!healthStr || healthStr === 'Checking...') return 'text-yellow-400';
+    if (safeIncludes(healthStr.toLowerCase(), 'failed')) return 'text-red-400';
+    if (safeIncludes(healthStr.toLowerCase(), 'ok') || safeIncludes(healthStr.toLowerCase(), 'connected')) {
+      return 'text-green-400';
+    }
+    return 'text-blue-400';
   };
 
   return (
@@ -78,12 +99,13 @@ const App = () => {
         className="text-center w-full max-w-2xl"
       >
         <h1 className="text-6xl font-bold bg-gradient-to-r from-pink-400 to-purple-400 bg-clip-text text-transparent mb-4">
-          ✨ SparkVibe ✨
+          SparkVibe
         </h1>
         <p className="text-xl text-blue-200 mb-2">Your Daily Adventure Awaits</p>
         <p className="mt-4 text-lg text-gray-300">
-          Backend Status: <span className={health.includes('failed') ? 'text-red-400' : 'text-green-400'}>
-            {health || 'Checking...'}
+          Backend Status:{" "}
+          <span className={getHealthStatusColor()}>
+            {health}
           </span>
         </p>
       </motion.div>
@@ -106,7 +128,7 @@ const App = () => {
 
       <div className="text-center text-sm text-blue-300 opacity-75 mt-8">
         <p>Create • Share • Inspire</p>
-        <p>Built with ❤️ using AI-powered adventures</p>
+        <p>Built with love using AI-powered adventures</p>
       </div>
     </div>
   );

@@ -24,3 +24,7 @@ npm-debug.log*
 # Runtime
 .DS_Store
 Thumbs.db
+.env
+backend/.env
+frontend/.env
+node_modules/

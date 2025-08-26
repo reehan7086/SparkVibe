@@ -1,135 +1,137 @@
-// Add this component to your frontend (create components/Leaderboard.jsx)
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
+import axios from 'axios';
 
 const Leaderboard = () => {
-  const [leaderboard, setLeaderboard] = useState([]);
+  const [leaderboardData, setLeaderboardData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  useEffect(() => {
-    fetchLeaderboard();
-    // Refresh leaderboard every 30 seconds
-    const interval = setInterval(fetchLeaderboard, 30000);
-    return () => clearInterval(interval);
-  }, []);
+  const getApiUrl = () => {
+    if (import.meta.env.VITE_API_URL) {
+      return import.meta.env.VITE_API_URL;
+    }
+    
+    const hostname = window.location.hostname || '';
+    if (hostname.includes('app.github.dev')) {
+      const baseUrl = hostname.replace('-5173', '-5000');
+      return `https://${baseUrl}`;
+    }
+    
+    return 'http://localhost:5000';
+  };
 
   const fetchLeaderboard = async () => {
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/leaderboard`);
-      if (!response.ok) throw new Error('Failed to fetch');
-      const data = await response.json();
-      setLeaderboard(data);
+      setLoading(true);
       setError(null);
+      
+      const apiUrl = getApiUrl();
+      console.log('Fetching leaderboard from:', `${apiUrl}/api/leaderboard`);
+      
+      const response = await axios.get(`${apiUrl}/api/leaderboard`);
+      console.log('Leaderboard data received:', response.data);
+      
+      setLeaderboardData(response.data || []);
+      
     } catch (error) {
-      console.error('Failed to fetch leaderboard:', error);
+      console.error('Error fetching leaderboard:', error);
       setError('Failed to load leaderboard');
+      // Set demo data on error
+      setLeaderboardData([
+        { username: 'Demo Player', score: 150, rank: 1 },
+        { username: 'Test User', score: 120, rank: 2 },
+        { username: 'Guest Player', score: 90, rank: 3 }
+      ]);
     } finally {
       setLoading(false);
     }
   };
 
-  const getRankEmoji = (rank) => {
-    switch (rank) {
-      case 1: return '👑';
-      case 2: return '🥈';
-      case 3: return '🥉';
-      default: return '⭐';
-    }
-  };
-
-  const getRankColor = (rank) => {
-    switch (rank) {
-      case 1: return 'from-yellow-400 to-orange-500';
-      case 2: return 'from-gray-300 to-gray-500';
-      case 3: return 'from-amber-600 to-yellow-700';
-      default: return 'from-purple-400 to-blue-500';
-    }
-  };
+  useEffect(() => {
+    fetchLeaderboard();
+    
+    // Refresh every 30 seconds
+    const interval = setInterval(fetchLeaderboard, 30000);
+    
+    return () => clearInterval(interval);
+  }, []);
 
   if (loading) {
     return (
-      <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-6 border border-white/20">
-        <div className="text-center text-white">Loading leaderboard...</div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-6 border border-white/20">
-        <div className="text-center text-red-300">{error}</div>
-        <button 
-          onClick={fetchLeaderboard}
-          className="mt-2 bg-purple-500 text-white px-4 py-2 rounded-lg hover:bg-purple-600"
-        >
-          Retry
-        </button>
-      </div>
+      <motion.div
+        initial={{ opacity: 0, scale: 0.9 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="bg-black/20 backdrop-blur-md border border-white/10 rounded-2xl p-6"
+      >
+        <div className="flex items-center justify-center h-40">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-400"></div>
+          <span className="ml-3 text-white/70">Loading leaderboard...</span>
+        </div>
+      </motion.div>
     );
   }
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="bg-white/10 backdrop-blur-lg rounded-2xl p-6 border border-white/20 w-full max-w-md"
+      initial={{ opacity: 0, scale: 0.9 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ delay: 0.2 }}
+      className="bg-black/20 backdrop-blur-md border border-white/10 rounded-2xl p-6 h-fit"
     >
-      <h2 className="text-2xl font-bold text-center mb-6 text-white">
-        🏆 Top Vibers
+      <h2 className="text-2xl font-bold text-white mb-4 flex items-center">
+        Leaderboard
+        {error && (
+          <span className="ml-2 text-xs text-yellow-400 font-normal">
+            (Demo Mode)
+          </span>
+        )}
       </h2>
       
-      {leaderboard.length === 0 ? (
-        <div className="text-center text-white/70">
-          No scores yet! Be the first to create a vibe card 🌟
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {leaderboard.map((user, index) => (
-            <motion.div
-              key={`${user.username}-${user.rank}`}
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: index * 0.1 }}
-              className={`flex items-center justify-between p-4 rounded-xl ${
-                user.rank <= 3 
-                  ? `bg-gradient-to-r ${getRankColor(user.rank)}/20 border-2 border-white/30` 
-                  : 'bg-white/5 border border-white/10'
-              }`}
-            >
-              <div className="flex items-center space-x-3">
-                <span className="text-2xl">{getRankEmoji(user.rank)}</span>
-                <div>
-                  <div className="font-semibold text-white">
-                    #{user.rank} {user.username}
-                  </div>
-                  <div className="text-sm text-white/70">
-                    {user.score} vibe points
-                  </div>
-                </div>
+      <div className="space-y-3">
+        {leaderboardData.map((player, index) => (
+          <motion.div
+            key={player.username || index}
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: index * 0.1 }}
+            className="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/10 hover:bg-white/10 transition-colors"
+          >
+            <div className="flex items-center space-x-3">
+              <span className="text-2xl">
+                {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '🏅'}
+              </span>
+              <div>
+                <p className="font-semibold text-white">
+                  {player.username || `Player ${index + 1}`}
+                </p>
+                <p className="text-sm text-white/60">
+                  Rank #{player.rank || index + 1}
+                </p>
               </div>
-              
-              <div className="flex items-center space-x-2">
-                <div className="text-lg font-bold text-white">
-                  {user.score}
-                </div>
-                <div className="text-xs text-white/50">pts</div>
-              </div>
-            </motion.div>
-          ))}
+            </div>
+            <div className="text-right">
+              <p className="font-bold text-lg text-purple-300">
+                {player.score || 0}
+              </p>
+              <p className="text-xs text-white/60">points</p>
+            </div>
+          </motion.div>
+        ))}
+      </div>
+      
+      {leaderboardData.length === 0 && !loading && (
+        <div className="text-center text-white/60 py-8">
+          <p>No players yet!</p>
+          <p className="text-sm mt-2">Be the first to earn points!</p>
         </div>
       )}
       
-      <div className="mt-4 text-center text-sm text-white/60">
-        Create vibe cards (+10 pts) • Share them (+5 pts) ✨
+      <div className="mt-4 pt-4 border-t border-white/10">
+        <p className="text-xs text-white/40 text-center">
+          Updates every 30 seconds
+        </p>
       </div>
-      
-      <button 
-        onClick={fetchLeaderboard}
-        className="mt-3 w-full bg-white/10 hover:bg-white/20 text-white py-2 rounded-lg transition-colors"
-      >
-        🔄 Refresh
-      </button>
     </motion.div>
   );
 };

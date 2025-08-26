@@ -14,6 +14,21 @@ const VibeCardGenerator = ({
   const canvasRef = useRef(null);
   const animationRef = useRef(null);
 
+  // API URL helper function
+  const getApiUrl = () => {
+    if (import.meta.env.VITE_API_URL) {
+      return import.meta.env.VITE_API_URL;
+    }
+    
+    const hostname = window.location.hostname || '';
+    if (hostname.includes('app.github.dev')) {
+      const baseUrl = hostname.replace('-5173', '-5000');
+      return `https://${baseUrl}`;
+    }
+    
+    return 'http://localhost:5000';
+  };
+
   // Card templates with dynamic styling
   const templates = {
     cosmic: {
@@ -45,7 +60,10 @@ const VibeCardGenerator = ({
   const generateVibeCard = async () => {
     setIsGenerating(true);
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/generate-vibe-card-simple`, {
+      const apiUrl = getApiUrl();
+      console.log('Generating Vibe Card via:', `${apiUrl}/api/generate-vibe-card`);
+      
+      const response = await fetch(`${apiUrl}/api/generate-vibe-card`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -53,7 +71,8 @@ const VibeCardGenerator = ({
         body: JSON.stringify({
           capsuleData,
           userChoices,
-          completionStats
+          completionStats,
+          user
         })
       });
 
@@ -62,11 +81,55 @@ const VibeCardGenerator = ({
         setCardData(result.card);
         startAnimation();
         onCardGenerated?.(result.card);
+      } else {
+        // Fallback to demo card
+        createDemoCard();
       }
     } catch (error) {
       console.error('Failed to generate Vibe Card:', error);
+      createDemoCard();
     }
     setIsGenerating(false);
+  };
+
+  const createDemoCard = () => {
+    const templates = ['cosmic', 'nature', 'retro', 'minimal'];
+    const randomTemplate = templates[Math.floor(Math.random() * templates.length)];
+    
+    const demoCard = {
+      content: {
+        adventure: {
+          title: capsuleData?.adventure?.title || 'Your Adventure Awaits',
+          outcome: 'You embraced creativity and discovered new possibilities!'
+        },
+        achievement: {
+          points: completionStats?.vibePointsEarned || 50,
+          streak: Math.floor(Math.random() * 10) + 1,
+          badge: 'Creative Explorer'
+        }
+      },
+      design: { 
+        template: randomTemplate 
+      },
+      user: { 
+        name: user?.name || 'Explorer',
+        totalPoints: user?.totalPoints || 1000
+      },
+      sharing: {
+        captions: [
+          'Just completed an amazing SparkVibe adventure!',
+          'Level up your mindset with SparkVibe!',
+          'Daily dose of inspiration unlocked!'
+        ],
+        hashtags: ['#SparkVibe', '#Adventure', '#Growth', '#Inspiration'],
+        qrCode: 'https://github.com/reehan7086/SparkVibe'
+      },
+      isDemo: true
+    };
+    
+    setCardData(demoCard);
+    startAnimation();
+    onCardGenerated?.(demoCard);
   };
 
   const startAnimation = () => {
@@ -108,7 +171,7 @@ const VibeCardGenerator = ({
     const template = templates[cardData.design.template];
 
     // Set canvas size for mobile video (9:16 aspect ratio)
-    canvas.width = 540; // Reduced for display
+    canvas.width = 540;
     canvas.height = 960;
 
     // Clear canvas
@@ -266,7 +329,7 @@ const VibeCardGenerator = ({
     ctx.fillStyle = '#ffffff';
     ctx.font = 'bold 36px Arial';
     ctx.textAlign = 'center';
-    ctx.fillText('✨ SparkVibe', 270, logoY);
+    ctx.fillText('SparkVibe', 270, logoY);
     
     // Animated tagline
     const taglines = [
@@ -361,7 +424,7 @@ const VibeCardGenerator = ({
     <div className="bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 rounded-3xl p-8 text-white">
       <div className="text-center mb-6">
         <h2 className="text-3xl font-bold mb-2 flex items-center justify-center gap-2">
-          ✨ Create Your Vibe Card ✨
+          Create Your Vibe Card
         </h2>
         <p className="text-blue-200">Turn your adventure into shareable magic!</p>
       </div>
@@ -380,7 +443,7 @@ const VibeCardGenerator = ({
               </div>
             ) : (
               <div className="flex items-center gap-2">
-                ✨ Generate Vibe Card ✨
+                Generate Vibe Card
               </div>
             )}
           </button>
@@ -421,6 +484,9 @@ const VibeCardGenerator = ({
               <p><span className="font-semibold">Points Earned:</span> +{cardData.content.achievement.points}</p>
               <p><span className="font-semibold">Streak:</span> {cardData.content.achievement.streak} days</p>
               <p><span className="font-semibold">Template:</span> {cardData.design.template.charAt(0).toUpperCase() + cardData.design.template.slice(1)}</p>
+              {cardData.isDemo && (
+                <p className="text-yellow-400"><span className="font-semibold">Mode:</span> Demo (Connect backend for full features)</p>
+              )}
             </div>
           </div>
 
@@ -461,7 +527,7 @@ const VibeCardGenerator = ({
           </div>
 
           <div className="text-center text-sm text-blue-200">
-            <p className="mb-2">✨ Every share helps grow the SparkVibe community!</p>
+            <p className="mb-2">Every share helps grow the SparkVibe community!</p>
             <p className="text-xs opacity-75">
               {cardData.sharing.hashtags.join(' ')}
             </p>
