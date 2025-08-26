@@ -1,7 +1,7 @@
 const fastify = require('fastify')({ logger: true });
 const fastifyCors = require('@fastify/cors');
 const fastifyHelmet = require('@fastify/helmet');
-const fastifyStatic = require('@fastify/static');
+/* const fastifyStatic = require('@fastify/static'); */
 const path = require('path');
 require('dotenv').config();
 
