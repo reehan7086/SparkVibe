@@ -4,19 +4,25 @@ services:
   - name: frontend
     source_dir: /frontend
     github:
-      repo: https://github.com/reehan7086/SparkVibe  # Replace with your GitHub repo
+      repo: reehan7086/SparkVibe
       branch: main
     environment_slug: node-js
-    run_command: npm run start
-    build_command: npm run build
-    http_port: 3000
+    run_command: cd frontend && npm run preview -- --host --port 4173  # ← ADD port flag
+    build_command: cd frontend && npm install && npm run build
+    http_port: 4173  # ← Make sure this matches
     instance_size_slug: basic-xxs
     instance_count: 1
     routes:
       - path: /
+    # ADD HEALTH CHECK CONFIGURATION:
+    health_check:
+      http_path: /
+      port: 4173  # ← CRITICAL: Tell DO to check on port 4173, not 8080
+      initial_delay_seconds: 15
+      period_seconds: 10
     envs:
       - key: VITE_API_URL
-        value: https://sparkvibe-app-o3ilo.ondigitalocean.app/  # Will be updated after deployment
+        value: https://sparkvibe-app-o3ilo.ondigitalocean.app/
       - key: NODE_ENV
         value: production
       - key: VITE_NODE_ENV
@@ -26,23 +32,29 @@ services:
   - name: backend
     source_dir: /backend
     github:
-      repo: https://github.com/reehan7086/SparkVibe # Same repo as frontend
+      repo: reehan7086/SparkVibe
       branch: main
     environment_slug: node-js
-    run_command: npm start
-    build_command: npm install
+    run_command: cd backend && npm start
+    build_command: cd backend && npm install
     http_port: 5000
     instance_size_slug: basic-xxs
     instance_count: 1
     routes:
       - path: /api
+    # ADD HEALTH CHECK FOR BACKEND TOO:
+    health_check:
+      http_path: /api/health  # ← Create this endpoint in your backend
+      port: 5000
+      initial_delay_seconds: 20
+      period_seconds: 15
     envs:
       - key: NODE_ENV
         value: production
       - key: PORT
         value: "5000"
       - key: CORS_ORIGIN
-        value: https://sparkvibe-app-o3ilo.ondigitalocean.app/  # Will be updated after deployment
+        value: https://sparkvibe-app-o3ilo.ondigitalocean.app/
       - key: DATABASE_URL
         scope: RUN_TIME
         value: ${db.DATABASE_URL}
