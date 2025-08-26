@@ -12,7 +12,7 @@ export default defineConfig(({ mode }) => {
       port: 5173, // Development server port (optional, default is 5173)
       proxy: {
         '/api': {
-          target: env.VITE_API_URL || 'https://fluffy-acorn-p6557vwpq5fg46-5000.app.github.dev',
+          target: env.VITE_API_URL || 'squid-app-e9rwe.ondigitalocean.app',
           changeOrigin: true,
           secure: false,
         },
@@ -21,10 +21,15 @@ export default defineConfig(({ mode }) => {
     preview: {
       port: 8080, // Set preview port to match DigitalOcean readiness probe
       host: true, // Expose to network for containerized environments
+      allowedHosts: [
+      'squid-app-e9rwe.ondigitalocean.app',
+      'sparkvibe-app.ondigitalocean.app', // your main domain
+      'localhost' // for local development
+    ]
     },
     define: {
       'process.env': {
-        VITE_API_URL: JSON.stringify(env.VITE_API_URL || 'https://fluffy-acorn-p6557vwpq5fg46-5000.app.github.dev'),
+        VITE_API_URL: JSON.stringify(env.VITE_API_URL || 'squid-app-e9rwe.ondigitalocean.app'),
         VITE_ENV: JSON.stringify(env.VITE_ENV || 'production'),
       },
     },
