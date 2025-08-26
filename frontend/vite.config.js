@@ -9,17 +9,24 @@ export default defineConfig(({ mode }) => {
       extensions: ['.js', '.jsx'],
     },
     server: {
+      port: 5173, // Development server port (optional, default is 5173)
       proxy: {
         '/api': {
-          target: 'https://fluffy-acorn-p6557vwpq5fg46-5000.app.github.dev',
+          target: env.VITE_API_URL || 'https://fluffy-acorn-p6557vwpq5fg46-5000.app.github.dev',
           changeOrigin: true,
           secure: false,
-          // No rewrite needed - we want to keep /api in the path
-        }
+        },
       },
     },
+    preview: {
+      port: 8080, // Set preview port to match DigitalOcean readiness probe
+      host: true, // Expose to network for containerized environments
+    },
     define: {
-      'process.env': env,
+      'process.env': {
+        VITE_API_URL: JSON.stringify(env.VITE_API_URL || 'https://fluffy-acorn-p6557vwpq5fg46-5000.app.github.dev'),
+        VITE_ENV: JSON.stringify(env.VITE_ENV || 'production'),
+      },
     },
   };
 });

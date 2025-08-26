@@ -9,7 +9,7 @@ services:
     environment_slug: node-js
     run_command: cd frontend && npm run preview -- --host --port 4173  # ← ADD port flag
     build_command: cd frontend && npm install && npm run build
-    http_port: 4173  # ← Make sure this matches
+    http_port: 8080  # ← Make sure this matches
     instance_size_slug: basic-xxs
     instance_count: 1
     routes:
@@ -17,7 +17,7 @@ services:
     # ADD HEALTH CHECK CONFIGURATION:
     health_check:
       http_path: /
-      port: 4173  # ← CRITICAL: Tell DO to check on port 4173, not 8080
+      port: 8080  # ← CRITICAL: Tell DO to check on port 4173, not 8080
       initial_delay_seconds: 15
       period_seconds: 10
     envs:
