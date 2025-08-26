@@ -220,9 +220,12 @@ fastify.post('/api/generate-vibe-card', async (request, reply) => {
     if (process.env.NODE_ENV === 'production') {
       await fastify.register(fastifyStatic, {
         root: path.join(__dirname, '../frontend/dist'),
-        prefix: '/static/',
+        prefix: '/',
         decorateReply: false,
       });
+        fastify.get('/*', (request, reply) => {
+    reply.sendFile('index.html');
+  });
     }
 
     // 404 handler
