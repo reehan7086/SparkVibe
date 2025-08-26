@@ -229,7 +229,7 @@ fastify.post('/api/generate-vibe-card', async (request, reply) => {
     }
 
     // 404 handler
-    fastify.setNotFoundHandler((request, reply) => {
+/*     fastify.setNotFoundHandler((request, reply) => {
       if (request.url.startsWith('/api/')) {
         reply.status(404).send({ error: 'API endpoint not found' });
       } else if (request.url === '/') {
@@ -241,7 +241,7 @@ fastify.post('/api/generate-vibe-card', async (request, reply) => {
       } else {
         reply.status(404).send({ error: 'Page not found' });
       }
-    });
+    }); */
 
     await fastify.listen({
       port: process.env.PORT || 5000,
