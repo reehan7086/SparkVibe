@@ -1,0 +1,58 @@
+name: sparkvibe-app
+services:
+  # Frontend service
+  - name: frontend
+    source_dir: /frontend
+    github:
+      repo: https://github.com/reehan7086/SparkVibe  # Replace with your GitHub repo
+      branch: main
+    environment_slug: node-js
+    run_command: npm run start
+    build_command: npm run build
+    http_port: 3000
+    instance_size_slug: basic-xxs
+    instance_count: 1
+    routes:
+      - path: /
+    envs:
+      - key: VITE_API_URL
+        value: https://sparkvibe-app-o3ilo.ondigitalocean.app/  # Will be updated after deployment
+      - key: NODE_ENV
+        value: production
+      - key: VITE_NODE_ENV
+        value: production
+
+  # Backend service
+  - name: backend
+    source_dir: /backend
+    github:
+      repo: https://github.com/reehan7086/SparkVibe # Same repo as frontend
+      branch: main
+    environment_slug: node-js
+    run_command: npm start
+    build_command: npm install
+    http_port: 5000
+    instance_size_slug: basic-xxs
+    instance_count: 1
+    routes:
+      - path: /api
+    envs:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "5000"
+      - key: CORS_ORIGIN
+        value: https://sparkvibe-app-o3ilo.ondigitalocean.app/  # Will be updated after deployment
+      - key: DATABASE_URL
+        scope: RUN_TIME
+        value: ${db.DATABASE_URL}
+      - key: JWT_SECRET
+        scope: RUN_AND_BUILD_TIME
+        value: cwwz5mjiNl+HbmXpKoTSZdkIC4wbtLRUrbaW8DWKkHI=
+
+databases:
+  - name: db
+    engine: PG
+    version: "13"
+    size: db-s-1vcpu-1gb
+    num_nodes: 1
