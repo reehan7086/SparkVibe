@@ -1,7 +1,6 @@
 const fastify = require('fastify')({ logger: true });
 const fastifyCors = require('@fastify/cors');
 const fastifyHelmet = require('@fastify/helmet');
-const path = require('path');
 require('dotenv').config();
 
 const startServer = async () => {
@@ -11,62 +10,67 @@ const startServer = async () => {
       origin: [
         'http://localhost:3000',
         'http://localhost:5173',
+        'https://sparkvibe-frontend.ondigitalocean.app',
         /^https:\/\/.*\.github\.dev$/,
         /^https:\/\/.*\.app\.github\.dev$/,
+        /^https:\/\/.*\.ondigitalocean\.app$/
       ],
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'Authorization'],
       credentials: true,
     });
 
+    // Security headers
     await fastify.register(fastifyHelmet, {
       contentSecurityPolicy: {
         directives: {
           defaultSrc: ["'self'"],
-          manifestSrc: ["'self'", "https://*.github.dev", "https://*.app.github.dev"],
           scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
           styleSrc: ["'self'", "'unsafe-inline'"],
           imgSrc: ["'self'", "data:", "https:"],
-          connectSrc: [
-            "'self'",
-            "https://*.github.dev",
-            "https://*.app.github.dev",
-          ],
+          connectSrc: ["'self'", "https:"],
         },
       },
     });
 
-    // Root route
+    // Root endpoint
     fastify.get('/', async (request, reply) => {
-      reply.send({ 
+      return {
         message: 'SparkVibe API Server',
         version: '1.0.0',
-        endpoints: ['/api/health', '/api/leaderboard', '/api/generate-capsule-simple', '/api/generate-vibe-card']
-      });
+        status: 'running',
+        endpoints: [
+          'GET /api/health',
+          'GET /api/leaderboard', 
+          'POST /api/generate-capsule-simple',
+          'POST /api/generate-vibe-card'
+        ]
+      };
     });
 
-    // API Routes
+    // Health check
     fastify.get('/api/health', async (request, reply) => {
-      console.log('Health check requested from:', request.headers.origin);
-      reply.send({ status: 'OK', message: 'Health Check' });
+      return { 
+        status: 'OK', 
+        message: 'Health Check',
+        timestamp: new Date().toISOString()
+      };
     });
 
+    // Leaderboard endpoint
     fastify.get('/api/leaderboard', async (request, reply) => {
-      console.log('Leaderboard requested from:', request.headers.origin);
-      reply.send([
+      return [
         { username: 'SparkMaster', score: 250, rank: 1 },
         { username: 'VibeExplorer', score: 180, rank: 2 },
         { username: 'AdventureSeeker', score: 150, rank: 3 },
         { username: 'CreativeSpirit', score: 120, rank: 4 },
         { username: 'DreamWeaver', score: 95, rank: 5 }
-      ]);
+      ];
     });
 
+    // Generate simple capsule
     fastify.post('/api/generate-capsule-simple', async (request, reply) => {
-      console.log('Capsule generation requested from:', request.headers.origin);
-      console.log('Request body:', request.body);
-      
-      const { mood, interests, userChoices, completionStats } = request.body;
+      const { mood, interests } = request.body || {};
       
       const capsules = [
         "Your creative energy is sparking new possibilities!",
@@ -81,7 +85,7 @@ const startServer = async () => {
       
       const randomCapsule = capsules[Math.floor(Math.random() * capsules.length)];
       
-      reply.send({ 
+      return { 
         success: true, 
         capsule: randomCapsule,
         adventure: {
@@ -93,24 +97,19 @@ const startServer = async () => {
           interests: interests || [],
           generated_at: new Date().toISOString()
         }
-      });
+      };
     });
 
+    // Generate vibe card
     fastify.post('/api/generate-vibe-card', async (request, reply) => {
-      console.log('Vibe card generation requested from:', request.headers.origin);
-      console.log('Request body:', request.body);
-      
-      const { capsuleData, userChoices, completionStats, user } = request.body;
+      const { capsuleData, userChoices, completionStats, user } = request.body || {};
       
       const adventureTitles = [
         "The Creative Spark Challenge",
         "Mindful Morning Adventure",
         "Curiosity Quest Completed",
         "Innovation Discovery Journey",
-        "Personal Growth Expedition",
-        "Wisdom Seeking Adventure",
-        "Courage Building Challenge",
-        "Inspiration Hunt Success"
+        "Personal Growth Expedition"
       ];
       
       const outcomes = [
@@ -118,10 +117,7 @@ const startServer = async () => {
         "Your mindful approach led to deeper insights.",
         "Curiosity guided you to unexpected discoveries.",
         "Innovation thinking opened new pathways.",
-        "Personal growth was your greatest reward.",
-        "Wisdom found you in the most surprising places.",
-        "Courage became your superpower today.",
-        "Inspiration flows through every choice you make."
+        "Personal growth was your greatest reward."
       ];
       
       const badges = [
@@ -129,10 +125,7 @@ const startServer = async () => {
         "Mindful Adventurer", 
         "Curious Discoverer",
         "Innovation Pioneer",
-        "Growth Champion",
-        "Wisdom Seeker",
-        "Courage Builder",
-        "Inspiration Catalyst"
+        "Growth Champion"
       ];
       
       const templates = ['cosmic', 'nature', 'retro', 'minimal'];
@@ -142,26 +135,7 @@ const startServer = async () => {
       const choiceBonus = Object.keys(userChoices || {}).length * 5;
       const completionBonus = completionStats?.vibePointsEarned || 0;
       const totalPoints = basePoints + choiceBonus + completionBonus;
-      
       const streak = Math.floor(Math.random() * 30) + 1;
-      
-      const captions = [
-        `Just completed an amazing SparkVibe adventure and earned ${totalPoints} points!`,
-        `${streak}-day streak going strong! Level up your mindset with SparkVibe.`,
-        `Daily dose of inspiration unlocked! Join me on SparkVibe.`,
-        `Adventure completed: ${adventureTitles[Math.floor(Math.random() * adventureTitles.length)]}`
-      ];
-      
-      const hashtags = [
-        '#SparkVibe',
-        '#Adventure',
-        '#Growth', 
-        '#Inspiration',
-        '#Mindset',
-        '#DailyChallenge',
-        '#PersonalDevelopment',
-        '#CreativeLife'
-      ];
       
       const cardData = {
         content: {
@@ -177,7 +151,6 @@ const startServer = async () => {
         },
         design: {
           template: selectedTemplate,
-          customColors: null,
           animations: ['slideIn', 'pulse', 'sparkle']
         },
         user: {
@@ -186,48 +159,41 @@ const startServer = async () => {
           level: Math.floor(((user?.totalPoints || 1000) + totalPoints) / 500) + 1
         },
         sharing: {
-          captions: captions,
-          hashtags: hashtags,
-          qrCode: 'https://github.com/reehan7086/SparkVibe',
-          platforms: ['twitter', 'facebook', 'instagram', 'tiktok', 'snapchat']
+          captions: [
+            `Just completed an amazing SparkVibe adventure and earned ${totalPoints} points!`,
+            `${streak}-day streak going strong! Level up your mindset with SparkVibe.`
+          ],
+          hashtags: ['#SparkVibe', '#Adventure', '#Growth', '#Inspiration'],
+          qrCode: 'https://github.com/reehan7086/SparkVibe'
         },
         metadata: {
           generatedAt: new Date().toISOString(),
           version: '1.0',
-          userChoicesCount: Object.keys(userChoices || {}).length,
           sessionId: `session_${Date.now()}`
         }
       };
       
       // Simulate processing time
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      await new Promise(resolve => setTimeout(resolve, 1000));
       
-      reply.send({
+      return {
         success: true,
         card: cardData,
-        processingTime: '1.5s',
+        processingTime: '1.0s',
         message: 'Vibe card generated successfully!'
-      });
+      };
     });
 
-    // 404 handler - must come after all route definitions
-    fastify.setNotFoundHandler((request, reply) => {
-      if (request.url.startsWith('/api/')) {
-        reply.status(404).send({ error: 'API endpoint not found' });
-      } else {
-        reply.status(404).send({ error: 'Frontend not available, API only' });
-      }
-    });
-
+    // Start server
     await fastify.listen({
       port: process.env.PORT || 8080,
-      host: '0.0.0.0',
+      host: '0.0.0.0'
     });
 
-    console.log(`SparkVibe Server listening on 0.0.0.0:${process.env.PORT || 8080}`);
-    
+    console.log(`SparkVibe API Server running on port ${process.env.PORT || 8080}`);
+
   } catch (err) {
-    console.error('Server startup error:', err);
+    console.error('Server startup failed:', err);
     process.exit(1);
   }
 };
