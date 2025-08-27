@@ -37,5 +37,9 @@ export default defineConfig(({ mode }) => {
       sourcemap: false,
       minify: 'esbuild',
     },
+    optimizeDeps: {
+    include: ['framer-motion'],
+    exclude: [], // Ensure nothing is excluded
+  },
   };
 });
