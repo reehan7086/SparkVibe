@@ -5,23 +5,23 @@ require('dotenv').config();
 
 const startServer = async () => {
   try {
-    // CORS Configuration
-await fastify.register(fastifyCors, {
-  origin: [
-    'http://localhost:3000',
-    'http://localhost:5173',
-    'https://sparkvibe.app',
-    'https://www.sparkvibe.app',   // in case users type with www
-    'https://sparkvibe-frontend.ondigitalocean.app',
-    /^https:\/\/.*\.github\.dev$/,
-    /^https:\/\/.*\.app\.github\.dev$/,
-    /^https:\/\/.*\.ondigitalocean\.app$/
-  ],
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true,
-});
-
+    // CORS configuration
+    await fastify.register(fastifyCors, {
+      origin: [
+        'http://localhost:3000',
+        'http://localhost:5173',
+        'https://sparkvibe.app',
+        'https://www.sparkvibe.app',
+        'https://api.sparkvibe.app',
+        'https://sparkvibe-frontend.ondigitalocean.app',
+        /^https:\/\/.*\.github\.dev$/,
+        /^https:\/\/.*\.app\.github\.dev$/,
+        /^https:\/\/.*\.ondigitalocean\.app$/
+      ],
+      methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization'],
+      credentials: true,
+    });
 
     // Security headers
     await fastify.register(fastifyHelmet, {
@@ -37,44 +37,37 @@ await fastify.register(fastifyCors, {
     });
 
     // Root endpoint
-    fastify.get('/', async (request, reply) => {
-      return {
-        message: 'SparkVibe API Server',
-        version: '1.0.0',
-        status: 'running',
-        endpoints: [
-          'GET /api/health',
-          'GET /api/leaderboard', 
-          'POST /api/generate-capsule-simple',
-          'POST /api/generate-vibe-card'
-        ]
-      };
-    });
+    fastify.get('/', async () => ({
+      message: 'SparkVibe API Server',
+      version: '1.0.0',
+      status: 'running',
+      endpoints: [
+        'GET /api/health',
+        'GET /api/leaderboard',
+        'POST /api/generate-capsule-simple',
+        'POST /api/generate-vibe-card'
+      ]
+    }));
 
     // Health check
-    fastify.get('/api/health', async (request, reply) => {
-      return { 
-        status: 'OK', 
-        message: 'Health Check',
-        timestamp: new Date().toISOString()
-      };
-    });
+    fastify.get('/api/health', async () => ({
+      status: 'OK',
+      message: 'Health Check',
+      timestamp: new Date().toISOString()
+    }));
 
     // Leaderboard endpoint
-    fastify.get('/api/leaderboard', async (request, reply) => {
-      return [
-        { username: 'SparkMaster', score: 250, rank: 1 },
-        { username: 'VibeExplorer', score: 180, rank: 2 },
-        { username: 'AdventureSeeker', score: 150, rank: 3 },
-        { username: 'CreativeSpirit', score: 120, rank: 4 },
-        { username: 'DreamWeaver', score: 95, rank: 5 }
-      ];
-    });
+    fastify.get('/api/leaderboard', async () => [
+      { username: 'SparkMaster', score: 250, rank: 1 },
+      { username: 'VibeExplorer', score: 180, rank: 2 },
+      { username: 'AdventureSeeker', score: 150, rank: 3 },
+      { username: 'CreativeSpirit', score: 120, rank: 4 },
+      { username: 'DreamWeaver', score: 95, rank: 5 }
+    ]);
 
-    // Generate simple capsule
-    fastify.post('/api/generate-capsule', async (request, reply) => {
+    // Generate capsule
+    fastify.post('/api/generate-capsule-simple', async (request) => {
       const { mood, interests } = request.body || {};
-      
       const capsules = [
         "Your creative energy is sparking new possibilities!",
         "Adventure calls to your courageous spirit today.",
@@ -85,28 +78,18 @@ await fastify.register(fastifyCors, {
         "Bold choices lead to extraordinary adventures.",
         "Your positive energy creates ripples of change."
       ];
-      
       const randomCapsule = capsules[Math.floor(Math.random() * capsules.length)];
-      
-      return { 
-        success: true, 
+      return {
+        success: true,
         capsule: randomCapsule,
-        adventure: {
-          title: "Daily Spark Adventure",
-          prompt: randomCapsule
-        },
-        metadata: {
-          mood: mood || 'neutral',
-          interests: interests || [],
-          generated_at: new Date().toISOString()
-        }
+        adventure: { title: "Daily Spark Adventure", prompt: randomCapsule },
+        metadata: { mood: mood || 'neutral', interests: interests || [], generated_at: new Date().toISOString() }
       };
     });
 
     // Generate vibe card
-    fastify.post('/api/generate-vibe-card', async (request, reply) => {
+    fastify.post('/api/generate-vibe-card', async (request) => {
       const { capsuleData, userChoices, completionStats, user } = request.body || {};
-      
       const adventureTitles = [
         "The Creative Spark Challenge",
         "Mindful Morning Adventure",
@@ -114,7 +97,6 @@ await fastify.register(fastifyCors, {
         "Innovation Discovery Journey",
         "Personal Growth Expedition"
       ];
-      
       const outcomes = [
         "You embraced creativity and discovered new possibilities!",
         "Your mindful approach led to deeper insights.",
@@ -122,45 +104,26 @@ await fastify.register(fastifyCors, {
         "Innovation thinking opened new pathways.",
         "Personal growth was your greatest reward."
       ];
-      
-      const badges = [
-        "Creative Explorer",
-        "Mindful Adventurer", 
-        "Curious Discoverer",
-        "Innovation Pioneer",
-        "Growth Champion"
-      ];
-      
+      const badges = ["Creative Explorer", "Mindful Adventurer", "Curious Discoverer", "Innovation Pioneer", "Growth Champion"];
       const templates = ['cosmic', 'nature', 'retro', 'minimal'];
       const selectedTemplate = templates[Math.floor(Math.random() * templates.length)];
-      
+
       const basePoints = 25;
       const choiceBonus = Object.keys(userChoices || {}).length * 5;
       const completionBonus = completionStats?.vibePointsEarned || 0;
       const totalPoints = basePoints + choiceBonus + completionBonus;
       const streak = Math.floor(Math.random() * 30) + 1;
-      
+
       const cardData = {
         content: {
           adventure: {
             title: capsuleData?.adventure?.title || adventureTitles[Math.floor(Math.random() * adventureTitles.length)],
             outcome: outcomes[Math.floor(Math.random() * outcomes.length)]
           },
-          achievement: {
-            points: totalPoints,
-            streak: streak,
-            badge: badges[Math.floor(Math.random() * badges.length)]
-          }
+          achievement: { points: totalPoints, streak, badge: badges[Math.floor(Math.random() * badges.length)] }
         },
-        design: {
-          template: selectedTemplate,
-          animations: ['slideIn', 'pulse', 'sparkle']
-        },
-        user: {
-          name: user?.name || 'Explorer',
-          totalPoints: (user?.totalPoints || 1000) + totalPoints,
-          level: Math.floor(((user?.totalPoints || 1000) + totalPoints) / 500) + 1
-        },
+        design: { template: selectedTemplate, animations: ['slideIn', 'pulse', 'sparkle'] },
+        user: { name: user?.name || 'Explorer', totalPoints: (user?.totalPoints || 1000) + totalPoints, level: Math.floor(((user?.totalPoints || 1000) + totalPoints) / 500) + 1 },
         sharing: {
           captions: [
             `Just completed an amazing SparkVibe adventure and earned ${totalPoints} points!`,
@@ -169,31 +132,16 @@ await fastify.register(fastifyCors, {
           hashtags: ['#SparkVibe', '#Adventure', '#Growth', '#Inspiration'],
           qrCode: 'https://github.com/reehan7086/SparkVibe'
         },
-        metadata: {
-          generatedAt: new Date().toISOString(),
-          version: '1.0',
-          sessionId: `session_${Date.now()}`
-        }
+        metadata: { generatedAt: new Date().toISOString(), version: '1.0', sessionId: `session_${Date.now()}` }
       };
-      
-      // Simulate processing time
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      return {
-        success: true,
-        card: cardData,
-        processingTime: '1.0s',
-        message: 'Vibe card generated successfully!'
-      };
+
+      await new Promise(resolve => setTimeout(resolve, 1000)); // simulate processing
+      return { success: true, card: cardData, processingTime: '1.0s', message: 'Vibe card generated successfully!' };
     });
 
     // Start server
-    await fastify.listen({
-      port: process.env.PORT || 8080,
-      host: '0.0.0.0'
-    });
-
-    console.log(`SparkVibe API Server running on port ${process.env.PORT || 8080}`);
+    await fastify.listen({ port: process.env.PORT || 5000, host: '0.0.0.0' });
+    console.log(`SparkVibe API Server running on port ${process.env.PORT || 5000}`);
 
   } catch (err) {
     console.error('Server startup failed:', err);

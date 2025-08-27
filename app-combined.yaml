@@ -1,4 +1,5 @@
 name: sparkvibe-app
+
 services:
   # Frontend service
   - name: frontend
@@ -7,14 +8,14 @@ services:
       repo: reehan7086/SparkVibe
       branch: main
     environment_slug: node-js
-    run_command: cd frontend && npm run preview -- --host --port 4173
+    run_command: cd frontend && npm run preview -- --host --port 8080
     build_command: cd frontend && npm install && npm run build
     http_port: 8080
     instance_size_slug: basic-xxs
     instance_count: 1
     routes:
       - path: /
-        domain: sparkvibe.app   # 👈 frontend served at https://sparkvibe.app
+        domain: sparkvibe.app
     health_check:
       http_path: /
       port: 8080
@@ -22,7 +23,7 @@ services:
       period_seconds: 10
     envs:
       - key: VITE_API_URL
-        value: https://api.sparkvibe.app   # 👈 backend custom domain
+        value: https://api.sparkvibe.app
       - key: NODE_ENV
         value: production
       - key: VITE_NODE_ENV
@@ -42,9 +43,9 @@ services:
     instance_count: 1
     routes:
       - path: /
-        domain: api.sparkvibe.app   # 👈 backend served at https://api.sparkvibe.app
+        domain: api.sparkvibe.app
     health_check:
-      http_path: /health  # 👈 create this endpoint in your backend
+      http_path: /api/health
       port: 5000
       initial_delay_seconds: 20
       period_seconds: 15
@@ -54,7 +55,7 @@ services:
       - key: PORT
         value: "5000"
       - key: CORS_ORIGIN
-        value: https://sparkvibe.app   # 👈 only allow frontend domain
+        value: https://sparkvibe.app,https://www.sparkvibe.app
       - key: DATABASE_URL
         scope: RUN_TIME
         value: ${db.DATABASE_URL}
