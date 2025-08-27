@@ -14,7 +14,6 @@ services:
     instance_count: 1
     routes:
       - path: /
-        domain: sparkvibe.app
     health_check:
       http_path: /
       port: 8080
@@ -25,10 +24,6 @@ services:
         value: https://api.sparkvibe.app
       - key: NODE_ENV
         value: production
-      - key: VITE_NODE_ENV
-        value: production
-      - key: PORT
-        value: "8080"  
 
   # Backend service
   - name: backend
@@ -43,8 +38,8 @@ services:
     instance_size_slug: basic-xxs
     instance_count: 1
     routes:
-      - path: /
-        domain: api.sparkvibe.app
+      - path: /api/
+        preserve_path_prefix: true
     health_check:
       http_path: /api/health
       port: 5000
@@ -55,15 +50,8 @@ services:
         value: production
       - key: PORT
         value: "5000"
-      # Updated CORS_ORIGIN to include the API domain
       - key: CORS_ORIGIN
-        value: https://sparkvibe.app,https://www.sparkvibe.app,https://api.sparkvibe.app
-      - key: DATABASE_URL
-        scope: RUN_TIME
-        value: ${db.DATABASE_URL}
-      - key: JWT_SECRET
-        scope: RUN_AND_BUILD_TIME
-        value: cwwz5mjiNl+HbmXpKoTSZdkIC4wbtLRUrbaW8DWKkHI=
+        value: https://sparkvibe.app
 
 databases:
   - name: db

@@ -26,6 +26,12 @@ const startServer = async () => {
       optionsSuccessStatus: 204
     });
 
+fastify.addHook('onSend', (request, reply, payload, done) => {
+  reply.header('Access-Control-Allow-Origin', request.headers.origin || '*');
+  reply.header('Access-Control-Allow-Credentials', 'true');
+  done(null, payload);
+});
+
     // Security headers - RELAXED for API
     await fastify.register(fastifyHelmet, {
       contentSecurityPolicy: false, // Disable CSP for API
@@ -33,6 +39,21 @@ const startServer = async () => {
       crossOriginOpenerPolicy: false,
       crossOriginResourcePolicy: { policy: "cross-origin" }
     });
+
+// Add this before your routes
+fastify.addHook('onRequest', (request, reply, done) => {
+  if (request.method === 'OPTIONS') {
+    reply
+      .header('Access-Control-Allow-Origin', request.headers.origin || '*')
+      .header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+      .header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With')
+      .header('Access-Control-Allow-Credentials', 'true')
+      .status(204)
+      .send();
+  } else {
+    done();
+  }
+});
 
     // Add preflight handler for all routes
     fastify.options('*', async (request, reply) => {
