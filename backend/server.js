@@ -5,58 +5,24 @@ require('dotenv').config();
 
 const startServer = async () => {
   try {
-    // CORS configuration - FIXED
-    await fastify.register(fastifyCors, {
-      origin: [
-        'http://localhost:3000',
-        'http://localhost:5173',
-        'https://sparkvibe.app',
-        'https://www.sparkvibe.app',
-        'https://api.sparkvibe.app', // This was missing!
-        'https://sparkvibe-frontend.ondigitalocean.app',
-        /^https:\/\/.*\.github\.dev$/,
-        /^https:\/\/.*\.app\.github\.dev$/,
-        /^https:\/\/.*\.ondigitalocean.app$/
-      ],
+await fastify.register(fastifyCors, {
+      origin: ['https://sparkvibe.app', 'https://www.sparkvibe.app', 'http://localhost:5173'],
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'], // Added X-Requested-With
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
       credentials: true,
-      // Add preflight handling
-      preflightContinue: false,
-      optionsSuccessStatus: 204
+      maxAge: 86400, // Cache preflight response for 24 hours
     });
-
-fastify.addHook('onSend', (request, reply, payload, done) => {
-  reply.header('Access-Control-Allow-Origin', request.headers.origin || '*');
-  reply.header('Access-Control-Allow-Credentials', 'true');
-  done(null, payload);
-});
 
     // Security headers - RELAXED for API
-    await fastify.register(fastifyHelmet, {
-      contentSecurityPolicy: false, // Disable CSP for API
+await fastify.register(fastifyHelmet, {
+      contentSecurityPolicy: false,
       crossOriginEmbedderPolicy: false,
       crossOriginOpenerPolicy: false,
-      crossOriginResourcePolicy: { policy: "cross-origin" }
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
     });
 
-// Add this before your routes
-fastify.addHook('onRequest', (request, reply, done) => {
-  if (request.method === 'OPTIONS') {
-    reply
-      .header('Access-Control-Allow-Origin', request.headers.origin || '*')
-      .header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
-      .header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With')
-      .header('Access-Control-Allow-Credentials', 'true')
-      .status(204)
-      .send();
-  } else {
-    done();
-  }
-});
-
     // Add preflight handler for all routes
-    fastify.options('*', async (request, reply) => {
+/*     fastify.options('*', async (request, reply) => {
       return reply
         .header('Access-Control-Allow-Origin', request.headers.origin || '*')
         .header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
@@ -64,7 +30,7 @@ fastify.addHook('onRequest', (request, reply, done) => {
         .header('Access-Control-Allow-Credentials', 'true')
         .status(204)
         .send();
-    });
+    }); */
 
     // Root endpoint
     fastify.get('/', async (request, reply) => {
