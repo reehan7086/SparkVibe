@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
-// import { motion, AnimatePresence } from 'framer-motion';
-const { motion } = window.FramerMotion;
+import { motion, AnimatePresence } from 'framer-motion';
 import { apiGet, apiPost, safeIncludes } from './utils/safeUtils';
 import AuthService from './services/AuthService';
 import LoginScreen from './components/LoginScreen';

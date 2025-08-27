@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-//import { motion } from 'framer-motion';
-const { motion } = window.FramerMotion;
+import { motion } from 'framer-motion';
+
 import { apiGet } from '../utils/safeUtils';
 
 const Leaderboard = () => {

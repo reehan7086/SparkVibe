@@ -34,9 +34,6 @@ export default defineConfig(({ mode }) => {
     },
     build: {
       outDir: 'dist',
-          rollupOptions: {
-      external: ['framer-motion'],
-    },
       sourcemap: false,
       minify: 'esbuild',
     },

@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
-//import { motion } from 'framer-motion';
-const { motion } = window.FramerMotion;
+import { motion } from 'framer-motion';
 import AuthService from '../services/AuthService';
 
 const LoginScreen = ({ onAuthSuccess }) => {
