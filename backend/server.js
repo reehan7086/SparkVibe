@@ -934,7 +934,14 @@ function checkForAchievements(user) {
   return achievements;
 }
 
+// Replace the sendPushNotification function in your server.js with this:
+
 async function sendPushNotification(user, payload) {
+  if (!webpushEnabled) {
+    console.log('Push notification skipped - Web Push not configured');
+    return;
+  }
+  
   if (!user.pushSubscriptions || user.pushSubscriptions.length === 0) return;
   
   const notificationPayload = JSON.stringify(payload);
@@ -951,7 +958,6 @@ async function sendPushNotification(user, payload) {
     }
   }
 }
-
 function getSeasonalContext() {
   const now = new Date();
   const month = now.getMonth() + 1;
