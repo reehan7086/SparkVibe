@@ -1,5 +1,4 @@
 name: sparkvibe-app
-
 services:
   # Frontend service
   - name: frontend
@@ -54,8 +53,9 @@ services:
         value: production
       - key: PORT
         value: "5000"
+      # Updated CORS_ORIGIN to include the API domain
       - key: CORS_ORIGIN
-        value: https://sparkvibe.app,https://www.sparkvibe.app
+        value: https://sparkvibe.app,https://www.sparkvibe.app,https://api.sparkvibe.app
       - key: DATABASE_URL
         scope: RUN_TIME
         value: ${db.DATABASE_URL}

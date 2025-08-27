@@ -1,24 +1,25 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import axios from 'axios';
+import { getApiUrl } from '../utils/safeUtils';
 
 const Leaderboard = () => {
   const [leaderboardData, setLeaderboardData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const getApiUrl = () => {
-    if (import.meta.env.VITE_API_URL) {
-      return import.meta.env.VITE_API_URL;
-    }
-    
-    const hostname = window.location.hostname || '';
-    if (hostname.includes('app.github.dev')) {
-      const baseUrl = hostname.replace('-5173', '-5000');
-      return `https://${baseUrl}`;
-    }
-    
-    return 'http://localhost:5000';
+  // Configure axios with CORS support
+  const createApiClient = () => {
+    const apiUrl = getApiUrl();
+    return axios.create({
+      baseURL: apiUrl,
+      timeout: 10000,
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      withCredentials: true, // Include cookies for CORS
+    });
   };
 
   const fetchLeaderboard = async () => {
@@ -26,11 +27,13 @@ const Leaderboard = () => {
       setLoading(true);
       setError(null);
       
+      const apiClient = createApiClient();
       const apiUrl = getApiUrl();
+      
       console.log('Fetching leaderboard from:', `${apiUrl}/api/leaderboard`);
       
-/*       const response = await axios.get(`${apiUrl}/api/leaderboard`); */
-const response = await axios.get('/api/leaderboard');
+      // Use full URL instead of relative path
+      const response = await apiClient.get('/api/leaderboard');
       console.log('Leaderboard data received:', response.data);
       
       setLeaderboardData(response.data || []);
@@ -38,6 +41,7 @@ const response = await axios.get('/api/leaderboard');
     } catch (error) {
       console.error('Error fetching leaderboard:', error);
       setError('Failed to load leaderboard');
+      
       // Set demo data on error
       setLeaderboardData([
         { username: 'Demo Player', score: 150, rank: 1 },

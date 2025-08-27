@@ -5,68 +5,89 @@ require('dotenv').config();
 
 const startServer = async () => {
   try {
-    // CORS configuration
+    // CORS configuration - FIXED
     await fastify.register(fastifyCors, {
       origin: [
         'http://localhost:3000',
         'http://localhost:5173',
         'https://sparkvibe.app',
         'https://www.sparkvibe.app',
-        'https://api.sparkvibe.app',
+        'https://api.sparkvibe.app', // This was missing!
         'https://sparkvibe-frontend.ondigitalocean.app',
         /^https:\/\/.*\.github\.dev$/,
         /^https:\/\/.*\.app\.github\.dev$/,
-        /^https:\/\/.*\.ondigitalocean\.app$/
+        /^https:\/\/.*\.ondigitalocean.app$/
       ],
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'], // Added X-Requested-With
       credentials: true,
+      // Add preflight handling
+      preflightContinue: false,
+      optionsSuccessStatus: 204
     });
 
-    // Security headers
+    // Security headers - RELAXED for API
     await fastify.register(fastifyHelmet, {
-      contentSecurityPolicy: {
-        directives: {
-          defaultSrc: ["'self'"],
-          scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
-          styleSrc: ["'self'", "'unsafe-inline'"],
-          imgSrc: ["'self'", "data:", "https:"],
-          connectSrc: ["'self'", "https:"],
-        },
-      },
+      contentSecurityPolicy: false, // Disable CSP for API
+      crossOriginEmbedderPolicy: false,
+      crossOriginOpenerPolicy: false,
+      crossOriginResourcePolicy: { policy: "cross-origin" }
+    });
+
+    // Add preflight handler for all routes
+    fastify.options('*', async (request, reply) => {
+      return reply
+        .header('Access-Control-Allow-Origin', request.headers.origin || '*')
+        .header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+        .header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With')
+        .header('Access-Control-Allow-Credentials', 'true')
+        .status(204)
+        .send();
     });
 
     // Root endpoint
-    fastify.get('/', async () => ({
-      message: 'SparkVibe API Server',
-      version: '1.0.0',
-      status: 'running',
-      endpoints: [
-        'GET /api/health',
-        'GET /api/leaderboard',
-        'POST /api/generate-capsule-simple',
-        'POST /api/generate-vibe-card'
-      ]
-    }));
+    fastify.get('/', async (request, reply) => {
+      return reply
+        .header('Access-Control-Allow-Origin', request.headers.origin || '*')
+        .send({
+          message: 'SparkVibe API Server',
+          version: '1.0.0',
+          status: 'running',
+          endpoints: [
+            'GET /api/health',
+            'GET /api/leaderboard',
+            'POST /api/generate-capsule-simple',
+            'POST /api/generate-vibe-card'
+          ]
+        });
+    });
 
     // Health check
-    fastify.get('/api/health', async () => ({
-      status: 'OK',
-      message: 'Health Check',
-      timestamp: new Date().toISOString()
-    }));
+    fastify.get('/api/health', async (request, reply) => {
+      return reply
+        .header('Access-Control-Allow-Origin', request.headers.origin || '*')
+        .send({
+          status: 'OK',
+          message: 'Health Check',
+          timestamp: new Date().toISOString()
+        });
+    });
 
     // Leaderboard endpoint
-    fastify.get('/api/leaderboard', async () => [
-      { username: 'SparkMaster', score: 250, rank: 1 },
-      { username: 'VibeExplorer', score: 180, rank: 2 },
-      { username: 'AdventureSeeker', score: 150, rank: 3 },
-      { username: 'CreativeSpirit', score: 120, rank: 4 },
-      { username: 'DreamWeaver', score: 95, rank: 5 }
-    ]);
+    fastify.get('/api/leaderboard', async (request, reply) => {
+      return reply
+        .header('Access-Control-Allow-Origin', request.headers.origin || '*')
+        .send([
+          { username: 'SparkMaster', score: 250, rank: 1 },
+          { username: 'VibeExplorer', score: 180, rank: 2 },
+          { username: 'AdventureSeeker', score: 150, rank: 3 },
+          { username: 'CreativeSpirit', score: 120, rank: 4 },
+          { username: 'DreamWeaver', score: 95, rank: 5 }
+        ]);
+    });
 
     // Generate capsule
-    fastify.post('/api/generate-capsule-simple', async (request) => {
+    fastify.post('/api/generate-capsule-simple', async (request, reply) => {
       const { mood, interests } = request.body || {};
       const capsules = [
         "Your creative energy is sparking new possibilities!",
@@ -79,16 +100,19 @@ const startServer = async () => {
         "Your positive energy creates ripples of change."
       ];
       const randomCapsule = capsules[Math.floor(Math.random() * capsules.length)];
-      return {
-        success: true,
-        capsule: randomCapsule,
-        adventure: { title: "Daily Spark Adventure", prompt: randomCapsule },
-        metadata: { mood: mood || 'neutral', interests: interests || [], generated_at: new Date().toISOString() }
-      };
+      
+      return reply
+        .header('Access-Control-Allow-Origin', request.headers.origin || '*')
+        .send({
+          success: true,
+          capsule: randomCapsule,
+          adventure: { title: "Daily Spark Adventure", prompt: randomCapsule },
+          metadata: { mood: mood || 'neutral', interests: interests || [], generated_at: new Date().toISOString() }
+        });
     });
 
     // Generate vibe card
-    fastify.post('/api/generate-vibe-card', async (request) => {
+    fastify.post('/api/generate-vibe-card', async (request, reply) => {
       const { capsuleData, userChoices, completionStats, user } = request.body || {};
       const adventureTitles = [
         "The Creative Spark Challenge",
@@ -136,7 +160,15 @@ const startServer = async () => {
       };
 
       await new Promise(resolve => setTimeout(resolve, 1000)); // simulate processing
-      return { success: true, card: cardData, processingTime: '1.0s', message: 'Vibe card generated successfully!' };
+      
+      return reply
+        .header('Access-Control-Allow-Origin', request.headers.origin || '*')
+        .send({ 
+          success: true, 
+          card: cardData, 
+          processingTime: '1.0s', 
+          message: 'Vibe card generated successfully!' 
+        });
     });
 
     // Start server

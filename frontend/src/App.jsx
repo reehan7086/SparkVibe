@@ -3,11 +3,7 @@ import { motion } from 'framer-motion';
 import axios from 'axios';
 import VibeCardGenerator from './components/VibeCardGenerator';
 import Leaderboard from './components/Leaderboard';
-import { safeIncludes } from './utils/safeUtils';
-
-const safeMap = (array, callback) => {
-  return Array.isArray(array) ? array.map(callback) : [];
-};
+import { safeIncludes, getApiUrl } from './utils/safeUtils';
 
 const App = () => {
   const [health, setHealth] = useState('Checking...');
@@ -15,40 +11,45 @@ const App = () => {
   const [userChoices, setUserChoices] = useState({});
   const [completionStats, setCompletionStats] = useState({ vibePointsEarned: 0 });
 
-  useEffect(() => {
-    // API URL detection function
-    const getApiUrl = () => {
-      // First check environment variable
-      if (import.meta.env.VITE_API_URL) {
-        return import.meta.env.VITE_API_URL;
-      }
-      
-      // Fallback: construct from current hostname
-      const hostname = window.location.hostname || '';
-      if (safeIncludes(hostname, 'app.github.dev')) {
-        const baseUrl = hostname.replace('-5173', '-5000');
-        return `https://${baseUrl}`;
-      }
-      
-      return 'http://localhost:5000';
-    };
+  // Configure axios with consistent settings
+  const createApiClient = () => {
+    const apiUrl = getApiUrl();
+    return axios.create({
+      baseURL: apiUrl,
+      timeout: 10000,
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      withCredentials: true, // Include cookies for CORS
+    });
+  };
 
-    const apiUrl = getApiUrl(); // Call the function properly
+  useEffect(() => {
+    const apiClient = createApiClient();
+    const apiUrl = getApiUrl();
+    
     console.log('Using API URL:', apiUrl);
     
-    // Health check - use full URL
-    axios.get(`${apiUrl}/api/health`)
+    // Health check with proper error handling
+    apiClient.get('/api/health')
       .then(response => {
-        setHealth(response.data.message);
+        setHealth(response.data.message || 'Connected');
         console.log('Backend connected successfully');
       })
       .catch(error => {
         console.error('Health check failed:', error);
-        setHealth('Backend connection failed');
+        if (error.code === 'ERR_NETWORK') {
+          setHealth('Network error - check API server');
+        } else if (error.response?.status === 403) {
+          setHealth('Access forbidden - CORS issue');
+        } else {
+          setHealth('Backend connection failed');
+        }
       });
 
-    // Capsule fetch - use full URL
-    axios.post(`${apiUrl}/api/generate-capsule-simple`, {
+    // Capsule fetch with proper error handling
+    apiClient.post('/api/generate-capsule-simple', {
       mood: 'happy',
       interests: ['adventure', 'creativity']
     })
@@ -83,8 +84,12 @@ const App = () => {
   const getHealthStatusColor = () => {
     const healthStr = String(health || '');
     if (!healthStr || healthStr === 'Checking...') return 'text-yellow-400';
-    if (safeIncludes(healthStr.toLowerCase(), 'failed')) return 'text-red-400';
-    if (safeIncludes(healthStr.toLowerCase(), 'ok') || safeIncludes(healthStr.toLowerCase(), 'connected')) {
+    if (safeIncludes(healthStr.toLowerCase(), 'failed') || 
+        safeIncludes(healthStr.toLowerCase(), 'error') ||
+        safeIncludes(healthStr.toLowerCase(), 'forbidden')) return 'text-red-400';
+    if (safeIncludes(healthStr.toLowerCase(), 'ok') || 
+        safeIncludes(healthStr.toLowerCase(), 'connected') ||
+        safeIncludes(healthStr.toLowerCase(), 'health check')) {
       return 'text-green-400';
     }
     return 'text-blue-400';
