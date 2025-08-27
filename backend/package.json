@@ -15,7 +15,7 @@
   "dependencies": {
     "@fastify/cors": "^8.4.0",
     "@fastify/helmet": "^11.1.1",
-    "@fastify/jwt": "^7.2.4",
+    "@fastify/jwt": "^10.0.0",
     "@fastify/multipart": "^8.0.0",
     "@huggingface/inference": "^2.6.4",
     "axios": "^1.6.0",
@@ -23,7 +23,7 @@
     "cloudinary": "^1.41.0",
     "dotenv": "^16.3.1",
     "fastify": "^4.24.3",
-    "google-auth-library": "^9.4.1",
+    "google-auth-library": "^9.15.1",
     "mongoose": "^8.0.3",
     "openai": "^4.20.1",
     "redis": "^4.6.10",

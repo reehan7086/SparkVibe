@@ -1,10 +1,14 @@
 import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { useAutoAnimate } from '@formkit/auto-animate/react';
 import AuthService from '../services/AuthService';
 
 const LoginScreen = ({ onAuthSuccess }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
+  
+  // AutoAnimate hooks
+  const [containerRef] = useAutoAnimate();
+  const [errorRef] = useAutoAnimate();
 
   useEffect(() => {
     // Initialize Apple Sign-In
@@ -82,67 +86,43 @@ const LoginScreen = ({ onAuthSuccess }) => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 flex items-center justify-center p-4">
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6 }}
+      <div
+        ref={containerRef}
         className="w-full max-w-md"
       >
         {/* Logo and Title */}
         <div className="text-center mb-8">
-          <motion.h1 
-            initial={{ scale: 0.8 }}
-            animate={{ scale: 1 }}
-            transition={{ delay: 0.2 }}
-            className="text-6xl font-bold bg-gradient-to-r from-pink-400 to-purple-400 bg-clip-text text-transparent mb-4"
-          >
+          <h1 className="text-6xl font-bold bg-gradient-to-r from-pink-400 to-purple-400 bg-clip-text text-transparent mb-4">
             SparkVibe
-          </motion.h1>
-          <motion.p 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.4 }}
-            className="text-xl text-blue-200 mb-2"
-          >
+          </h1>
+          <p className="text-xl text-blue-200 mb-2">
             AI-Powered Daily Adventures
-          </motion.p>
-          <motion.p 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.6 }}
-            className="text-sm text-white/60"
-          >
+          </p>
+          <p className="text-sm text-white/60">
             Transform your mood into meaningful moments
-          </motion.p>
+          </p>
         </div>
 
         {/* Login Card */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: 0.3 }}
-          className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-8 shadow-2xl"
-        >
+        <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-8 shadow-2xl">
           <h2 className="text-2xl font-bold text-white text-center mb-6">
             Welcome Back
           </h2>
 
-          {error && (
-            <motion.div
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="bg-red-500/20 border border-red-400/50 rounded-xl p-3 mb-4"
-            >
-              <p className="text-red-200 text-sm text-center">{error}</p>
-            </motion.div>
-          )}
+          <div ref={errorRef}>
+            {error && (
+              <div className="bg-red-500/20 border border-red-400/50 rounded-xl p-3 mb-4">
+                <p className="text-red-200 text-sm text-center">{error}</p>
+              </div>
+            )}
+          </div>
 
           <div className="space-y-4">
             {/* Google Sign In */}
             <button
               onClick={handleGoogleSignIn}
               disabled={isLoading}
-              className="w-full bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-gray-900 font-medium py-3 px-4 rounded-xl transition-all duration-200 flex items-center justify-center space-x-3 shadow-lg"
+              className="w-full bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-gray-900 font-medium py-3 px-4 rounded-xl transition-all duration-200 flex items-center justify-center space-x-3 shadow-lg transform hover:scale-[1.02]"
             >
               <svg width="20" height="20" viewBox="0 0 24 24">
                 <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -161,7 +141,7 @@ const LoginScreen = ({ onAuthSuccess }) => {
             <button
               onClick={handleAppleSignIn}
               disabled={isLoading}
-              className="w-full bg-black hover:bg-gray-900 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium py-3 px-4 rounded-xl transition-all duration-200 flex items-center justify-center space-x-3 shadow-lg"
+              className="w-full bg-black hover:bg-gray-900 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium py-3 px-4 rounded-xl transition-all duration-200 flex items-center justify-center space-x-3 shadow-lg transform hover:scale-[1.02]"
             >
               <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/>
@@ -183,7 +163,7 @@ const LoginScreen = ({ onAuthSuccess }) => {
             {/* Guest Access */}
             <button
               onClick={handleGuestAccess}
-              className="w-full bg-white/10 hover:bg-white/20 border border-white/30 text-white font-medium py-3 px-4 rounded-xl transition-all duration-200 flex items-center justify-center space-x-2"
+              className="w-full bg-white/10 hover:bg-white/20 border border-white/30 text-white font-medium py-3 px-4 rounded-xl transition-all duration-200 flex items-center justify-center space-x-2 transform hover:scale-[1.02]"
             >
               <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
@@ -197,15 +177,10 @@ const LoginScreen = ({ onAuthSuccess }) => {
               By continuing, you agree to our Terms of Service and Privacy Policy
             </p>
           </div>
-        </motion.div>
+        </div>
 
         {/* Features Preview */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.8 }}
-          className="mt-8 grid grid-cols-3 gap-4 text-center"
-        >
+        <div className="mt-8 grid grid-cols-3 gap-4 text-center">
           <div className="text-white/60">
             <div className="text-2xl mb-1">🧠</div>
             <p className="text-xs">AI Mood Analysis</p>
@@ -218,8 +193,8 @@ const LoginScreen = ({ onAuthSuccess }) => {
             <div className="text-2xl mb-1">🏆</div>
             <p className="text-xs">Social Challenges</p>
           </div>
-        </motion.div>
-      </motion.div>
+        </div>
+      </div>
     </div>
   );
 };

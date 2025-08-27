@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useAutoAnimate } from '@formkit/auto-animate/react';
 import { apiPost } from '../utils/safeUtils';
 
 const MoodAnalyzer = ({ onMoodAnalyzed, isActive }) => {
@@ -7,6 +7,10 @@ const MoodAnalyzer = ({ onMoodAnalyzed, isActive }) => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [moodData, setMoodData] = useState(null);
   const [step, setStep] = useState('input'); // input, analyzing, results
+  
+  // AutoAnimate hooks
+  const [containerRef] = useAutoAnimate();
+  const [stepContainerRef] = useAutoAnimate();
 
   const analyzeMood = async () => {
     if (!moodInput.trim()) return;
@@ -91,21 +95,13 @@ const MoodAnalyzer = ({ onMoodAnalyzed, isActive }) => {
   if (!isActive) return null;
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -20 }}
+    <div
+      ref={containerRef}
       className="bg-gradient-to-br from-indigo-900/40 via-purple-900/40 to-pink-900/40 backdrop-blur-md border border-white/10 rounded-2xl p-6 mb-6"
     >
-      <AnimatePresence mode="wait">
+      <div ref={stepContainerRef}>
         {step === 'input' && (
-          <motion.div
-            key="input"
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 20 }}
-            className="space-y-4"
-          >
+          <div key="input" className="space-y-4">
             <div className="text-center">
               <h3 className="text-2xl font-bold text-white mb-2">How are you feeling?</h3>
               <p className="text-blue-200 text-sm">Let AI understand your vibe and personalize your experience</p>
@@ -133,34 +129,22 @@ const MoodAnalyzer = ({ onMoodAnalyzed, isActive }) => {
                 Analyze My Mood
               </button>
             </div>
-          </motion.div>
+          </div>
         )}
 
         {step === 'analyzing' && (
-          <motion.div
-            key="analyzing"
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 1.1 }}
-            className="text-center py-8"
-          >
+          <div key="analyzing" className="text-center py-8">
             <div className="relative mb-4">
               <div className="w-16 h-16 mx-auto border-4 border-purple-400 border-t-transparent rounded-full animate-spin"></div>
               <div className="absolute inset-0 w-12 h-12 mx-auto mt-2 border-2 border-pink-400 border-b-transparent rounded-full animate-spin animate-reverse"></div>
             </div>
             <h3 className="text-xl font-bold text-white mb-2">Analyzing your vibe...</h3>
             <p className="text-purple-200 text-sm">Our AI is understanding your emotions and energy</p>
-          </motion.div>
+          </div>
         )}
 
         {step === 'results' && moodData && (
-          <motion.div
-            key="results"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            className="space-y-4"
-          >
+          <div key="results" className="space-y-4">
             <div className="text-center">
               <div className={`inline-flex items-center px-4 py-2 bg-gradient-to-r ${getMoodColor(moodData.mood)} rounded-full text-white font-bold text-lg mb-3`}>
                 {moodData.mood.charAt(0).toUpperCase() + moodData.mood.slice(1)} Vibes
@@ -225,10 +209,10 @@ const MoodAnalyzer = ({ onMoodAnalyzed, isActive }) => {
                 Continue
               </button>
             </div>
-          </motion.div>
+          </div>
         )}
-      </AnimatePresence>
-    </motion.div>
+      </div>
+    </div>
   );
 };
 

@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
-import { motion } from 'framer-motion';
-
+import { useAutoAnimate } from '@formkit/auto-animate/react';
 import { apiGet } from '../utils/safeUtils';
 
 const Leaderboard = () => {
   const [leaderboardData, setLeaderboardData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  
+  // AutoAnimate hook
+  const [containerRef] = useAutoAnimate();
 
   const fetchLeaderboard = async () => {
     try {
@@ -46,24 +48,18 @@ const Leaderboard = () => {
 
   if (loading) {
     return (
-      <motion.div
-        initial={{ opacity: 0, scale: 0.9 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="bg-black/20 backdrop-blur-md border border-white/10 rounded-2xl p-6"
-      >
+      <div className="bg-black/20 backdrop-blur-md border border-white/10 rounded-2xl p-6">
         <div className="flex items-center justify-center h-40">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-400"></div>
           <span className="ml-3 text-white/70">Loading leaderboard...</span>
         </div>
-      </motion.div>
+      </div>
     );
   }
 
   return (
-    <motion.div
-      initial={{ opacity: 0, scale: 0.9 }}
-      animate={{ opacity: 1, scale: 1 }}
-      transition={{ delay: 0.2 }}
+    <div
+      ref={containerRef}
       className="bg-black/20 backdrop-blur-md border border-white/10 rounded-2xl p-6 h-fit"
     >
       <h2 className="text-2xl font-bold text-white mb-4 flex items-center">
@@ -77,12 +73,9 @@ const Leaderboard = () => {
       
       <div className="space-y-3">
         {leaderboardData.map((player, index) => (
-          <motion.div
+          <div
             key={player.username || index}
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: index * 0.1 }}
-            className="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/10 hover:bg-white/10 transition-colors"
+            className="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/10 hover:bg-white/10 transition-all duration-300 transform hover:scale-[1.02]"
           >
             <div className="flex items-center space-x-3">
               <span className="text-2xl">
@@ -103,7 +96,7 @@ const Leaderboard = () => {
               </p>
               <p className="text-xs text-white/60">points</p>
             </div>
-          </motion.div>
+          </div>
         ))}
       </div>
       
@@ -119,7 +112,7 @@ const Leaderboard = () => {
           Updates every 30 seconds
         </p>
       </div>
-    </motion.div>
+    </div>
   );
 };
 

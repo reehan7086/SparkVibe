@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useEffect, useState, useRef } from 'react';
+import { useAutoAnimate } from '@formkit/auto-animate/react';
 import { apiGet, apiPost, safeIncludes } from './utils/safeUtils';
 import AuthService from './services/AuthService';
 import LoginScreen from './components/LoginScreen';
@@ -14,6 +14,12 @@ function App() {
   const [user, setUser] = useState(null);
   const [streak, setStreak] = useState(0);
   const [points, setPoints] = useState(0);
+  
+  // AutoAnimate hooks
+  const [parent] = useAutoAnimate();
+  const [stepContainer] = useAutoAnimate();
+  const [moodButtonsContainer] = useAutoAnimate();
+  const [loadingRef] = useAutoAnimate();
 
   // Check authentication on app load
   useEffect(() => {
@@ -232,61 +238,42 @@ function App() {
         </button>
       </div>
 
-      <div className="container mx-auto px-4 py-8">
-        <AnimatePresence mode="wait">
+      <div className="container mx-auto px-4 py-8" ref={parent}>
+        <div ref={stepContainer}>
           {currentStep === 'mood' && (
-            <motion.div
-              key="mood"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              className="text-center"
-            >
+            <div key="mood" className="text-center">
               <h1 className="text-4xl font-bold text-white mb-2">SparkVibe</h1>
               <p className="text-xl text-purple-200 mb-8">How are you feeling right now?</p>
               
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-4xl mx-auto">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-4xl mx-auto" ref={moodButtonsContainer}>
                 {moods.map((moodOption) => (
-                  <motion.button
+                  <button
                     key={moodOption.label}
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
                     onClick={() => {
                       setMood(moodOption);
                       generateCapsule(moodOption);
                     }}
-                    className={`p-6 rounded-2xl bg-gradient-to-br ${moodOption.color} text-white shadow-lg hover:shadow-xl transition-all duration-300`}
+                    className={`p-6 rounded-2xl bg-gradient-to-br ${moodOption.color} text-white shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 active:scale-95`}
                   >
                     <div className="text-4xl mb-2">{moodOption.emoji}</div>
                     <div className="font-semibold">{moodOption.label}</div>
-                  </motion.button>
+                  </button>
                 ))}
               </div>
-            </motion.div>
+            </div>
           )}
 
           {currentStep === 'capsule' && (
-            <motion.div
-              key="capsule"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              className="text-center max-w-2xl mx-auto"
-            >
+            <div key="capsule" className="text-center max-w-2xl mx-auto">
               <div className={`inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br ${mood.color} text-4xl mb-6`}>
                 {mood.emoji}
               </div>
               
               <h2 className="text-3xl font-bold text-white mb-4">Your Daily Spark</h2>
               
-              <motion.div
-                initial={{ scale: 0.9, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                transition={{ delay: 0.2 }}
-                className="bg-white/10 backdrop-blur-lg rounded-2xl p-8 mb-8"
-              >
+              <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-8 mb-8">
                 <p className="text-xl text-white leading-relaxed">{capsule}</p>
-              </motion.div>
+              </div>
               
               <div className="flex gap-4 justify-center">
                 <button
@@ -304,31 +291,20 @@ function App() {
                   {isLoading ? 'Creating Magic...' : 'Create Vibe Card ✨'}
                 </button>
               </div>
-            </motion.div>
+            </div>
           )}
 
           {currentStep === 'share' && (
-            <motion.div
-              key="share"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              className="text-center max-w-lg mx-auto"
-            >
+            <div key="share" className="text-center max-w-lg mx-auto">
               <h2 className="text-3xl font-bold text-white mb-6">Your Vibe Card is Ready!</h2>
               
-              <motion.div
-                initial={{ scale: 0.8, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                transition={{ delay: 0.2 }}
-                className="mb-8"
-              >
+              <div className="mb-8">
                 <img
                   src={vibeCard}
                   alt="Your Vibe Card"
                   className="w-full max-w-sm mx-auto rounded-2xl shadow-2xl"
                 />
-              </motion.div>
+              </div>
               
               <p className="text-purple-200 mb-6">Share your vibe and inspire others! (+5 points per share)</p>
               
@@ -370,25 +346,17 @@ function App() {
               >
                 Create Another Vibe ✨
               </button>
-            </motion.div>
+            </div>
           )}
-        </AnimatePresence>
+        </div>
         
         {isLoading && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
-          >
+          <div ref={loadingRef} className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
             <div className="bg-white rounded-2xl p-8 text-center">
-              <motion.div
-                animate={{ rotate: 360 }}
-                transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                className="w-12 h-12 border-4 border-purple-500 border-t-transparent rounded-full mx-auto mb-4"
-              />
+              <div className="w-12 h-12 border-4 border-purple-500 border-t-transparent rounded-full mx-auto mb-4 animate-spin" />
               <p className="text-gray-800 font-semibold">Creating your personalized experience...</p>
             </div>
-          </motion.div>
+          </div>
         )}
       </div>
     </div>

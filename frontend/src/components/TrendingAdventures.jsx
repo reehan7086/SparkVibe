@@ -1,11 +1,15 @@
 import { useEffect, useState } from 'react';
-import { motion } from 'framer-motion';
+import { useAutoAnimate } from '@formkit/auto-animate/react';
 import { apiGet } from '../utils/safeUtils';
 
 const TrendingAdventures = () => {
   const [trendingData, setTrendingData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState('all');
+  
+  // AutoAnimate hooks
+  const [containerRef] = useAutoAnimate();
+  const [adventuresRef] = useAutoAnimate();
 
   const categories = [
     { id: 'all', name: 'All', icon: '🌟' },
@@ -75,24 +79,18 @@ const TrendingAdventures = () => {
 
   if (loading) {
     return (
-      <motion.div
-        initial={{ opacity: 0, scale: 0.9 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="bg-black/20 backdrop-blur-md border border-white/10 rounded-2xl p-6"
-      >
+      <div className="bg-black/20 backdrop-blur-md border border-white/10 rounded-2xl p-6">
         <div className="flex items-center justify-center h-32">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-400"></div>
           <span className="ml-3 text-white/70">Loading trending adventures...</span>
         </div>
-      </motion.div>
+      </div>
     );
   }
 
   return (
-    <motion.div
-      initial={{ opacity: 0, scale: 0.9 }}
-      animate={{ opacity: 1, scale: 1 }}
-      transition={{ delay: 0.1 }}
+    <div
+      ref={containerRef}
       className="bg-black/20 backdrop-blur-md border border-white/10 rounded-2xl p-6"
     >
       <div className="flex items-center justify-between mb-4">
@@ -120,11 +118,7 @@ const TrendingAdventures = () => {
 
       {/* Viral Adventure Highlight */}
       {trendingData?.viralAdventure && (
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mb-4 bg-gradient-to-r from-red-500/20 to-pink-500/20 border border-red-400/30 rounded-xl p-4"
-        >
+        <div className="mb-4 bg-gradient-to-r from-red-500/20 to-pink-500/20 border border-red-400/30 rounded-xl p-4">
           <div className="flex items-center space-x-2 mb-2">
             <span className="text-lg">🔥</span>
             <span className="text-red-400 font-bold text-sm">VIRAL</span>
@@ -138,18 +132,15 @@ const TrendingAdventures = () => {
             <span>{trendingData.viralAdventure.completions.toLocaleString()} completed</span>
             <span>{trendingData.viralAdventure.shares.toLocaleString()} shared</span>
           </div>
-        </motion.div>
+        </div>
       )}
 
       {/* Trending List */}
-      <div className="space-y-3">
+      <div ref={adventuresRef} className="space-y-3">
         {filteredAdventures.map((adventure, index) => (
-          <motion.div
+          <div
             key={index}
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: index * 0.1 }}
-            className="bg-white/5 rounded-xl p-4 hover:bg-white/10 transition-colors cursor-pointer"
+            className="bg-white/5 rounded-xl p-4 hover:bg-white/10 transition-all duration-300 transform hover:scale-[1.02] cursor-pointer"
           >
             <div className="flex items-start justify-between mb-2">
               <div className="flex-1">
@@ -181,7 +172,7 @@ const TrendingAdventures = () => {
                 ></div>
               </div>
             </div>
-          </motion.div>
+          </div>
         ))}
       </div>
 
@@ -202,7 +193,7 @@ const TrendingAdventures = () => {
           Join trending adventures to boost your viral potential
         </p>
       </div>
-    </motion.div>
+    </div>
   );
 };
 
