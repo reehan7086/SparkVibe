@@ -1,42 +1,23 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import axios from 'axios';
-import { getApiUrl } from '../utils/safeUtils';
+import { apiGet } from '../utils/safeUtils';
 
 const Leaderboard = () => {
   const [leaderboardData, setLeaderboardData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Configure axios with CORS support
-  const createApiClient = () => {
-    const apiUrl = getApiUrl();
-    return axios.create({
-      baseURL: apiUrl,
-      timeout: 10000,
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      },
-      withCredentials: true, // Include cookies for CORS
-    });
-  };
-
   const fetchLeaderboard = async () => {
     try {
       setLoading(true);
       setError(null);
       
-      const apiClient = createApiClient();
-      const apiUrl = getApiUrl();
+      console.log('Fetching leaderboard from: /leaderboard');
       
-      console.log('Fetching leaderboard from:', `${apiUrl}/api/leaderboard`);
+      const data = await apiGet('/leaderboard');
+      console.log('Leaderboard data received:', data);
       
-      // Use full URL instead of relative path
-      const response = await apiClient.get('/api/leaderboard');
-      console.log('Leaderboard data received:', response.data);
-      
-      setLeaderboardData(response.data || []);
+      setLeaderboardData(data || []);
       
     } catch (error) {
       console.error('Error fetching leaderboard:', error);

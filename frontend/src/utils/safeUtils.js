@@ -21,9 +21,9 @@ export const safeFind = (array, callback) => {
 
 // API utility functions
 export const getApiUrl = () => {
-  // Production: return base domain (components will add /api prefix)
+  // Production: return API base URL with /api prefix
   if (window.location.hostname === 'sparkvibe.app' || window.location.hostname === 'www.sparkvibe.app') {
-    return 'https://sparkvibe.app';
+    return 'https://sparkvibe.app/api';
   }
   
   // Development: check environment variable first
@@ -44,7 +44,25 @@ export const getApiUrl = () => {
 // Fetch API wrapper with consistent configuration
 export const fetchWithConfig = async (endpoint, options = {}) => {
   const apiUrl = getApiUrl();
-  const url = endpoint.startsWith('http') ? endpoint : `${apiUrl}${endpoint}`;
+  
+  // If endpoint already starts with http, use it as-is
+  // Otherwise, combine with API URL
+  let url;
+  if (endpoint.startsWith('http')) {
+    url = endpoint;
+  } else {
+    // For production, apiUrl already includes /api, so don't double-add it
+    // For development, we need to add /api if it's not already there
+    if (apiUrl.includes('/api')) {
+      // Production case: apiUrl = 'https://sparkvibe.app/api'
+      // endpoint should be '/health', '/leaderboard', etc. (without /api)
+      url = `${apiUrl}${endpoint}`;
+    } else {
+      // Development case: apiUrl = 'http://localhost:5000'
+      // endpoint should include /api prefix
+      url = endpoint.startsWith('/api') ? `${apiUrl}${endpoint}` : `${apiUrl}/api${endpoint}`;
+    }
+  }
   
   const defaultOptions = {
     headers: {
@@ -71,3 +89,18 @@ export const fetchWithConfig = async (endpoint, options = {}) => {
     throw error;
   }
 };
+
+// Convenience functions for common API calls
+export const apiGet = (endpoint) => fetchWithConfig(endpoint, { method: 'GET' });
+
+export const apiPost = (endpoint, data) => fetchWithConfig(endpoint, {
+  method: 'POST',
+  body: JSON.stringify(data)
+});
+
+export const apiPut = (endpoint, data) => fetchWithConfig(endpoint, {
+  method: 'PUT',
+  body: JSON.stringify(data)
+});
+
+export const apiDelete = (endpoint) => fetchWithConfig(endpoint, { method: 'DELETE' });

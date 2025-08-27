@@ -7,8 +7,8 @@ services:
       repo: reehan7086/SparkVibe
       branch: main
     environment_slug: node-js
-    run_command: cd frontend && npm run preview -- --host --port 8080
-    build_command: cd frontend && npm install && npm run build
+    run_command: npm run preview -- --host --port 8080
+    build_command: npm install && npm run build
     http_port: 8080
     instance_size_slug: basic-xxs
     instance_count: 1
@@ -33,8 +33,8 @@ services:
       repo: reehan7086/SparkVibe
       branch: main
     environment_slug: node-js
-    run_command: cd backend && npm start
-    build_command: cd backend && npm install
+    run_command: npm start
+    build_command: npm install
     http_port: 5000
     instance_size_slug: basic-xxs
     instance_count: 1
@@ -43,7 +43,7 @@ services:
         domain: sparkvibe.app
         preserve_path_prefix: true
     health_check:
-      http_path: /api/health
+      http_path: /health
       port: 5000
       initial_delay_seconds: 20
       period_seconds: 15

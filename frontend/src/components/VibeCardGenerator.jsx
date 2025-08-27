@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { getApiUrl, fetchWithConfig } from '../utils/safeUtils';
+import { apiPost } from '../utils/safeUtils';
 
 const VibeCardGenerator = ({ 
   capsuleData, 
@@ -14,9 +14,6 @@ const VibeCardGenerator = ({
   const [currentFrame, setCurrentFrame] = useState(0);
   const canvasRef = useRef(null);
   const animationRef = useRef(null);
-
-  // Consistent API URL helper function - now using imported helper
-  // (removed local definition to use the one from safeUtils)
 
   // Card templates with dynamic styling
   const templates = {
@@ -49,29 +46,15 @@ const VibeCardGenerator = ({
   const generateVibeCard = async () => {
     setIsGenerating(true);
     try {
-      const apiUrl = getApiUrl();
-      console.log('Generating Vibe Card via:', `${apiUrl}/api/generate-vibe-card`);
+      console.log('Generating Vibe Card via: /generate-vibe-card');
       
-      const response = await fetch(`${apiUrl}/api/generate-vibe-card`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        credentials: 'include', // Include cookies for CORS
-        body: JSON.stringify({
-          capsuleData,
-          userChoices,
-          completionStats,
-          user
-        })
+      const result = await apiPost('/generate-vibe-card', {
+        capsuleData,
+        userChoices,
+        completionStats,
+        user
       });
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const result = await response.json();
       if (result.success) {
         setCardData(result.card);
         startAnimation();

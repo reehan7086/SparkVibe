@@ -4,13 +4,13 @@ import react from '@vitejs/plugin-react';
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   
-const getApiUrl = () => {
-  if (mode === 'production') {
-    return 'https://sparkvibe.app'; // Remove /api from here
-  }
-  return env.VITE_API_URL || 'http://localhost:5000';
-};
-
+  const getApiUrl = () => {
+    if (mode === 'production') {
+      return 'https://sparkvibe.app/api'; // Include /api for production
+    }
+    return env.VITE_API_URL || 'http://localhost:5000';
+  };
+  
   const apiUrl = getApiUrl();
   
   return {
@@ -20,23 +20,15 @@ const getApiUrl = () => {
     },
     server: {
       port: 5173,
-      proxy: {
-        '/api': {
-          target: apiUrl,
-          changeOrigin: true,
-          secure: true, // Set to true for HTTPS
-          rewrite: (path) => path, // Don't rewrite the path
-        },
-      },
+      // Remove proxy entirely - not needed in App Platform
     },
     preview: {
       port: 8080,
       host: true,
+      // Simplified allowed hosts
       allowedHosts: [
         'sparkvibe.app',
-        'www.sparkvibe.app',
-        'https://squid-app-e9rwe.ondigitalocean.app/',
-        'sparkvibe.app/api'
+        'www.sparkvibe.app'
       ],
     },
     define: {
@@ -49,7 +41,7 @@ const getApiUrl = () => {
     build: {
       outDir: 'dist',
       sourcemap: false,
-      minify: 'esbuild', // Use esbuild instead of terser (faster and no extra dependency)
+      minify: 'esbuild',
     },
   };
 });

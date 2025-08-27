@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import axios from 'axios';
+import { apiGet, apiPost, safeIncludes } from './utils/safeUtils';
 import VibeCardGenerator from './components/VibeCardGenerator';
 import Leaderboard from './components/Leaderboard';
-import { safeIncludes, getApiUrl } from './utils/safeUtils';
 
 const App = () => {
   const [health, setHealth] = useState('Checking...');
@@ -11,51 +10,32 @@ const App = () => {
   const [userChoices, setUserChoices] = useState({});
   const [completionStats, setCompletionStats] = useState({ vibePointsEarned: 0 });
 
-  // Configure axios with consistent settings
-  const createApiClient = () => {
-    const apiUrl = getApiUrl();
-    return axios.create({
-      baseURL: apiUrl,
-      timeout: 10000,
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      },
-      withCredentials: true, // Include cookies for CORS
-    });
-  };
-
   useEffect(() => {
-    const apiClient = createApiClient();
-    const apiUrl = getApiUrl();
-    
-    console.log('Using API URL:', apiUrl);
-    
-    // Health check - updated path to match new server routes
-    apiClient.get('/api/health')
+    // Health check using the fixed safeUtils
+    apiGet('/health')
       .then(response => {
-        setHealth(response.data.message || 'Connected');
+        setHealth(response.message || 'Connected');
         console.log('Backend connected successfully');
       })
       .catch(error => {
         console.error('Health check failed:', error);
-        if (error.code === 'ERR_NETWORK') {
+        if (error.message.includes('Network')) {
           setHealth('Network error - check API server');
-        } else if (error.response?.status === 403) {
+        } else if (error.message.includes('403')) {
           setHealth('Access forbidden - CORS issue');
         } else {
           setHealth('Backend connection failed');
         }
       });
 
-    // Capsule fetch - updated path to match new server routes
-    apiClient.post('/api/generate-capsule-simple', {
+    // Capsule fetch using the fixed safeUtils
+    apiPost('/generate-capsule-simple', {
       mood: 'happy',
       interests: ['adventure', 'creativity']
     })
       .then(response => {
         try {
-          setCapsuleData(response.data);
+          setCapsuleData(response);
           console.log('Capsule data loaded');
         } catch (error) {
           console.error('Error processing capsule data:', error);
