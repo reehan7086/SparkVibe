@@ -28,7 +28,8 @@ export default defineConfig(({ mode }) => {
       // Simplified allowed hosts
       allowedHosts: [
         'sparkvibe.app',
-        'www.sparkvibe.app'
+        'www.sparkvibe.app',
+        'sparkvibe-app-o6tti.ondigitalocean.app'
       ],
     },
     define: {
