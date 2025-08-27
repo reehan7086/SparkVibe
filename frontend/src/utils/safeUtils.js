@@ -23,7 +23,7 @@ export const safeFind = (array, callback) => {
 export const getApiUrl = () => {
   // Production: always use the API subdomain
   if (import.meta.env.PROD) {
-    return 'https://api.sparkvibe.app';
+    return 'https://sparkvibe.app/api';
   }
   
   // Development: check environment variable first

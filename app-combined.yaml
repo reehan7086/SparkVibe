@@ -21,7 +21,7 @@ services:
       period_seconds: 10
     envs:
       - key: VITE_API_URL
-        value: https://api.sparkvibe.app
+        value: https://sparkvibe.app/api
       - key: NODE_ENV
         value: production
 

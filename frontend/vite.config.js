@@ -7,7 +7,7 @@ export default defineConfig(({ mode }) => {
   // Determine API URL based on environment
   const getApiUrl = () => {
     if (mode === 'production') {
-      return 'https://api.sparkvibe.app';
+      return 'https://sparkvibe.app/api';
     }
     return env.VITE_API_URL || 'http://localhost:5000';
   };
@@ -36,7 +36,7 @@ export default defineConfig(({ mode }) => {
       allowedHosts: [
         'sparkvibe.app',
         'www.sparkvibe.app',
-        'api.sparkvibe.app'
+        'sparkvibe.app/api'
       ],
     },
     define: {
