@@ -5,9 +5,14 @@ require('dotenv').config();
 
 const startServer = async () => {
   try {
-    // CORS configuration
+    // CORS configuration - updated to include your frontend domain
     await fastify.register(fastifyCors, {
-      origin: ['https://sparkvibe.app', 'https://www.sparkvibe.app', 'http://localhost:5173'],
+      origin: [
+        'https://sparkvibe.app', 
+        'https://www.sparkvibe.app', 
+        'https://walrus-app-cczj4.ondigitalocean.app', // Your frontend URL
+        'http://localhost:5173'
+      ],
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
       credentials: true,
@@ -22,22 +27,22 @@ const startServer = async () => {
       crossOriginResourcePolicy: { policy: 'cross-origin' },
     });
 
-    // Root endpoint (this handles /api/ requests)
+    // Root endpoint
     fastify.get('/', async (request, reply) => {
       return reply.send({
         message: 'SparkVibe API Server',
         version: '1.0.0',
         status: 'running',
         endpoints: [
-          'GET /api/health',
-          'GET /api/leaderboard',
-          'POST /api/generate-capsule-simple',
-          'POST /api/generate-vibe-card'
+          'GET /health',
+          'GET /leaderboard',
+          'POST /generate-capsule-simple',
+          'POST /generate-vibe-card'
         ]
       });
     });
 
-    // Health check - remove /api prefix since Digital Ocean routes /api/* to this service
+    // Health check endpoint
     fastify.get('/health', async (request, reply) => {
       return reply.send({
         status: 'OK',
@@ -46,7 +51,7 @@ const startServer = async () => {
       });
     });
 
-    // Leaderboard endpoint - remove /api prefix
+    // Leaderboard endpoint
     fastify.get('/leaderboard', async (request, reply) => {
       return reply.send([
         { username: 'SparkMaster', score: 250, rank: 1 },
@@ -57,7 +62,7 @@ const startServer = async () => {
       ]);
     });
 
-    // Generate capsule - remove /api prefix
+    // Generate capsule endpoint
     fastify.post('/generate-capsule-simple', async (request, reply) => {
       const { mood, interests } = request.body || {};
       const capsules = [
@@ -80,7 +85,7 @@ const startServer = async () => {
       });
     });
 
-    // Generate vibe card - remove /api prefix
+    // Generate vibe card endpoint
     fastify.post('/generate-vibe-card', async (request, reply) => {
       const { capsuleData, userChoices, completionStats, user } = request.body || {};
       const adventureTitles = [
@@ -139,8 +144,8 @@ const startServer = async () => {
     });
 
     // Start server
-    await fastify.listen({ port: process.env.PORT || 5000, host: '0.0.0.0' });
-    console.log(`SparkVibe API Server running on port ${process.env.PORT || 5000}`);
+    await fastify.listen({ port: process.env.PORT || 8080, host: '0.0.0.0' });
+    console.log(`SparkVibe API Server running on port ${process.env.PORT || 8080}`);
 
   } catch (err) {
     console.error('Server startup failed:', err);

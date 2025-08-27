@@ -71,8 +71,8 @@ const VibeCardGenerator = ({
   };
 
   const createDemoCard = () => {
-    const templates = ['cosmic', 'nature', 'retro', 'minimal'];
-    const randomTemplate = templates[Math.floor(Math.random() * templates.length)];
+    const templateNames = ['cosmic', 'nature', 'retro', 'minimal'];
+    const randomTemplate = templateNames[Math.floor(Math.random() * templateNames.length)];
     
     const demoCard = {
       content: {
@@ -514,7 +514,6 @@ const VibeCardGenerator = ({
       )}
     </div>
   );
-
 };
 
 export default VibeCardGenerator;

@@ -6,7 +6,7 @@ export default defineConfig(({ mode }) => {
   
   const getApiUrl = () => {
     if (mode === 'production') {
-      return 'https://sparkvibe.app/api'; // Include /api for production
+      return 'https://backend-sv-3n4v6.ondigitalocean.app'; // Your backend URL
     }
     return env.VITE_API_URL || 'http://localhost:5000';
   };
@@ -20,17 +20,10 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       port: 5173,
-      // Remove proxy entirely - not needed in App Platform
     },
     preview: {
       port: 8080,
-      host: true,
-      // Simplified allowed hosts
-      allowedHosts: [
-        'sparkvibe.app',
-        'www.sparkvibe.app',
-        'sparkvibe-app-o6tti.ondigitalocean.app'
-      ],
+      host: '0.0.0.0', // Important: bind to all interfaces for static sites
     },
     define: {
       'process.env': {

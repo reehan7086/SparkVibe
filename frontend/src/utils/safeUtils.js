@@ -21,9 +21,11 @@ export const safeFind = (array, callback) => {
 
 // API utility functions
 export const getApiUrl = () => {
-  // Production: return API base URL with /api prefix
-  if (window.location.hostname === 'sparkvibe.app' || window.location.hostname === 'www.sparkvibe.app') {
-    return 'https://sparkvibe.app/api';
+  // Production: use deployed backend
+  if (window.location.hostname.includes('ondigitalocean.app') || 
+      window.location.hostname === 'sparkvibe.app' || 
+      window.location.hostname === 'www.sparkvibe.app') {
+    return 'https://backend-sv-3n4v6.ondigitalocean.app';
   }
   
   // Development: check environment variable first
@@ -44,25 +46,7 @@ export const getApiUrl = () => {
 // Fetch API wrapper with consistent configuration
 export const fetchWithConfig = async (endpoint, options = {}) => {
   const apiUrl = getApiUrl();
-  
-  // If endpoint already starts with http, use it as-is
-  // Otherwise, combine with API URL
-  let url;
-  if (endpoint.startsWith('http')) {
-    url = endpoint;
-  } else {
-    // For production, apiUrl already includes /api, so don't double-add it
-    // For development, we need to add /api if it's not already there
-    if (apiUrl.includes('/api')) {
-      // Production case: apiUrl = 'https://sparkvibe.app/api'
-      // endpoint should be '/health', '/leaderboard', etc. (without /api)
-      url = `${apiUrl}${endpoint}`;
-    } else {
-      // Development case: apiUrl = 'http://localhost:5000'
-      // endpoint should include /api prefix
-      url = endpoint.startsWith('/api') ? `${apiUrl}${endpoint}` : `${apiUrl}/api${endpoint}`;
-    }
-  }
+  const url = endpoint.startsWith('http') ? endpoint : `${apiUrl}${endpoint}`;
   
   const defaultOptions = {
     headers: {
