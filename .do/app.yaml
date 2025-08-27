@@ -13,11 +13,10 @@ services:
     instance_count: 1
     routes:
       - path: /
+        domain: sparkvibe.app
     health_check:
       http_path: /
       port: 8080
-      initial_delay_seconds: 15
-      period_seconds: 10
     envs:
       - key: VITE_API_URL
         value: https://sparkvibe.app/api
@@ -37,19 +36,13 @@ services:
     instance_count: 1
     routes:
       - path: /api
+        domain: sparkvibe.app
+        preserve_path_prefix: true
     health_check:
       http_path: /health
       port: 5000
-      initial_delay_seconds: 20
-      period_seconds: 15
     envs:
       - key: NODE_ENV
         value: production
       - key: PORT
         value: "5000"
-      - key: CORS_ORIGIN
-        value: https://sparkvibe.app
-
-domains:
-  - name: sparkvibe.app
-    type: PRIMARY
