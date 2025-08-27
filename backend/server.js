@@ -813,11 +813,100 @@ async function generateVoiceover(text) {
   return cloudinaryResult.secure_url;
 }
 
+// Replace the generateCardImageWithCanvas function in your server.js with this:
+
 async function generateCardImageWithCanvas(cardData) {
-  // This is a placeholder for server-side canvas rendering
-  // You would use a library like canvas or sharp to generate the actual image
-  const mockImageBuffer = Buffer.from('mock-image-data-base64', 'base64');
-  return mockImageBuffer;
+  // Generate SVG instead of using Canvas for DigitalOcean compatibility
+  const colors = {
+    cosmic: ['#667eea', '#764ba2'],
+    nature: ['#43cea2', '#185a9d'],
+    retro: ['#FA8BFF', '#2BD2FF'],
+    minimal: ['#667eea', '#764ba2']
+  };
+
+  const template = cardData.design?.template || 'cosmic';
+  const [color1, color2] = colors[template] || colors.cosmic;
+  
+  const svg = `
+    <svg width="540" height="960" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" style="stop-color:${color1};stop-opacity:1" />
+          <stop offset="100%" style="stop-color:${color2};stop-opacity:1" />
+        </linearGradient>
+        <filter id="glow">
+          <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+          <feMerge>
+            <feMergeNode in="coloredBlur"/>
+            <feMergeNode in="SourceGraphic"/>
+          </feMerge>
+        </filter>
+      </defs>
+      
+      <!-- Background -->
+      <rect width="540" height="960" fill="url(#grad)" rx="20"/>
+      
+      <!-- Decorative elements -->
+      <circle cx="100" cy="150" r="30" fill="white" opacity="0.1"/>
+      <circle cx="440" cy="200" r="25" fill="white" opacity="0.15"/>
+      <circle cx="80" cy="800" r="35" fill="white" opacity="0.08"/>
+      
+      <!-- Header -->
+      <text x="270" y="120" text-anchor="middle" fill="white" font-size="24" font-weight="bold" font-family="Arial, sans-serif">SparkVibe Daily</text>
+      
+      <!-- Main content area -->
+      <rect x="40" y="180" width="460" height="320" fill="white" opacity="0.1" rx="15"/>
+      
+      <!-- Adventure title -->
+      <text x="270" y="230" text-anchor="middle" fill="white" font-size="28" font-weight="bold" font-family="Arial, sans-serif" filter="url(#glow)">
+        ${cardData.content?.adventure?.title?.substring(0, 30) || 'Your Daily Adventure'}
+      </text>
+      
+      <!-- Outcome text -->
+      <foreignObject x="60" y="260" width="420" height="200">
+        <div xmlns="http://www.w3.org/1999/xhtml" style="
+          color: white; 
+          text-align: center; 
+          font-size: 18px; 
+          line-height: 1.6; 
+          font-family: Arial, sans-serif; 
+          padding: 20px;
+        ">
+          ${cardData.content?.adventure?.outcome || 'You completed an amazing adventure today!'}
+        </div>
+      </foreignObject>
+      
+      <!-- Stats section -->
+      <rect x="40" y="540" width="460" height="180" fill="white" opacity="0.15" rx="15"/>
+      
+      <!-- Points -->
+      <text x="140" y="580" text-anchor="middle" fill="white" font-size="16" font-weight="bold" font-family="Arial, sans-serif">POINTS EARNED</text>
+      <text x="140" y="610" text-anchor="middle" fill="white" font-size="36" font-weight="bold" font-family="Arial, sans-serif">+${cardData.content?.achievement?.points || 25}</text>
+      
+      <!-- Streak -->
+      <text x="270" y="580" text-anchor="middle" fill="white" font-size="16" font-weight="bold" font-family="Arial, sans-serif">STREAK</text>
+      <text x="270" y="610" text-anchor="middle" fill="white" font-size="36" font-weight="bold" font-family="Arial, sans-serif">${cardData.content?.achievement?.streak || 1}</text>
+      
+      <!-- Badge -->
+      <text x="400" y="580" text-anchor="middle" fill="white" font-size="16" font-weight="bold" font-family="Arial, sans-serif">BADGE</text>
+      <text x="400" y="610" text-anchor="middle" fill="white" font-size="20" font-weight="bold" font-family="Arial, sans-serif">${cardData.content?.achievement?.badge || 'Champion'}</text>
+      
+      <!-- User info -->
+      <text x="270" y="670" text-anchor="middle" fill="white" font-size="18" font-weight="bold" font-family="Arial, sans-serif">${cardData.user?.name || 'Explorer'}</text>
+      <text x="270" y="695" text-anchor="middle" fill="white" font-size="14" font-family="Arial, sans-serif" opacity="0.8">Total Points: ${cardData.user?.totalPoints || 0} • Level ${cardData.user?.level || 1}</text>
+      
+      <!-- Footer -->
+      <text x="270" y="900" text-anchor="middle" fill="white" font-size="16" font-family="Arial, sans-serif" opacity="0.9">Create your daily vibe at SparkVibe.app</text>
+      
+      <!-- QR code placeholder -->
+      <rect x="220" y="920" width="100" height="20" fill="white" opacity="0.3" rx="10"/>
+      <text x="270" y="935" text-anchor="middle" fill="white" font-size="12" font-family="Arial, sans-serif">Scan to join</text>
+    </svg>
+  `;
+
+  // Convert SVG to Buffer
+  const svgBuffer = Buffer.from(svg);
+  return svgBuffer;
 }
 
 function checkForAchievements(user) {
