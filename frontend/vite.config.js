@@ -21,7 +21,7 @@ export default defineConfig(({ mode }) => {
     preview: {
       port: 8080, // Match DigitalOcean readiness probe
       host: true, // Expose to network for containerized environments
-      allowedHosts: ['squid-app-e9rwe.ondigitalocean.app'] // Add this line
+      allowedHosts: ['sparkvibe.app', 'www.sparkvibe.app', 'api.sparkvibe.app']
     },
     define: {
       'process.env': {
