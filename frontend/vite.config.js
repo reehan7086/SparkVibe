@@ -35,6 +35,7 @@ const getApiUrl = () => {
       allowedHosts: [
         'sparkvibe.app',
         'www.sparkvibe.app',
+        'https://squid-app-e9rwe.ondigitalocean.app/',
         'sparkvibe.app/api'
       ],
     },
