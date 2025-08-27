@@ -6,19 +6,22 @@ require('dotenv').config();
 const startServer = async () => {
   try {
     // CORS Configuration
-    await fastify.register(fastifyCors, {
-      origin: [
-        'http://localhost:3000',
-        'http://localhost:5173',
-        'https://sparkvibe-frontend.ondigitalocean.app',
-        /^https:\/\/.*\.github\.dev$/,
-        /^https:\/\/.*\.app\.github\.dev$/,
-        /^https:\/\/.*\.ondigitalocean\.app$/
-      ],
-      methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization'],
-      credentials: true,
-    });
+await fastify.register(fastifyCors, {
+  origin: [
+    'http://localhost:3000',
+    'http://localhost:5173',
+    'https://sparkvibe.app',
+    'https://www.sparkvibe.app',   // in case users type with www
+    'https://sparkvibe-frontend.ondigitalocean.app',
+    /^https:\/\/.*\.github\.dev$/,
+    /^https:\/\/.*\.app\.github\.dev$/,
+    /^https:\/\/.*\.ondigitalocean\.app$/
+  ],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
+});
+
 
     // Security headers
     await fastify.register(fastifyHelmet, {
