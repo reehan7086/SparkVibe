@@ -1,5 +1,6 @@
 name: sparkvibe-app
 services:
+  # Frontend service
   - name: frontend
     source_dir: /frontend
     github:
@@ -13,7 +14,6 @@ services:
     instance_count: 1
     routes:
       - path: /
-        domain: sparkvibe.app
     health_check:
       http_path: /
       port: 8080
@@ -25,6 +25,7 @@ services:
       - key: NODE_ENV
         value: production
 
+  # Backend service
   - name: backend
     source_dir: /backend
     github:
@@ -37,8 +38,8 @@ services:
     instance_size_slug: basic-xxs
     instance_count: 1
     routes:
-      - path: /
-        domain: api.sparkvibe.app
+      - path: /api/
+        preserve_path_prefix: true
     health_check:
       http_path: /api/health
       port: 5000
@@ -49,3 +50,12 @@ services:
         value: production
       - key: PORT
         value: "5000"
+      - key: CORS_ORIGIN
+        value: https://sparkvibe.app
+
+databases:
+  - name: db
+    engine: PG
+    version: "13"
+    size: db-s-1vcpu-1gb
+    num_nodes: 1
