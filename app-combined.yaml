@@ -54,7 +54,7 @@ services:
       - key: PORT
         value: "5000"
       - key: CORS_ORIGIN
-        value: https://squid-app-e9rwe.ondigitalocean.app
+        value: https://squid-app-e9rwe.ondigitalocean.app/api
       - key: DATABASE_URL
         scope: RUN_TIME
         value: ${db.DATABASE_URL}
