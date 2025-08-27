@@ -1,24 +1,24 @@
 {
   "name": "SparkVibe",
   "short_name": "SparkVibe",
-  "description": "Your Daily AI-Powered Adventure",
-  "start_url": "/",
-  "display": "standalone",
-  "background_color": "#1a1a2e",
+  "description": "Daily Adventures Await - Spark Your Curiosity",
   "theme_color": "#7c3aed",
-  "orientation": "portrait-primary",
+  "background_color": "#1e1b4b",
+  "display": "standalone",
+  "scope": "/",
+  "start_url": "/",
   "icons": [
     {
-      "src": "/icon-192x192.png",
+      "src": "icon-192x192.png",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "maskable any"
     },
     {
-      "src": "/icon-512x512.png",
+      "src": "icon-512x512.png",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "maskable any"
     }
-  ],
-  "categories": ["entertainment", "lifestyle", "social"],
-  "screenshots": []
+  ]
 }
