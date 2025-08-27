@@ -33,7 +33,11 @@ export default defineConfig(({ mode }) => {
     preview: {
       port: 8080,
       host: true,
-      // Remove proxy from preview since we'll use direct API calls in production
+      allowedHosts: [
+        'sparkvibe.app',
+        'www.sparkvibe.app',
+        'api.sparkvibe.app'
+      ],
     },
     define: {
       'process.env': {
