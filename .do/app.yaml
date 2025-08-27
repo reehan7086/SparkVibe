@@ -54,10 +54,3 @@ services:
         value: "5000"
       - key: CORS_ORIGIN
         value: https://sparkvibe.app
-
-databases:
-  - name: db
-    engine: PG
-    version: "13"
-    size: db-s-1vcpu-1gb
-    num_nodes: 1
