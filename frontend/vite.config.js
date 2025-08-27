@@ -34,6 +34,9 @@ export default defineConfig(({ mode }) => {
     },
     build: {
       outDir: 'dist',
+          rollupOptions: {
+      external: ['framer-motion'],
+    },
       sourcemap: false,
       minify: 'esbuild',
     },
@@ -41,5 +44,11 @@ export default defineConfig(({ mode }) => {
     include: ['framer-motion'],
     exclude: [], // Ensure nothing is excluded
   },
+        resolve: {
+        alias: {
+          // Fallback for framer-motion ESM issues
+          'framer-motion/dist/es': 'framer-motion/dist/es',
+        },
+      },
   };
 });

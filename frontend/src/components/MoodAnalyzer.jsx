@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+//import { motion, AnimatePresence } from 'framer-motion';
+const { motion } = window.FramerMotion;
 import { apiPost } from '../utils/safeUtils';
 
 const MoodAnalyzer = ({ onMoodAnalyzed, isActive }) => {
