@@ -4,13 +4,12 @@ import react from '@vitejs/plugin-react';
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   
-  // Determine API URL based on environment
-  const getApiUrl = () => {
-    if (mode === 'production') {
-      return 'https://sparkvibe.app/api';
-    }
-    return env.VITE_API_URL || 'http://localhost:5000';
-  };
+const getApiUrl = () => {
+  if (mode === 'production') {
+    return 'https://sparkvibe.app'; // Remove /api from here
+  }
+  return env.VITE_API_URL || 'http://localhost:5000';
+};
 
   const apiUrl = getApiUrl();
   

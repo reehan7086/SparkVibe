@@ -5,7 +5,8 @@ require('dotenv').config();
 
 const startServer = async () => {
   try {
-await fastify.register(fastifyCors, {
+    // CORS configuration
+    await fastify.register(fastifyCors, {
       origin: ['https://sparkvibe.app', 'https://www.sparkvibe.app', 'http://localhost:5173'],
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
@@ -13,68 +14,51 @@ await fastify.register(fastifyCors, {
       maxAge: 86400, // Cache preflight response for 24 hours
     });
 
-    // Security headers - RELAXED for API
-await fastify.register(fastifyHelmet, {
+    // Security headers
+    await fastify.register(fastifyHelmet, {
       contentSecurityPolicy: false,
       crossOriginEmbedderPolicy: false,
       crossOriginOpenerPolicy: false,
       crossOriginResourcePolicy: { policy: 'cross-origin' },
     });
 
-    // Add preflight handler for all routes
-/*     fastify.options('*', async (request, reply) => {
-      return reply
-        .header('Access-Control-Allow-Origin', request.headers.origin || '*')
-        .header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
-        .header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With')
-        .header('Access-Control-Allow-Credentials', 'true')
-        .status(204)
-        .send();
-    }); */
-
-    // Root endpoint
+    // Root endpoint (this handles /api/ requests)
     fastify.get('/', async (request, reply) => {
-      return reply
-        .header('Access-Control-Allow-Origin', request.headers.origin || '*')
-        .send({
-          message: 'SparkVibe API Server',
-          version: '1.0.0',
-          status: 'running',
-          endpoints: [
-            'GET /api/health',
-            'GET /api/leaderboard',
-            'POST /api/generate-capsule-simple',
-            'POST /api/generate-vibe-card'
-          ]
-        });
+      return reply.send({
+        message: 'SparkVibe API Server',
+        version: '1.0.0',
+        status: 'running',
+        endpoints: [
+          'GET /api/health',
+          'GET /api/leaderboard',
+          'POST /api/generate-capsule-simple',
+          'POST /api/generate-vibe-card'
+        ]
+      });
     });
 
-    // Health check
-    fastify.get('/api/health', async (request, reply) => {
-      return reply
-        .header('Access-Control-Allow-Origin', request.headers.origin || '*')
-        .send({
-          status: 'OK',
-          message: 'Health Check',
-          timestamp: new Date().toISOString()
-        });
+    // Health check - remove /api prefix since Digital Ocean routes /api/* to this service
+    fastify.get('/health', async (request, reply) => {
+      return reply.send({
+        status: 'OK',
+        message: 'Health Check',
+        timestamp: new Date().toISOString()
+      });
     });
 
-    // Leaderboard endpoint
-    fastify.get('/api/leaderboard', async (request, reply) => {
-      return reply
-        .header('Access-Control-Allow-Origin', request.headers.origin || '*')
-        .send([
-          { username: 'SparkMaster', score: 250, rank: 1 },
-          { username: 'VibeExplorer', score: 180, rank: 2 },
-          { username: 'AdventureSeeker', score: 150, rank: 3 },
-          { username: 'CreativeSpirit', score: 120, rank: 4 },
-          { username: 'DreamWeaver', score: 95, rank: 5 }
-        ]);
+    // Leaderboard endpoint - remove /api prefix
+    fastify.get('/leaderboard', async (request, reply) => {
+      return reply.send([
+        { username: 'SparkMaster', score: 250, rank: 1 },
+        { username: 'VibeExplorer', score: 180, rank: 2 },
+        { username: 'AdventureSeeker', score: 150, rank: 3 },
+        { username: 'CreativeSpirit', score: 120, rank: 4 },
+        { username: 'DreamWeaver', score: 95, rank: 5 }
+      ]);
     });
 
-    // Generate capsule
-    fastify.post('/api/generate-capsule-simple', async (request, reply) => {
+    // Generate capsule - remove /api prefix
+    fastify.post('/generate-capsule-simple', async (request, reply) => {
       const { mood, interests } = request.body || {};
       const capsules = [
         "Your creative energy is sparking new possibilities!",
@@ -88,18 +72,16 @@ await fastify.register(fastifyHelmet, {
       ];
       const randomCapsule = capsules[Math.floor(Math.random() * capsules.length)];
       
-      return reply
-        .header('Access-Control-Allow-Origin', request.headers.origin || '*')
-        .send({
-          success: true,
-          capsule: randomCapsule,
-          adventure: { title: "Daily Spark Adventure", prompt: randomCapsule },
-          metadata: { mood: mood || 'neutral', interests: interests || [], generated_at: new Date().toISOString() }
-        });
+      return reply.send({
+        success: true,
+        capsule: randomCapsule,
+        adventure: { title: "Daily Spark Adventure", prompt: randomCapsule },
+        metadata: { mood: mood || 'neutral', interests: interests || [], generated_at: new Date().toISOString() }
+      });
     });
 
-    // Generate vibe card
-    fastify.post('/api/generate-vibe-card', async (request, reply) => {
+    // Generate vibe card - remove /api prefix
+    fastify.post('/generate-vibe-card', async (request, reply) => {
       const { capsuleData, userChoices, completionStats, user } = request.body || {};
       const adventureTitles = [
         "The Creative Spark Challenge",
@@ -148,14 +130,12 @@ await fastify.register(fastifyHelmet, {
 
       await new Promise(resolve => setTimeout(resolve, 1000)); // simulate processing
       
-      return reply
-        .header('Access-Control-Allow-Origin', request.headers.origin || '*')
-        .send({ 
-          success: true, 
-          card: cardData, 
-          processingTime: '1.0s', 
-          message: 'Vibe card generated successfully!' 
-        });
+      return reply.send({ 
+        success: true, 
+        card: cardData, 
+        processingTime: '1.0s', 
+        message: 'Vibe card generated successfully!' 
+      });
     });
 
     // Start server

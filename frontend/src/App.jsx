@@ -31,7 +31,7 @@ const App = () => {
     
     console.log('Using API URL:', apiUrl);
     
-    // Health check with proper error handling
+    // Health check - updated path to match new server routes
     apiClient.get('/api/health')
       .then(response => {
         setHealth(response.data.message || 'Connected');
@@ -48,7 +48,7 @@ const App = () => {
         }
       });
 
-    // Capsule fetch with proper error handling
+    // Capsule fetch - updated path to match new server routes
     apiClient.post('/api/generate-capsule-simple', {
       mood: 'happy',
       interests: ['adventure', 'creativity']
