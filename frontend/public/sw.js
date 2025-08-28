@@ -1,5 +1,5 @@
-// SparkVibe Service Worker for Push Notifications
-const CACHE_NAME = 'sparkvibe-cache-v2.1.0';
+// SparkVibe Service Worker for Push Notifications and Offline Support
+const CACHE_NAME = 'sparkvibe-cache-v2.1.1'; // Updated version
 const OFFLINE_URL = '/offline.html';
 
 // Files to cache for offline functionality
@@ -9,16 +9,34 @@ const urlsToCache = [
   '/static/js/main.js',
   '/icon-192x192.png',
   '/icon-512x512.png',
-  '/offline.html'
+  '/badge-72x72.png',
+  '/default-avatar.png', // Add this
+  '/offline.html',
 ];
 
-// Install event - cache resources
+// Install event - cache resources with error handling
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then((cache) => {
+      .then(async (cache) => {
         console.log('SparkVibe cache opened');
-        return cache.addAll(urlsToCache);
+        // Cache resources individually to handle failures gracefully
+        for (const url of urlsToCache) {
+          try {
+            await cache.add(url);
+            console.log(`Cached: ${url}`);
+          } catch (error) {
+            console.error(`Failed to cache ${url}:`, error);
+            // Continue caching other resources even if one fails
+          }
+        }
+        // Ensure offline.html is cached
+        try {
+          await cache.add(OFFLINE_URL);
+          console.log(`Offline page cached: ${OFFLINE_URL}`);
+        } catch (error) {
+          console.error(`Failed to cache offline page: ${error}`);
+        }
       })
       .catch((error) => {
         console.error('Cache installation failed:', error);
@@ -46,21 +64,44 @@ self.addEventListener('activate', (event) => {
 
 // Fetch event - serve from cache when offline
 self.addEventListener('fetch', (event) => {
-  if (event.request.mode === 'navigate') {
+  const requestUrl = new URL(event.request.url);
+  if (event.request.mode === 'navigate' || requestUrl.pathname === '/offline.html') {
     event.respondWith(
       fetch(event.request)
         .catch(() => {
           return caches.open(CACHE_NAME)
-            .then((cache) => {
-              return cache.match(OFFLINE_URL);
+            .then((cache) => cache.match(OFFLINE_URL))
+            .then((response) => response || new Response('Offline page not found', { status: 404 }));
+        })
+    );
+  } else if (requestUrl.pathname.includes('/api/')) {
+    // Handle API requests differently
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (!response.ok && response.status === 404) {
+            console.warn(`API request failed: ${requestUrl}`);
+            return new Response(JSON.stringify({ error: 'API unavailable offline' }), {
+              status: 503,
+              headers: { 'Content-Type': 'application/json' },
             });
+          }
+          return response;
+        })
+        .catch(() => {
+          return new Response(JSON.stringify({ error: 'API unavailable offline' }), {
+            status: 503,
+            headers: { 'Content-Type': 'application/json' },
+          });
         })
     );
   } else {
     event.respondWith(
       caches.match(event.request)
-        .then((response) => {
-          return response || fetch(event.request);
+        .then((response) => response || fetch(event.request))
+        .catch((error) => {
+          console.error(`Fetch failed for ${event.request.url}:`, error);
+          return new Response('Resource unavailable', { status: 503 });
         })
     );
   }
@@ -76,18 +117,13 @@ self.addEventListener('push', (event) => {
     icon: '/icon-192x192.png',
     badge: '/badge-72x72.png',
     tag: 'sparkvibe-notification',
-    data: {
-      url: '/'
-    }
+    data: { url: '/' },
   };
 
   if (event.data) {
     try {
       const payload = event.data.json();
-      notificationData = {
-        ...notificationData,
-        ...payload
-      };
+      notificationData = { ...notificationData, ...payload };
     } catch (error) {
       console.error('Error parsing push payload:', error);
       notificationData.body = event.data.text();
@@ -101,31 +137,19 @@ self.addEventListener('push', (event) => {
     tag: notificationData.tag,
     data: notificationData.data,
     actions: [
-      {
-        action: 'open',
-        title: 'Open SparkVibe',
-        icon: '/icon-192x192.png'
-      },
-      {
-        action: 'dismiss',
-        title: 'Dismiss',
-        icon: '/close-icon.png'
-      }
+      { action: 'open', title: 'Open SparkVibe', icon: '/icon-192x192.png' },
+      { action: 'dismiss', title: 'Dismiss', icon: '/close-icon.png' },
     ],
     requireInteraction: false,
     silent: false,
     vibrate: [200, 100, 200],
-    timestamp: Date.now()
+    timestamp: Date.now(),
   };
 
   event.waitUntil(
     self.registration.showNotification(notificationData.title, notificationOptions)
-      .then(() => {
-        console.log('Notification displayed successfully');
-      })
-      .catch((error) => {
-        console.error('Error displaying notification:', error);
-      })
+      .then(() => console.log('Notification displayed successfully'))
+      .catch((error) => console.error('Error displaying notification:', error))
   );
 });
 
@@ -144,23 +168,22 @@ self.addEventListener('notificationclick', (event) => {
   event.waitUntil(
     clients.matchAll({
       type: 'window',
-      includeUncontrolled: true
+      includeUncontrolled: true,
     }).then((clientList) => {
-      // Check if SparkVibe is already open
       for (const client of clientList) {
         if (client.url.includes(self.location.origin) && 'focus' in client) {
           client.focus();
           if (urlToOpen !== '/') {
-            client.navigate(urlToOpen);
+            return client.navigate(urlToOpen);
           }
           return;
         }
       }
-
-      // Open new window if not already open
       if (clients.openWindow) {
         return clients.openWindow(urlToOpen);
       }
+    }).catch((error) => {
+      console.error('Error handling notification click:', error);
     })
   );
 });
@@ -171,9 +194,7 @@ self.addEventListener('sync', (event) => {
 
   if (event.tag === 'share-card') {
     event.waitUntil(syncShareActions());
-  }
-  
-  if (event.tag === 'mood-analysis') {
+  } else if (event.tag === 'mood-analysis') {
     event.waitUntil(syncMoodAnalyses());
   }
 });
@@ -183,20 +204,20 @@ async function syncShareActions() {
   try {
     const cache = await caches.open('sparkvibe-pending-actions');
     const requests = await cache.keys();
-    
-    const shareRequests = requests.filter(request => 
-      request.url.includes('/track-share')
-    );
+
+    const shareRequests = requests.filter((request) => request.url.includes('/track-share'));
 
     for (const request of shareRequests) {
       try {
         const response = await fetch(request);
         if (response.ok) {
           await cache.delete(request);
-          console.log('Share action synced successfully');
+          console.log('Share action synced successfully:', request.url);
+        } else {
+          console.warn('Share sync failed for:', request.url, response.status);
         }
       } catch (error) {
-        console.error('Failed to sync share action:', error);
+        console.error('Failed to sync share action:', request.url, error);
       }
     }
   } catch (error) {
@@ -209,20 +230,20 @@ async function syncMoodAnalyses() {
   try {
     const cache = await caches.open('sparkvibe-pending-actions');
     const requests = await cache.keys();
-    
-    const moodRequests = requests.filter(request => 
-      request.url.includes('/analyze-mood')
-    );
+
+    const moodRequests = requests.filter((request) => request.url.includes('/analyze-mood'));
 
     for (const request of moodRequests) {
       try {
         const response = await fetch(request);
         if (response.ok) {
           await cache.delete(request);
-          console.log('Mood analysis synced successfully');
+          console.log('Mood analysis synced successfully:', request.url);
+        } else {
+          console.warn('Mood sync failed for:', request.url, response.status);
         }
       } catch (error) {
-        console.error('Failed to sync mood analysis:', error);
+        console.error('Failed to sync mood analysis:', request.url, error);
       }
     }
   } catch (error) {
@@ -244,29 +265,31 @@ self.addEventListener('periodicsync', (event) => {
   }
 });
 
+// Check user streak by fetching from server
 async function checkUserStreak() {
-  // Check if user maintained their streak and send reminder if needed
   try {
-    const lastActivity = localStorage.getItem('sparkvibe_last_activity');
+    const response = await fetch('/api/user/streak', {
+      headers: { 'Accept': 'application/json' },
+    });
+    if (!response.ok) {
+      throw new Error(`Streak fetch failed: ${response.status}`);
+    }
+    const data = await response.json();
+    const lastActivity = data.lastActivity ? new Date(data.lastActivity) : null;
     const now = new Date();
-    const lastActivityDate = lastActivity ? new Date(lastActivity) : null;
-    
-    if (lastActivityDate) {
-      const daysSince = Math.floor((now - lastActivityDate) / (1000 * 60 * 60 * 24));
-      
-      if (daysSince === 1) {
-        // Send streak reminder
-        self.registration.showNotification('Keep Your Streak Alive!', {
-          body: 'Complete today\'s adventure to maintain your streak!',
-          icon: '/icon-192x192.png',
-          tag: 'streak-reminder',
-          data: { url: '/' }
-        });
-      }
+    const daysSince = lastActivity ? Math.floor((now - lastActivity) / (1000 * 60 * 60 * 24)) : null;
+
+    if (daysSince === 1) {
+      await self.registration.showNotification('Keep Your Streak Alive!', {
+        body: "Complete today's adventure to maintain your streak!",
+        icon: '/icon-192x192.png',
+        tag: 'streak-reminder',
+        data: { url: '/' },
+      });
     }
   } catch (error) {
     console.error('Error checking streak:', error);
   }
 }
 
-console.log('SparkVibe Service Worker v2.1.0 loaded');
+console.log('SparkVibe Service Worker v2.1.1 loaded');

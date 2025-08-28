@@ -1092,6 +1092,43 @@ const startServer = async () => {
         }
       );
 
+fastify.get(
+  '/user/streak',
+  { preHandler: [fastify.authenticate] },
+  async (request, reply) => {
+    try {
+      const user = await User.findById(request.user.userId).select('stats.lastActivity stats.streak');
+      return reply.send({
+        success: true,
+        lastActivity: user.stats.lastActivity,
+        streak: user.stats.streak,
+      });
+    } catch (error) {
+      console.error('Streak fetch failed:', error);
+      return reply.status(500).send({ error: 'Streak fetch failed' });
+    }
+  }
+);
+
+fastify.get(
+  '/user/stats',
+  { preHandler: [fastify.authenticate] },
+  async (request, reply) => {
+    try {
+      const user = await User.findById(request.user.userId).select('stats');
+      if (!user) {
+        return reply.status(404).send({ error: 'User not found' });
+      }
+      return reply.send({
+        success: true,
+        stats: user.stats,
+      });
+    } catch (error) {
+      console.error('Error fetching user stats:', error);
+      return reply.status(500).send({ error: 'Failed to fetch stats' });
+    }
+  }
+);
       // Trending adventures
       fastify.get(
         '/trending-adventures',
