@@ -1,5 +1,5 @@
 // SparkVibe Service Worker for Push Notifications and Offline Support
-const CACHE_NAME = 'sparkvibe-cache-v2.1.1'; // Updated version
+const CACHE_NAME = 'sparkvibe-cache-v2.1.2'; // Updated version
 const OFFLINE_URL = '/offline.html';
 
 // Files to cache for offline functionality
@@ -10,32 +10,45 @@ const urlsToCache = [
   '/icon-192x192.png',
   '/icon-512x512.png',
   '/badge-72x72.png',
-  '/default-avatar.png', // Add this
+  '/default-avatar.png',
   '/offline.html',
 ];
 
-// Install event - cache resources with error handling
+// Install event - cache resources with detailed error handling
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then(async (cache) => {
         console.log('SparkVibe cache opened');
-        // Cache resources individually to handle failures gracefully
+        const failedResources = [];
         for (const url of urlsToCache) {
           try {
-            await cache.add(url);
+            const response = await fetch(url, { mode: 'no-cors' }); // Use no-cors to avoid CORS issues
+            if (!response.ok) {
+              throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            await cache.put(url, response);
             console.log(`Cached: ${url}`);
           } catch (error) {
-            console.error(`Failed to cache ${url}:`, error);
-            // Continue caching other resources even if one fails
+            console.error(`Failed to cache ${url}:`, error.message);
+            failedResources.push({ url, error: error.message });
           }
         }
         // Ensure offline.html is cached
         try {
-          await cache.add(OFFLINE_URL);
+          const response = await fetch(OFFLINE_URL, { mode: 'no-cors' });
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+          await cache.put(OFFLINE_URL, response);
           console.log(`Offline page cached: ${OFFLINE_URL}`);
         } catch (error) {
-          console.error(`Failed to cache offline page: ${error}`);
+          console.error(`Failed to cache offline page: ${error.message}`);
+          failedResources.push({ url: OFFLINE_URL, error: error.message });
+        }
+        // Log summary of failed resources
+        if (failedResources.length > 0) {
+          console.warn('Cache installation completed with errors:', failedResources);
         }
       })
       .catch((error) => {
@@ -75,7 +88,6 @@ self.addEventListener('fetch', (event) => {
         })
     );
   } else if (requestUrl.pathname.includes('/api/')) {
-    // Handle API requests differently
     event.respondWith(
       fetch(event.request)
         .then((response) => {
@@ -292,4 +304,4 @@ async function checkUserStreak() {
   }
 }
 
-console.log('SparkVibe Service Worker v2.1.1 loaded');
+console.log('SparkVibe Service Worker v2.1.2 loaded');
