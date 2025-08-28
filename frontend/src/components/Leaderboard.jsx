@@ -10,32 +10,32 @@ const Leaderboard = () => {
   // AutoAnimate hook
   const [containerRef] = useAutoAnimate();
 
-  const fetchLeaderboard = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      
-      console.log('Fetching leaderboard from: /leaderboard');
-      
-      const data = await apiGet('/leaderboard');
-      console.log('Leaderboard data received:', data);
-      
-      setLeaderboardData(data || []);
-      
-    } catch (error) {
-      console.error('Error fetching leaderboard:', error);
+const fetchLeaderboard = async (retries = 3, delay = 1000) => {
+  try {
+    setLoading(true);
+    setError(null);
+    console.log('Fetching leaderboard from: /leaderboard');
+    const data = await apiGet('/leaderboard');
+    console.log('Leaderboard data received:', data);
+    setLeaderboardData(data || []);
+  } catch (error) {
+    console.error('Error fetching leaderboard:', error);
+    if (retries > 0) {
+      setTimeout(() => fetchLeaderboard(retries - 1, delay * 2), delay);
+    } else {
       setError('Failed to load leaderboard');
-      
-      // Set demo data on error
-      setLeaderboardData([
-        { username: 'Demo Player', score: 150, rank: 1 },
-        { username: 'Test User', score: 120, rank: 2 },
-        { username: 'Guest Player', score: 90, rank: 3 }
-      ]);
-    } finally {
-      setLoading(false);
+      setLeaderboardData([]);
     }
-  };
+  } finally {
+    setLoading(false);
+  }
+};
+
+useEffect(() => {
+  fetchLeaderboard();
+  const interval = setInterval(() => fetchLeaderboard(3, 1000), 30000);
+  return () => clearInterval(interval);
+}, []);
 
   useEffect(() => {
     fetchLeaderboard();
@@ -64,11 +64,11 @@ const Leaderboard = () => {
     >
       <h2 className="text-2xl font-bold text-white mb-4 flex items-center">
         Leaderboard
-        {error && (
-          <span className="ml-2 text-xs text-yellow-400 font-normal">
-            (Demo Mode)
-          </span>
-        )}
+{error && (
+  <div className="text-center text-yellow-400 text-sm mb-4">
+    {error}
+  </div>
+)}
       </h2>
       
       <div className="space-y-3">
@@ -82,12 +82,9 @@ const Leaderboard = () => {
                 {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '🏅'}
               </span>
               <div>
-                <p className="font-semibold text-white">
-                  {player.username || `Player ${index + 1}`}
-                </p>
-                <p className="text-sm text-white/60">
-                  Rank #{player.rank || index + 1}
-                </p>
+<p className="font-semibold text-white">{player.username || `Player ${index + 1}`}</p>
+<p className="text-sm text-white/60">Rank #{player.rank || index + 1}</p>
+<p className="font-bold text-lg text-purple-300">{player.score || 0}</p>
               </div>
             </div>
             <div className="text-right">

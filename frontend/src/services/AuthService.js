@@ -11,7 +11,7 @@ class AuthService {
         return new Promise((resolve) => {
             if (window.google) {
                 window.google.accounts.id.initialize({
-                    client_id: process.env.GOOGLE_CLIENT_ID || import.meta.env.VITE_GOOGLE_CLIENT_ID,
+client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
                     callback: this.handleGoogleResponse.bind(this),
                     auto_select: false,
                     cancel_on_tap_outside: false
@@ -23,7 +23,7 @@ class AuthService {
                 script.src = 'https://accounts.google.com/gsi/client';
                 script.onload = () => {
                     window.google.accounts.id.initialize({
-                        client_id: process.env.GOOGLE_CLIENT_ID || import.meta.env.VITE_GOOGLE_CLIENT_ID,
+                        client_id: process.env.VITE_GOOGLE_CLIENT_ID || import.meta.env.VITE_GOOGLE_CLIENT_ID,
                         callback: this.handleGoogleResponse.bind(this)
                     });
                     resolve();

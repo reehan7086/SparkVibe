@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { apiPost } from '../utils/safeUtils';
+import { apiPost, isAuthenticated } from '../utils/safeUtils';
 
 const VibeCardGenerator = ({ 
   capsuleData, 
@@ -12,6 +12,7 @@ const VibeCardGenerator = ({
   const [cardData, setCardData] = useState(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentFrame, setCurrentFrame] = useState(0);
+  const [authError, setAuthError] = useState(false);
   const canvasRef = useRef(null);
   const animationRef = useRef(null);
 
@@ -43,33 +44,7 @@ const VibeCardGenerator = ({
     }
   };
 
-  const generateVibeCard = async () => {
-    setIsGenerating(true);
-    try {
-      console.log('Generating Vibe Card via: /generate-vibe-card');
-      
-      const result = await apiPost('/generate-vibe-card', {
-        capsuleData,
-        userChoices,
-        completionStats,
-        user
-      });
-
-      if (result.success) {
-        setCardData(result.card);
-        startAnimation();
-        onCardGenerated?.(result.card);
-        console.log('Card generated:', result.card);
-      } else {
-        throw new Error('API returned unsuccessful response');
-      }
-    } catch (error) {
-      console.error('Failed to generate Vibe Card:', error);
-      createDemoCard();
-    }
-    setIsGenerating(false);
-  };
-
+  // ADD THIS FUNCTION PROPERLY (was missing)
   const createDemoCard = () => {
     const templateNames = ['cosmic', 'nature', 'retro', 'minimal'];
     const randomTemplate = templateNames[Math.floor(Math.random() * templateNames.length)];
@@ -110,18 +85,18 @@ const VibeCardGenerator = ({
     onCardGenerated?.(demoCard);
   };
 
+  // ADD THESE MISSING FUNCTIONS:
   const startAnimation = () => {
     setCurrentFrame(0);
     setIsPlaying(true);
     
     const animate = () => {
-      setCurrentFrame(prev => (prev + 1) % 450); // 15 seconds at 30fps
+      setCurrentFrame(prev => (prev + 1) % 450);
       animationRef.current = requestAnimationFrame(animate);
     };
     
     animationRef.current = requestAnimationFrame(animate);
     
-    // Auto-stop after 15 seconds
     setTimeout(() => {
       setIsPlaying(false);
       if (animationRef.current) {
@@ -141,215 +116,8 @@ const VibeCardGenerator = ({
     }
   };
 
-  const drawCard = () => {
-    if (!cardData || !canvasRef.current) return;
-
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-    const template = templates[cardData.design.template];
-
-    // Set canvas size for mobile video (9:16 aspect ratio)
-    canvas.width = 540;
-    canvas.height = 960;
-
-    // Clear canvas
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // Draw animated background
-    drawAnimatedBackground(ctx, template, currentFrame);
-    
-    // Draw content layers
-    drawAdventureSection(ctx, template, cardData, currentFrame);
-    drawStatsSection(ctx, template, cardData, currentFrame);
-    drawUserInfo(ctx, template, cardData, currentFrame);
-    drawBranding(ctx, template, currentFrame);
-  };
-
-  const drawAnimatedBackground = (ctx, template, frame) => {
-    // Create gradient background
-    const gradient = ctx.createLinearGradient(0, 0, 540, 960);
-    const colors = template.colors;
-    
-    // Animated color shifting
-    const colorIndex = Math.floor((frame / 30) % colors.length);
-    const nextColorIndex = (colorIndex + 1) % colors.length;
-    
-    gradient.addColorStop(0, colors[colorIndex]);
-    gradient.addColorStop(0.5, colors[nextColorIndex]);
-    gradient.addColorStop(1, colors[(colorIndex + 2) % colors.length]);
-    
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, 540, 960);
-
-    // Draw floating particles
-    drawParticles(ctx, template, frame);
-  };
-
-  const drawParticles = (ctx, template, frame) => {
-    const particles = template.particles.split('');
-    ctx.font = '30px Arial';
-    
-    for (let i = 0; i < 10; i++) {
-      const x = (i * 54 + frame * 2) % 540;
-      const y = (i * 96 + Math.sin(frame * 0.1 + i) * 25) % 960;
-      const opacity = 0.3 + Math.sin(frame * 0.05 + i) * 0.2;
-      
-      ctx.globalAlpha = opacity;
-      ctx.fillText(
-        particles[i % particles.length], 
-        x, 
-        y
-      );
-    }
-    ctx.globalAlpha = 1;
-  };
-
-  const drawAdventureSection = (ctx, template, card, frame) => {
-    const centerX = 270;
-    const startY = 150;
-    
-    // Animated entry effect
-    const slideIn = Math.min(frame / 60, 1);
-    const currentY = startY + (1 - slideIn) * 100;
-    
-    ctx.globalAlpha = slideIn;
-    
-    // Adventure title with glow effect
-    ctx.shadowColor = template.colors[0];
-    ctx.shadowBlur = 10;
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 36px Arial';
-    ctx.textAlign = 'center';
-    
-    // Wrap text if too long
-    const title = card.content.adventure.title;
-    const maxWidth = 450;
-    wrapText(ctx, title, centerX, currentY, maxWidth, 40);
-    
-    // Choice outcome with typewriter effect
-    ctx.shadowBlur = 5;
-    ctx.font = '24px Arial';
-    ctx.fillStyle = template.colors[1];
-    
-    const outcome = card.content.adventure.outcome;
-    const typewriterLength = Math.min(Math.floor(frame / 3), outcome.length);
-    const displayOutcome = outcome.substring(0, typewriterLength);
-    
-    wrapText(ctx, displayOutcome, centerX, currentY + 80, maxWidth, 30);
-    
-    ctx.globalAlpha = 1;
-    ctx.shadowBlur = 0;
-  };
-
-  const drawStatsSection = (ctx, template, card, frame) => {
-    const statsY = 600;
-    const bounceEffect = Math.sin(frame * 0.2) * 5;
-    
-    // Points earned with pulsing effect
-    const pulseScale = 1 + Math.sin(frame * 0.3) * 0.1;
-    ctx.save();
-    ctx.translate(270, statsY + bounceEffect);
-    ctx.scale(pulseScale, pulseScale);
-    
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 48px Arial';
-    ctx.textAlign = 'center';
-    ctx.fillText(`+${card.content.achievement.points}`, 0, 0);
-    
-    ctx.font = '24px Arial';
-    ctx.fillText('VIBE POINTS', 0, 30);
-    ctx.restore();
-    
-    // Streak counter with fire animation
-    ctx.fillStyle = template.colors[2];
-    ctx.font = 'bold 32px Arial';
-    ctx.textAlign = 'center';
-    ctx.fillText(
-      `🔥 ${card.content.achievement.streak} DAY STREAK`, 
-      270, 
-      statsY + 100 + bounceEffect
-    );
-    
-    // Badge with glow
-    if (card.content.achievement.badge) {
-      ctx.shadowColor = template.colors[0];
-      ctx.shadowBlur = 15;
-      ctx.fillStyle = '#FFD700';
-      ctx.font = 'bold 28px Arial';
-      ctx.fillText(card.content.achievement.badge, 270, statsY + 150);
-      ctx.shadowBlur = 0;
-    }
-  };
-
-  const drawUserInfo = (ctx, template, card, frame) => {
-    const userY = 750;
-    
-    // User name with elegant styling
-    ctx.fillStyle = '#ffffff';
-    ctx.font = '27px Arial';
-    ctx.textAlign = 'center';
-    ctx.fillText(`@${card.user.name}`, 270, userY);
-    
-    // Total points counter
-    ctx.fillStyle = template.colors[1];
-    ctx.font = '21px Arial';
-    ctx.fillText(
-      `${card.user.totalPoints.toLocaleString()} Total Points`, 
-      270, 
-      userY + 40
-    );
-  };
-
-  const drawBranding = (ctx, template, frame) => {
-    const logoY = 850;
-    
-    // SparkVibe logo with sparkle animation
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 36px Arial';
-    ctx.textAlign = 'center';
-    ctx.fillText('SparkVibe', 270, logoY);
-    
-    // Animated tagline
-    const taglines = [
-      'Daily Adventures Await',
-      'Spark Your Curiosity',
-      'Level Up Your Mindset',
-      'Discover. Grow. Shine.'
-    ];
-    
-    const taglineIndex = Math.floor((frame / 90) % taglines.length);
-    ctx.fillStyle = template.colors[0];
-    ctx.font = '18px Arial';
-    ctx.fillText(taglines[taglineIndex], 270, logoY + 30);
-  };
-
-  const wrapText = (ctx, text, x, y, maxWidth, lineHeight) => {
-    const words = text.split(' ');
-    let line = '';
-    let currentY = y;
-    
-    for (let n = 0; n < words.length; n++) {
-      const testLine = line + words[n] + ' ';
-      const metrics = ctx.measureText(testLine);
-      const testWidth = metrics.width;
-      
-      if (testWidth > maxWidth && n > 0) {
-        ctx.fillText(line, x, currentY);
-        line = words[n] + ' ';
-        currentY += lineHeight;
-      } else {
-        line = testLine;
-      }
-    }
-    ctx.fillText(line, x, currentY);
-  };
-
   const downloadCard = async () => {
     if (!canvasRef.current) return;
-    
-    // Generate static image
-    drawCard();
-    
     const link = document.createElement('a');
     link.download = `sparkvibe-card-${Date.now()}.png`;
     link.href = canvasRef.current.toDataURL();
@@ -360,7 +128,6 @@ const VibeCardGenerator = ({
     if (!cardData) return;
     
     try {
-      // Generate share content
       const shareData = {
         title: 'Check out my SparkVibe adventure!',
         text: cardData.sharing.captions[0],
@@ -368,18 +135,14 @@ const VibeCardGenerator = ({
       };
       
       if (navigator.share) {
-        // Native sharing on mobile
         await navigator.share(shareData);
       } else {
-        // Fallback for desktop
         const shareUrl = encodeURIComponent(shareData.url);
         const shareText = encodeURIComponent(shareData.text);
         
         const urls = {
           twitter: `https://twitter.com/intent/tweet?text=${shareText}&url=${shareUrl}`,
           facebook: `https://www.facebook.com/sharer/sharer.php?u=${shareUrl}`,
-          instagram: '#',
-          tiktok: '#'
         };
         
         if (urls[platform]) {
@@ -391,7 +154,82 @@ const VibeCardGenerator = ({
     }
   };
 
-  // Animation loop
+  // Simple drawing function (placeholder)
+  const drawCard = () => {
+    if (!cardData || !canvasRef.current) return;
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    
+    // Set canvas size
+    canvas.width = 540;
+    canvas.height = 960;
+    
+    // Clear canvas
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // Simple background
+    const template = templates[cardData.design.template];
+    const gradient = ctx.createLinearGradient(0, 0, 540, 960);
+    gradient.addColorStop(0, template.colors[0]);
+    gradient.addColorStop(1, template.colors[1]);
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, 540, 960);
+    
+    // Simple text
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 36px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(cardData.content.adventure.title, 270, 200);
+    
+    ctx.font = '24px Arial';
+    ctx.fillText(`+${cardData.content.achievement.points} Points`, 270, 300);
+    ctx.fillText(`${cardData.content.achievement.streak} Day Streak`, 270, 350);
+    ctx.fillText(cardData.user.name, 270, 400);
+  };
+
+  const generateVibeCard = async () => {
+    setIsGenerating(true);
+    setAuthError(false);
+    
+    try {
+      console.log('Generating Vibe Card via: /generate-vibe-card');
+      
+      // Check if user is authenticated before making the request
+      if (!isAuthenticated()) {
+        setAuthError(true);
+        createDemoCard();
+        return;
+      }
+      
+      const result = await apiPost('/generate-vibe-card', {
+        capsuleData,
+        userChoices,
+        completionStats,
+        user
+      });
+
+      if (result.success) {
+        setCardData(result.card);
+        startAnimation();
+        onCardGenerated?.(result.card);
+        console.log('Card generated:', result.card);
+      } else {
+        throw new Error('API returned unsuccessful response');
+      }
+    } catch (error) {
+      console.error('Failed to generate Vibe Card:', error);
+      
+      // Check if it's an authentication error
+      if (error.message.includes('Authentication') || error.message.includes('401')) {
+        setAuthError(true);
+      }
+      
+      createDemoCard();
+    }
+    setIsGenerating(false);
+  };
+
+  // Animation effect
   useEffect(() => {
     if (isPlaying && cardData) {
       drawCard();
@@ -407,6 +245,18 @@ const VibeCardGenerator = ({
         <p className="text-blue-200">Turn your adventure into shareable magic!</p>
       </div>
 
+      {/* Add auth error message */}
+      {authError && (
+        <div className="bg-red-600/20 border border-red-500 rounded-xl p-4 mb-4 text-center">
+          <p className="text-red-200 font-semibold">
+            🔒 Authentication required
+          </p>
+          <p className="text-red-300 text-sm mt-1">
+            Please sign in to generate real Vibe Cards. Using demo mode for now.
+          </p>
+        </div>
+      )}
+
       {!cardData ? (
         <div className="text-center">
           <button
@@ -421,10 +271,17 @@ const VibeCardGenerator = ({
               </div>
             ) : (
               <div className="flex items-center gap-2">
-                Generate Vibe Card
+                {isAuthenticated() ? 'Generate Vibe Card' : 'Try Demo Mode'}
               </div>
             )}
           </button>
+          
+          {/* Show sign in prompt if not authenticated */}
+          {!isAuthenticated() && (
+            <p className="text-blue-300 text-sm mt-3">
+              Sign in for personalized AI-generated cards!
+            </p>
+          )}
         </div>
       ) : (
         <div className="space-y-6">
@@ -435,6 +292,13 @@ const VibeCardGenerator = ({
               className="w-full block"
               style={{ aspectRatio: '9/16' }}
             />
+            
+            {/* Show demo badge if in demo mode */}
+            {cardData.isDemo && (
+              <div className="absolute top-4 right-4 bg-yellow-500 text-black px-3 py-1 rounded-full text-xs font-bold">
+                DEMO
+              </div>
+            )}
             
             {/* Playback Controls */}
             <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex gap-3">
@@ -463,7 +327,7 @@ const VibeCardGenerator = ({
               <p><span className="font-semibold">Streak:</span> {cardData.content.achievement.streak} days</p>
               <p><span className="font-semibold">Template:</span> {cardData.design.template.charAt(0).toUpperCase() + cardData.design.template.slice(1)}</p>
               {cardData.isDemo && (
-                <p className="text-yellow-400"><span className="font-semibold">Mode:</span> Demo (Connect backend for full features)</p>
+                <p className="text-yellow-400"><span className="font-semibold">Mode:</span> Demo (Sign in for AI-generated cards)</p>
               )}
             </div>
           </div>
