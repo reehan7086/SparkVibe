@@ -56,30 +56,108 @@ class AuthService {
         window.google.accounts.id.prompt();
     }
 
-    // Apple Sign-In
-    async signInWithApple() {
-        if (!window.AppleID) {
-            throw new Error('Apple Sign-In not loaded');
-        }
-
+    // Email Sign Up
+    async signUpWithEmail(userData) {
         try {
-            const data = await window.AppleID.auth.signIn();
+            const result = await apiPost('/auth/signup', {
+                name: userData.name,
+                email: userData.email,
+                password: userData.password
+            });
 
-            const result = await apiPost('/auth/apple', {
-                identityToken: data.authorization.id_token,
-                userData: {
-                    name: data.user?.name ? `${data.user.name.firstName} ${data.user.name.lastName}` : null,
-                    email: data.user?.email
-                }
+            // Don't automatically sign in - wait for email verification
+            return result;
+        } catch (error) {
+            console.error('Email sign up failed:', error);
+            throw new Error(error.message || 'Email sign up failed');
+        }
+    }
+
+    // Email Sign In
+    async signInWithEmail(credentials) {
+        try {
+            const result = await apiPost('/auth/signin', {
+                email: credentials.email,
+                password: credentials.password
             });
 
             if (result.success) {
+                // Check if email is verified
+                if (!result.user.emailVerified) {
+                    throw new Error('Please verify your email address before signing in. Check your inbox for the verification link.');
+                }
+
                 this.setAuthData(result.token, result.user);
                 return result.user;
+            } else {
+                throw new Error(result.message || 'Invalid email or password');
             }
         } catch (error) {
-            console.error('Apple authentication failed:', error);
-            throw new Error('Apple sign-in failed');
+            console.error('Email sign in failed:', error);
+            throw new Error(error.message || 'Email sign in failed');
+        }
+    }
+
+    // Resend verification email
+    async resendVerificationEmail(email) {
+        try {
+            const result = await apiPost('/auth/resend-verification', {
+                email: email
+            });
+            return result;
+        } catch (error) {
+            console.error('Failed to resend verification email:', error);
+            throw new Error('Failed to resend verification email');
+        }
+    }
+
+    // Verify email with token
+    async verifyEmail(token) {
+        try {
+            const result = await apiPost('/auth/verify-email', {
+                token: token
+            });
+
+            if (result.success) {
+                // If user was already signed in, update their data
+                if (this.user && !this.user.emailVerified) {
+                    this.user.emailVerified = true;
+                    localStorage.setItem('sparkvibe_user', JSON.stringify(this.user));
+                }
+                return result;
+            }
+            
+            return result;
+        } catch (error) {
+            console.error('Email verification failed:', error);
+            throw new Error('Email verification failed');
+        }
+    }
+
+    // Password reset request
+    async requestPasswordReset(email) {
+        try {
+            const result = await apiPost('/auth/reset-password', {
+                email: email
+            });
+            return result;
+        } catch (error) {
+            console.error('Password reset request failed:', error);
+            throw new Error('Failed to send password reset email');
+        }
+    }
+
+    // Reset password with token
+    async resetPassword(token, newPassword) {
+        try {
+            const result = await apiPost('/auth/reset-password/confirm', {
+                token: token,
+                password: newPassword
+            });
+            return result;
+        } catch (error) {
+            console.error('Password reset failed:', error);
+            throw new Error('Password reset failed');
         }
     }
 
@@ -102,7 +180,14 @@ class AuthService {
 
     // Check if user is authenticated
     isAuthenticated() {
-        return !!this.token;
+        return !!this.token && this.user && (this.user.emailVerified || this.user.isGuest || this.user.provider === 'google');
+    }
+
+    // Check if email is verified (for email users)
+    isEmailVerified() {
+        if (!this.user) return false;
+        if (this.user.isGuest || this.user.provider === 'google') return true;
+        return this.user.emailVerified || false;
     }
 
     // Get current user
@@ -113,6 +198,39 @@ class AuthService {
     // Get auth token for API requests
     getAuthToken() {
         return this.token;
+    }
+
+    // Update user profile
+    async updateProfile(userData) {
+        try {
+            const result = await apiPost('/auth/update-profile', userData);
+            
+            if (result.success) {
+                this.user = { ...this.user, ...result.user };
+                localStorage.setItem('sparkvibe_user', JSON.stringify(this.user));
+                return result.user;
+            }
+            
+            throw new Error(result.message || 'Profile update failed');
+        } catch (error) {
+            console.error('Profile update failed:', error);
+            throw new Error(error.message || 'Profile update failed');
+        }
+    }
+
+    // Change password (for email users)
+    async changePassword(currentPassword, newPassword) {
+        try {
+            const result = await apiPost('/auth/change-password', {
+                currentPassword: currentPassword,
+                newPassword: newPassword
+            });
+            
+            return result;
+        } catch (error) {
+            console.error('Password change failed:', error);
+            throw new Error(error.message || 'Password change failed');
+        }
     }
 
     // Subscribe to push notifications
