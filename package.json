@@ -8,6 +8,6 @@
     "build": "npm run install-all && npm run build-frontend"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": "18.x"
   }
 }

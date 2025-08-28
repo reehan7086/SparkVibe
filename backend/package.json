@@ -4,7 +4,7 @@
   "description": "SparkVibe Backend with AI Integration",
   "main": "server.js",
   "engines": {
-    "node": ">=18.0.0"
+    "node": "18.x"
   },
   "scripts": {
     "start": "node server.js",
@@ -24,15 +24,15 @@
     "bcryptjs": "^2.4.3",
     "cloudinary": "^1.41.0",
     "dotenv": "^16.3.1",
-
     "google-auth-library": "^9.15.1",
     "joi": "^18.0.1",
     "mongo-sanitize": "^1.1.0",
-    "mongoose": "^8.0.3",
+    "mongoose": "^8.0.0",
     "nodemailer": "^7.0.5",
     "openai": "^4.20.1",
     "redis": "^4.6.10",
-    "web-push": "^3.6.6"
+    "web-push": "^3.6.6",
+    "whatwg-url": "^14.0.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.2"
