@@ -7,31 +7,33 @@ class AuthService {
     }
 
     // Initialize Google Sign-In
-    async initializeGoogle() {
-        return new Promise((resolve) => {
-            if (window.google) {
-                window.google.accounts.id.initialize({
-client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
-                    callback: this.handleGoogleResponse.bind(this),
-                    auto_select: false,
-                    cancel_on_tap_outside: false
-                });
-                resolve();
-            } else {
-                // Load Google Identity Services script
-                const script = document.createElement('script');
-                script.src = 'https://accounts.google.com/gsi/client';
-                script.onload = () => {
-                    window.google.accounts.id.initialize({
-                        client_id: process.env.VITE_GOOGLE_CLIENT_ID || import.meta.env.VITE_GOOGLE_CLIENT_ID,
-                        callback: this.handleGoogleResponse.bind(this)
-                    });
-                    resolve();
-                };
-                document.head.appendChild(script);
-            }
-        });
-    }
+async initializeGoogle() {
+    return new Promise((resolve, reject) => {
+        // Check if already loaded
+        if (window.google && window.google.accounts) {
+            resolve();
+            return;
+        }
+
+        // Load Google Identity Services script
+        const script = document.createElement('script');
+        script.src = 'https://accounts.google.com/gsi/client';
+        script.async = true;
+        script.defer = true;
+        
+        script.onload = () => {
+            console.log('Google Identity Services loaded');
+            resolve();
+        };
+        
+        script.onerror = () => {
+            console.error('Failed to load Google Identity Services');
+            reject(new Error('Failed to load Google Identity Services'));
+        };
+        
+        document.head.appendChild(script);
+    });
+}
 
 async handleGoogleResponse(response) {
     try {
@@ -53,22 +55,62 @@ async handleGoogleResponse(response) {
 }
 
     // Google Sign-In
-// In AuthService.js
 async signInWithGoogle() {
-    return new Promise((resolve, reject) => {
-        this.initializeGoogle().then(() => {
-            // Store the resolve callback
-            this.onAuthSuccess = resolve;
-            
+    try {
+        await this.initializeGoogle();
+        
+        return new Promise((resolve, reject) => {
+            // Set up callback for successful authentication
+            window.google.accounts.id.initialize({
+                client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
+                callback: async (response) => {
+                    try {
+                        const result = await this.processGoogleToken(response.credential);
+                        resolve(result);
+                    } catch (error) {
+                        reject(error);
+                    }
+                },
+                auto_select: false,
+                cancel_on_tap_outside: false
+            });
+
+            // Show the popup
             window.google.accounts.id.prompt((notification) => {
-                if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
-                    reject(new Error('Google sign-in was cancelled or failed'));
+                console.log('Google prompt notification:', notification);
+                
+                if (notification.isNotDisplayed()) {
+                    console.error('Google popup was not displayed - popup blocked?');
+                    reject(new Error('Google sign-in popup was blocked. Please allow popups for this site.'));
+                } else if (notification.isSkippedMoment()) {
+                    console.error('Google sign-in was skipped');
+                    reject(new Error('Google sign-in was cancelled.'));
                 }
             });
-        }).catch(reject);
-    });
+        });
+    } catch (error) {
+        console.error('Failed to initialize Google Sign-In:', error);
+        throw new Error('Failed to initialize Google Sign-In');
+    }
 }
+// New method to process the Google token
+async processGoogleToken(credential) {
+    try {
+        const result = await apiPost('/auth/google', {
+            token: credential
+        });
 
+        if (result.success) {
+            this.setAuthData(result.token, result.user);
+            return result.user;
+        } else {
+            throw new Error(result.message || 'Google authentication failed');
+        }
+    } catch (error) {
+        console.error('Google token processing failed:', error);
+        throw error;
+    }
+}
     // Email Sign Up
     async signUpWithEmail(userData) {
         try {
