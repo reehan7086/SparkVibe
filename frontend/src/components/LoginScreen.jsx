@@ -29,11 +29,25 @@ const handleGoogleSignIn = async () => {
     setError(null);
     
     try {
+        console.log('Starting Google Sign-In...');
+        console.log('Google Client ID:', import.meta.env.VITE_GOOGLE_CLIENT_ID);
+        
         const user = await AuthService.signInWithGoogle();
+        console.log('Google Sign-In successful:', user);
         onAuthSuccess(user);
     } catch (error) {
-        setError('Google sign-in failed. Please try again.');
         console.error('Google sign-in error:', error);
+        
+        // More specific error messages
+        if (error.message.includes('popup was blocked')) {
+            setError('Please allow popups and try again.');
+        } else if (error.message.includes('cancelled')) {
+            setError('Sign-in was cancelled. Please try again.');
+        } else if (error.message.includes('Client ID')) {
+            setError('Google Sign-In configuration error. Please contact support.');
+        } else {
+            setError('Google sign-in failed. Please try again or use email sign-in.');
+        }
     } finally {
         setIsLoading(false);
     }
