@@ -33,28 +33,41 @@ client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
         });
     }
 
-    // Handle Google Sign-In response
-    async handleGoogleResponse(response) {
-        try {
-            const result = await apiPost('/auth/google', {
-                token: response.credential
-            });
+async handleGoogleResponse(response) {
+    try {
+        const result = await apiPost('/auth/google', {
+            token: response.credential
+        });
 
-            if (result.success) {
-                this.setAuthData(result.token, result.user);
-                window.location.reload(); // Refresh to update app state
+        if (result.success) {
+            this.setAuthData(result.token, result.user);
+            // Don't reload - let the app handle the state change
+            if (this.onAuthSuccess) {
+                this.onAuthSuccess(result.user);
             }
-        } catch (error) {
-            console.error('Google authentication failed:', error);
-            throw new Error('Google sign-in failed');
         }
+    } catch (error) {
+        console.error('Google authentication failed:', error);
+        throw new Error('Google sign-in failed');
     }
+}
 
     // Google Sign-In
-    async signInWithGoogle() {
-        await this.initializeGoogle();
-        window.google.accounts.id.prompt();
-    }
+// In AuthService.js
+async signInWithGoogle() {
+    return new Promise((resolve, reject) => {
+        this.initializeGoogle().then(() => {
+            // Store the resolve callback
+            this.onAuthSuccess = resolve;
+            
+            window.google.accounts.id.prompt((notification) => {
+                if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+                    reject(new Error('Google sign-in was cancelled or failed'));
+                }
+            });
+        }).catch(reject);
+    });
+}
 
     // Email Sign Up
     async signUpWithEmail(userData) {

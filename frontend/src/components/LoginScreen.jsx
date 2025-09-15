@@ -24,19 +24,20 @@ const LoginScreen = ({ onAuthSuccess }) => {
     AuthService.initializeGoogle().catch(console.error);
   }, []);
 
-  const handleGoogleSignIn = async () => {
+const handleGoogleSignIn = async () => {
     setIsLoading(true);
     setError(null);
     
     try {
-      await AuthService.signInWithGoogle();
-      onAuthSuccess(AuthService.getCurrentUser());
+        const user = await AuthService.signInWithGoogle();
+        onAuthSuccess(user);
     } catch (error) {
-      setError('Google sign-in failed. Please try again.');
+        setError('Google sign-in failed. Please try again.');
+        console.error('Google sign-in error:', error);
     } finally {
-      setIsLoading(false);
+        setIsLoading(false);
     }
-  };
+};
 
   const handleEmailAuth = async (e) => {
     e.preventDefault();

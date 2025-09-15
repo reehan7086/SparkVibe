@@ -35,22 +35,22 @@ const App = () => {
     });
   };
 
-  useEffect(() => {
+useEffect(() => {
     const checkAuth = () => {
-      const isAuth = AuthService.isAuthenticated();
-      setIsAuthenticated(isAuth);
-      if (isAuth) {
-        const currentUser = AuthService.getCurrentUser();
-        setUser(prev => ({
-          ...prev,
-          ...currentUser,
-          name: currentUser.name || prev.name
-        }));
-      }
+        const isAuth = AuthService.isAuthenticated();
+        setIsAuthenticated(isAuth);
+        if (isAuth) {
+            const currentUser = AuthService.getCurrentUser();
+            setUser(prev => ({
+                ...prev,
+                ...currentUser,
+                name: currentUser.name || prev.name
+            }));
+        }
     };
 
     checkAuth();
-  }, []);
+}, []);
 
   const handleMoodAnalyzed = (mood) => {
     setMoodData(mood);
