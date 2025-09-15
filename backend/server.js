@@ -27,8 +27,9 @@ const requiredEnvVars = [
   'CLOUDINARY_CLOUD_NAME',
   'CLOUDINARY_API_KEY',
   'CLOUDINARY_API_SECRET',
-  'VITE_GOOGLE_CLIENT_ID',
+  'GOOGLE_CLIENT_ID',
 ];
+
 
 const missingEnvVars = requiredEnvVars.filter(envVar => !process.env[envVar]);
 if (missingEnvVars.length > 0) {
@@ -44,7 +45,7 @@ if (process.env.JWT_SECRET.length < 32) {
 // Initialize external services
 const hf = new HfInference(process.env.HUGGING_FACE_API_KEY);
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const googleClient = new OAuth2Client(process.env.VITE_GOOGLE_CLIENT_ID);
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 let redisClient;
 
 // Configure Cloudinary
