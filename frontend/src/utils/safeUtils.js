@@ -3,22 +3,46 @@ const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8080';
 
 // Token management utilities
 export const getAuthToken = () => {
-  return localStorage.getItem('authToken');
+  return localStorage.getItem('sparkvibe_token') || localStorage.getItem('authToken');
 };
 
 export const setAuthToken = (token) => {
-  localStorage.setItem('authToken', token);
+  localStorage.setItem('sparkvibe_token', token);
+  localStorage.setItem('authToken', token); // Backward compatibility
 };
 
 export const removeAuthToken = () => {
+  localStorage.removeItem('sparkvibe_token');
   localStorage.removeItem('authToken');
+  localStorage.removeItem('sparkvibe_user');
 };
 
 // Check if user is authenticated
 export const isAuthenticated = () => {
   const token = getAuthToken();
-  return !!token;
+  const user = JSON.parse(localStorage.getItem('sparkvibe_user') || '{}');
+  return !!token && (user.emailVerified || user.isGuest || user.provider === 'google' || user.provider === 'demo');
 };
+
+// Generate a random user for demo purposes
+const generateDemoUser = (provider = 'google') => ({
+  id: `${provider}_user_${Date.now()}`,
+  name: provider === 'google' ? 'Google User' : 'Email User',
+  email: `demo@example.com`,
+  provider: provider,
+  emailVerified: true,
+  isGuest: false,
+  avatar: provider === 'google' ? '🚀' : '📧',
+  stats: {
+    totalPoints: Math.floor(Math.random() * 500) + 100,
+    streak: Math.floor(Math.random() * 10) + 1,
+    level: Math.floor(Math.random() * 3) + 1,
+    cardsGenerated: Math.floor(Math.random() * 20) + 1,
+    cardsShared: Math.floor(Math.random() * 10) + 1
+  },
+  createdAt: new Date().toISOString(),
+  lastLogin: new Date().toISOString()
+});
 
 // Safe API call functions with error handling and authentication
 export const apiGet = async (endpoint) => {
@@ -62,26 +86,48 @@ export const apiGet = async (endpoint) => {
     if (endpoint === '/leaderboard') {
       return [
         {
-          username: "Test User 1",
+          username: "SparkViber Pro",
           avatar: "🚀",
-          score: 1000,
+          score: 2340,
           rank: 1,
-          streak: 5,
-          cardsShared: 5,
-          carsGenerated: 10,
-          level: 2,
-          achievements: []
+          streak: 15,
+          cardsShared: 12,
+          cardsGenerated: 18,
+          level: 3,
+          achievements: ['Early Adopter', 'Streak Master']
         },
         {
-          username: "Test User 2",
+          username: "Vibe Explorer",
           avatar: "🌟",
-          score: 800,
+          score: 1890,
           rank: 2,
-          streak: 3,
-          cardsShared: 3,
-          carsGenerated: 8,
+          streak: 8,
+          cardsShared: 8,
+          cardsGenerated: 15,
+          level: 2,
+          achievements: ['Creative Mind']
+        },
+        {
+          username: "Mood Master",
+          avatar: "🎨",
+          score: 1456,
+          rank: 3,
+          streak: 6,
+          cardsShared: 6,
+          cardsGenerated: 12,
+          level: 2,
+          achievements: ['Consistent Creator']
+        },
+        {
+          username: "Daily Adventurer",
+          avatar: "⚡",
+          score: 987,
+          rank: 4,
+          streak: 4,
+          cardsShared: 4,
+          cardsGenerated: 8,
           level: 1,
-          achievements: []
+          achievements: ['Getting Started']
         }
       ];
     }
@@ -91,47 +137,73 @@ export const apiGet = async (endpoint) => {
         success: true,
         trending: [
           {
-            title: "Sunset Meditation",
-            description: "A calming meditation session",
-            completions: 124,
-            shares: 50,
-            viralScore: 0.8,
+            title: "Gratitude Morning Pages",
+            description: "Write three things you're grateful for to start your day with positivity",
+            completions: 347,
+            shares: 89,
+            viralPotential: 0.85,
             category: "Mindfulness",
             template: "cosmic",
+            averageRating: 4.7,
+            difficulty: "easy",
+            estimatedTime: "5 mins"
+          },
+          {
+            title: "Urban Photography Walk",
+            description: "Capture the hidden beauty in your neighborhood with fresh eyes",
+            completions: 256,
+            shares: 67,
+            viralPotential: 0.78,
+            category: "Adventure",
+            template: "nature",
             averageRating: 4.5,
+            difficulty: "medium",
+            estimatedTime: "15 mins"
+          },
+          {
+            title: "Random Act of Kindness",
+            description: "Brighten someone's day with an unexpected gesture of kindness",
+            completions: 198,
+            shares: 92,
+            viralPotential: 0.92,
+            category: "Social",
+            template: "retro",
+            averageRating: 4.9,
             difficulty: "easy",
             estimatedTime: "10 mins"
           },
           {
-            title: "Urban Exploration",
-            description: "Explore the city",
-            completions: 89,
-            shares: 30,
-            viralScore: 0.7,
-            category: "Adventure",
-            template: "nature",
-            averageRating: 4.0,
-            difficulty: "medium",
-            estimatedTime: "20 mins"
+            title: "Mindful Coffee Moment",
+            description: "Transform your coffee break into a meditation on presence and appreciation",
+            completions: 423,
+            shares: 78,
+            viralPotential: 0.73,
+            category: "Morning",
+            template: "minimal",
+            averageRating: 4.4,
+            difficulty: "easy",
+            estimatedTime: "5 mins"
           }
         ],
         viralAdventure: {
-          title: "Sunset Meditation",
-          description: "A calming meditation session",
-          completions: 124,
-          shares: 50,
-          viralScore: 0.8,
-          category: "Mindfulness",
-          template: "cosmic",
-          averageRating: 4.5,
+          title: "Random Act of Kindness",
+          description: "Brighten someone's day with an unexpected gesture of kindness",
+          completions: 198,
+          shares: 92,
+          viralPotential: 0.92,
+          category: "Social",
+          template: "retro",
+          averageRating: 4.9,
           difficulty: "easy",
           estimatedTime: "10 mins"
         },
         metadata: {
-          totalAdventures: 2,
+          totalAdventures: 4,
           category: null,
           mood: null,
-          generatedAt: new Date().toISOString()
+          generatedAt: new Date().toISOString(),
+          totalUsers: 1247,
+          totalCompletions: 1224
         }
       };
     }
@@ -152,45 +224,156 @@ export const apiPost = async (endpoint, data) => {
       headers['Authorization'] = `Bearer ${token}`;
     }
 
+    // Mock authentication endpoints
+    if (endpoint === '/auth/google' || endpoint === '/auth/google-oauth') {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      const user = generateDemoUser('google');
+      const mockToken = `google_token_${Date.now()}`;
+      
+      return {
+        success: true,
+        message: 'Google authentication successful',
+        token: mockToken,
+        user: user
+      };
+    }
+
+    if (endpoint === '/auth/signup') {
+      await new Promise(resolve => setTimeout(resolve, 800));
+      
+      // Simulate validation
+      if (!data.email || !data.password || !data.name) {
+        throw new Error('All fields are required');
+      }
+      
+      if (data.password.length < 6) {
+        throw new Error('Password must be at least 6 characters long');
+      }
+      
+      return {
+        success: true,
+        message: 'Account created successfully. Please check your email for verification.',
+        requiresVerification: true
+      };
+    }
+
+    if (endpoint === '/auth/signin') {
+      await new Promise(resolve => setTimeout(resolve, 800));
+      
+      // Simulate validation
+      if (!data.email || !data.password) {
+        throw new Error('Email and password are required');
+      }
+      
+      // Simulate login failure for demo
+      if (data.email === 'fail@test.com') {
+        throw new Error('Invalid email or password');
+      }
+      
+      const user = generateDemoUser('email');
+      user.email = data.email;
+      const mockToken = `email_token_${Date.now()}`;
+      
+      return {
+        success: true,
+        message: 'Sign in successful',
+        token: mockToken,
+        user: user
+      };
+    }
+
+    if (endpoint === '/auth/verify-email') {
+      await new Promise(resolve => setTimeout(resolve, 500));
+      return {
+        success: true,
+        message: 'Email verified successfully'
+      };
+    }
+
+    if (endpoint === '/auth/resend-verification') {
+      await new Promise(resolve => setTimeout(resolve, 500));
+      return {
+        success: true,
+        message: 'Verification email sent'
+      };
+    }
+
+    if (endpoint === '/auth/reset-password') {
+      await new Promise(resolve => setTimeout(resolve, 500));
+      return {
+        success: true,
+        message: 'Password reset email sent'
+      };
+    }
+
     // For demo purposes, return mock data for certain endpoints
     if (endpoint === '/analyze-mood') {
       await new Promise(resolve => setTimeout(resolve, 1500));
       
-      // Simple mood analysis based on text input
+      // Enhanced mood analysis based on text input
       const text = data.textInput.toLowerCase();
       let mood, confidence, emotions, recommendations, suggestedTemplate, energyLevel, socialMood;
 
-      if (text.includes('excited') || text.includes('happy') || text.includes('great')) {
+      if (text.includes('excited') || text.includes('happy') || text.includes('great') || text.includes('amazing') || text.includes('wonderful')) {
         mood = 'happy';
-        confidence = 0.85;
-        emotions = ['excited', 'optimistic', 'energetic'];
-        recommendations = ['Share your positive energy with others', 'Try something adventurous today'];
+        confidence = 0.92;
+        emotions = ['excited', 'joyful', 'optimistic', 'energetic'];
+        recommendations = [
+          'Channel your positive energy into a creative project',
+          'Share your enthusiasm with someone special',
+          'Try a new adventure that matches your high energy'
+        ];
         suggestedTemplate = 'cosmic';
         energyLevel = 'high';
         socialMood = 'outgoing';
-      } else if (text.includes('nervous') || text.includes('anxious') || text.includes('worried')) {
+      } else if (text.includes('nervous') || text.includes('anxious') || text.includes('worried') || text.includes('stressed')) {
         mood = 'anxious';
-        confidence = 0.75;
-        emotions = ['nervous', 'concerned', 'thoughtful'];
-        recommendations = ['Take deep breaths', 'Break tasks into smaller steps', 'Practice mindfulness'];
-        suggestedTemplate = 'calm';
+        confidence = 0.88;
+        emotions = ['nervous', 'concerned', 'thoughtful', 'cautious'];
+        recommendations = [
+          'Practice deep breathing exercises',
+          'Break overwhelming tasks into smaller steps',
+          'Try a calming mindfulness exercise'
+        ];
+        suggestedTemplate = 'minimal';
         energyLevel = 'medium';
         socialMood = 'reserved';
-      } else if (text.includes('tired') || text.includes('exhausted') || text.includes('drained')) {
+      } else if (text.includes('tired') || text.includes('exhausted') || text.includes('drained') || text.includes('sleepy')) {
         mood = 'calm';
-        confidence = 0.8;
-        emotions = ['tired', 'peaceful', 'relaxed'];
-        recommendations = ['Rest and recharge', 'Gentle movement or stretching', 'Hydrate well'];
-        suggestedTemplate = 'serene';
+        confidence = 0.85;
+        emotions = ['tired', 'peaceful', 'relaxed', 'mellow'];
+        recommendations = [
+          'Focus on gentle, restorative activities',
+          'Practice gratitude for small moments',
+          'Consider a short nature walk for gentle energy'
+        ];
+        suggestedTemplate = 'nature';
         energyLevel = 'low';
         socialMood = 'quiet';
+      } else if (text.includes('sad') || text.includes('down') || text.includes('lonely') || text.includes('blue')) {
+        mood = 'reflective';
+        confidence = 0.82;
+        emotions = ['contemplative', 'introspective', 'sensitive', 'thoughtful'];
+        recommendations = [
+          'Connect with someone who cares about you',
+          'Express your feelings through journaling or art',
+          'Practice self-compassion and gentle self-care'
+        ];
+        suggestedTemplate = 'retro';
+        energyLevel = 'low';
+        socialMood = 'seeking connection';
       } else {
-        // Default analysis
+        // Default analysis for unclear input
         mood = 'curious';
-        confidence = 0.6;
-        emotions = ['curious', 'hopeful', 'open'];
-        recommendations = ['Try something new today', 'Explore your interests', 'Stay open to possibilities'];
-        suggestedTemplate = 'explorer';
+        confidence = 0.65;
+        emotions = ['curious', 'open', 'exploratory', 'hopeful'];
+        recommendations = [
+          'Try something new and unexpected today',
+          'Explore a topic that sparks your interest',
+          'Stay open to surprising opportunities'
+        ];
+        suggestedTemplate = 'cosmic';
         energyLevel = 'medium';
         socialMood = 'balanced';
       }
@@ -203,68 +386,134 @@ export const apiPost = async (endpoint, data) => {
         suggestedTemplate,
         energyLevel,
         socialMood,
-        analyzedAt: new Date().toISOString()
+        insights: `Your mood analysis suggests you're feeling ${mood} with ${Math.round(confidence * 100)}% confidence.`,
+        analyzedAt: new Date().toISOString(),
+        timeOfDay: data.timeOfDay || 'unknown'
       };
     }
 
     if (endpoint === '/generate-capsule-simple') {
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      return {
-        id: 'demo-capsule-001',
-        adventure: {
-          title: 'Mindful Observation Challenge',
-          prompt: 'Take a moment to observe your surroundings. Find three things you haven\'t noticed before. This simple practice can boost creativity and mindfulness.',
+      await new Promise(resolve => setTimeout(resolve, 1200));
+      
+      // Generate different adventures based on mood
+      const mood = data.moodAnalysis?.mood || 'curious';
+      let adventure;
+
+      if (mood === 'happy') {
+        adventure = {
+          title: 'Spread Joy Challenge',
+          prompt: 'Your positive energy is contagious! Send a heartfelt message to three people telling them why they matter to you. Watch how your joy multiplies when shared.',
+          estimatedTime: '10 mins',
+          difficulty: 'Easy',
+          category: 'Social'
+        };
+      } else if (mood === 'anxious') {
+        adventure = {
+          title: 'Grounding Ritual',
+          prompt: 'Find a quiet space and practice the 5-4-3-2-1 technique: Notice 5 things you can see, 4 things you can touch, 3 things you can hear, 2 things you can smell, and 1 thing you can taste.',
           estimatedTime: '5 mins',
-          difficulty: 'Easy', 
+          difficulty: 'Easy',
           category: 'Mindfulness'
-        },
-        brainBite: 'The average person overlooks 90% of their visual environment. Training yourself to notice details can enhance memory and observational skills.',
-        habitNudge: 'Try the "3 New Things" game daily - it only takes a minute and builds powerful observation habits.'
+        };
+      } else if (mood === 'calm') {
+        adventure = {
+          title: 'Gentle Gratitude Walk',
+          prompt: 'Take a slow, mindful walk and find three things in nature that bring you peace. Take a moment to appreciate their quiet beauty.',
+          estimatedTime: '15 mins',
+          difficulty: 'Easy',
+          category: 'Nature'
+        };
+      } else {
+        adventure = {
+          title: 'Creative Discovery Session',
+          prompt: 'Set a timer for 10 minutes and create something with whatever materials you have nearby. Don\'t judge the result - just enjoy the process of making.',
+          estimatedTime: '10 mins',
+          difficulty: 'Easy',
+          category: 'Creativity'
+        };
+      }
+
+      return {
+        id: `capsule_${Date.now()}`,
+        adventure,
+        brainBite: 'Neuroscience shows that engaging in novel activities creates new neural pathways, enhancing cognitive flexibility and creativity by up to 23%.',
+        habitNudge: 'Research suggests that micro-adventures lasting just 5-10 minutes can significantly boost mood and productivity throughout the day.',
+        personalizedInsights: [
+          `This adventure was tailored to your ${mood} mood`,
+          `Optimal timing based on ${data.timeOfDay || 'current'} energy patterns`,
+          'Designed to build on your current emotional state'
+        ]
       };
     }
 
     if (endpoint === '/generate-vibe-card') {
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await new Promise(resolve => setTimeout(resolve, 2500));
       
-      // Demo vibe card response
+      // Enhanced vibe card generation
+      const templates = ['cosmic', 'nature', 'retro', 'minimal'];
+      const selectedTemplate = data.capsuleData?.moodData?.suggestedTemplate || templates[Math.floor(Math.random() * templates.length)];
+      
       return {
         success: true,
         card: {
           content: {
             adventure: {
-              title: data.capsuleData?.adventure?.title || 'Your Daily Vibe Adventure',
-              outcome: 'You embraced growth and discovered new possibilities!'
+              title: data.capsuleData?.adventure?.title || 'Your Mindful Adventure',
+              outcome: 'You embraced growth and discovered new possibilities within yourself!',
+              category: data.capsuleData?.adventure?.category || 'Personal Growth'
             },
             achievement: {
-              points: 25,
-              streak: 1,
-              badge: 'Vibe Champion'
+              points: data.completionStats?.vibePointsEarned || 35,
+              streak: Math.floor(Math.random() * 15) + 1,
+              badge: 'Vibe Trailblazer',
+              level: data.user?.level || 1
+            },
+            mood: {
+              before: data.moodData?.mood || 'curious',
+              after: 'inspired',
+              improvement: '+15%'
             }
           },
           design: {
-            template: 'cosmic',
-            animations: ['slideIn', 'pulse']
+            template: selectedTemplate,
+            animations: ['slideIn', 'pulse', 'sparkle'],
+            colors: {
+              primary: selectedTemplate === 'cosmic' ? '#7c3aed' : '#10b981',
+              secondary: selectedTemplate === 'cosmic' ? '#ec4899' : '#3b82f6'
+            }
           },
           user: {
-            name: 'Demo User',
-            totalPoints: 25,
-            level: 1
+            name: data.user?.name || 'Vibe Explorer',
+            totalPoints: (data.user?.totalPoints || 100) + (data.completionStats?.vibePointsEarned || 35),
+            level: data.user?.level || 1,
+            avatar: data.user?.avatar || '🚀'
           },
           sharing: {
-            captions: ['Just earned 25 points on my SparkVibe journey!'],
-            hashtags: ['#SparkVibe', '#DailyVibes'],
-            qrCode: 'https://sparkvibe.app'
+            captions: [
+              `Just earned ${data.completionStats?.vibePointsEarned || 35} points on my SparkVibe journey! 🌟`,
+              'Transforming daily moments into meaningful adventures with SparkVibe ✨',
+              'Level up your mindset, one vibe at a time! 🚀'
+            ],
+            hashtags: ['#SparkVibe', '#DailyVibes', '#MindfulMoments', '#PersonalGrowth'],
+            qrCode: 'https://sparkvibe.app/card/' + Date.now()
           },
-          viralScore: 0.7,
+          viralScore: Math.random() * 0.4 + 0.6, // 0.6 to 1.0
           metadata: {
             generatedAt: new Date().toISOString(),
             version: '2.1',
-            aiEnhanced: true
+            aiEnhanced: true,
+            renderTime: '2.3s',
+            uniqueElements: Math.floor(Math.random() * 5) + 8
           }
         },
-        cardId: 'demo-card-' + Date.now(),
+        cardId: 'enhanced_card_' + Date.now(),
         processingTime: '2.3s',
-        message: 'Enhanced Vibe card generated successfully!'
+        message: '🎨 AI-enhanced Vibe card generated successfully!',
+        analytics: {
+          expectedEngagement: Math.floor(Math.random() * 50) + 70,
+          viralPotential: 'High',
+          shareability: Math.floor(Math.random() * 30) + 70
+        }
       };
     }
     
@@ -288,7 +537,7 @@ export const apiPost = async (endpoint, data) => {
   } catch (error) {
     console.error('API POST request failed:', error);
     
-    // Return demo data for specific endpoints
+    // Return demo data for specific endpoints when network fails
     if (endpoint === '/analyze-mood') {
       return {
         mood: 'curious',
@@ -357,6 +606,14 @@ export const apiPost = async (endpoint, data) => {
         processingTime: '0.5s',
         message: 'Demo Vibe card generated!'
       };
+    }
+    
+    // For authentication endpoints that fail, throw specific errors
+    if (endpoint.startsWith('/auth/')) {
+      if (error.message.includes('fetch')) {
+        throw new Error('Unable to connect to authentication server. Please try again later.');
+      }
+      throw error;
     }
     
     throw error;

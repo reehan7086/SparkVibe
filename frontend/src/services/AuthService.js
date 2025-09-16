@@ -6,59 +6,94 @@ class AuthService {
         this.user = this.token ? JSON.parse(localStorage.getItem('sparkvibe_user') || '{}') : null;
     }
 
-    // Initialize Google Sign-In
-async initializeGoogle() {
-    return new Promise((resolve, reject) => {
-        // Check if already loaded
-        if (window.google && window.google.accounts) {
-            resolve();
-            return;
-        }
+    // Initialize Google Sign-In with both One Tap and OAuth2 fallback
+    async initializeGoogle() {
+        return new Promise((resolve, reject) => {
+            // Check if already loaded
+            if (window.google && window.google.accounts) {
+                resolve();
+                return;
+            }
 
-        // Load Google Identity Services script
-        const script = document.createElement('script');
-        script.src = 'https://accounts.google.com/gsi/client';
-        script.async = true;
-        script.defer = true;
-        
-        script.onload = () => {
-            console.log('Google Identity Services loaded');
-            resolve();
-        };
-        
-        script.onerror = () => {
-            console.error('Failed to load Google Identity Services');
-            reject(new Error('Failed to load Google Identity Services'));
-        };
-        
-        document.head.appendChild(script);
-    });
-}
-
-async handleGoogleResponse(response) {
-    try {
-        const result = await apiPost('/auth/google', {
-            token: response.credential
+            // Load Google Identity Services script
+            const script = document.createElement('script');
+            script.src = 'https://accounts.google.com/gsi/client';
+            script.async = true;
+            script.defer = true;
+            
+            script.onload = () => {
+                console.log('Google Identity Services loaded');
+                resolve();
+            };
+            
+            script.onerror = () => {
+                console.error('Failed to load Google Identity Services');
+                reject(new Error('Failed to load Google Identity Services'));
+            };
+            
+            document.head.appendChild(script);
         });
+    }
 
-        if (result.success) {
-            this.setAuthData(result.token, result.user);
-            // Don't reload - let the app handle the state change
-            if (this.onAuthSuccess) {
-                this.onAuthSuccess(result.user);
+    // Google Sign-In with fallback approach
+    async signInWithGoogle() {
+        try {
+            await this.initializeGoogle();
+            
+            // Try OAuth2 popup first (more reliable than One Tap)
+            return await this.signInWithGoogleOAuth();
+        } catch (error) {
+            console.error('Google OAuth failed, trying One Tap fallback:', error);
+            
+            // Fallback to One Tap if OAuth fails
+            try {
+                return await this.signInWithGoogleOneTap();
+            } catch (oneTapError) {
+                console.error('Both Google sign-in methods failed:', oneTapError);
+                throw new Error('Google sign-in failed. Please try refreshing the page or use email sign-in.');
             }
         }
-    } catch (error) {
-        console.error('Google authentication failed:', error);
-        throw new Error('Google sign-in failed');
     }
-}
 
-    // Google Sign-In
-async signInWithGoogle() {
-    try {
-        await this.initializeGoogle();
-        
+    // Google OAuth2 popup method (more reliable)
+    async signInWithGoogleOAuth() {
+        return new Promise((resolve, reject) => {
+            try {
+                // Initialize OAuth2
+                window.google.accounts.oauth2.initTokenClient({
+                    client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
+                    scope: 'openid email profile',
+                    callback: async (response) => {
+                        if (response.error) {
+                            reject(new Error(`OAuth error: ${response.error}`));
+                            return;
+                        }
+
+                        try {
+                            // Get user info using the access token
+                            const userInfoResponse = await fetch(`https://www.googleapis.com/oauth2/v2/userinfo?access_token=${response.access_token}`);
+                            const userInfo = await userInfoResponse.json();
+                            
+                            // Process the user info
+                            const result = await this.processGoogleUserInfo(userInfo, response.access_token);
+                            resolve(result);
+                        } catch (error) {
+                            reject(error);
+                        }
+                    },
+                    error_callback: (error) => {
+                        console.error('OAuth2 error:', error);
+                        reject(new Error('Google OAuth2 failed'));
+                    }
+                }).requestAccessToken();
+            } catch (error) {
+                reject(error);
+            }
+        });
+    }
+
+    // Google One Tap method (fallback)
+    async signInWithGoogleOneTap() {
         return new Promise((resolve, reject) => {
             // Set up callback for successful authentication
             window.google.accounts.id.initialize({
@@ -72,45 +107,117 @@ async signInWithGoogle() {
                     }
                 },
                 auto_select: false,
-                cancel_on_tap_outside: false
+                cancel_on_tap_outside: true
             });
 
-            // Show the popup
+            // Try One Tap first
             window.google.accounts.id.prompt((notification) => {
-                console.log('Google prompt notification:', notification);
+                console.log('Google One Tap notification:', notification);
                 
-                if (notification.isNotDisplayed()) {
-                    console.error('Google popup was not displayed - popup blocked?');
-                    reject(new Error('Google sign-in popup was blocked. Please allow popups for this site.'));
-                } else if (notification.isSkippedMoment()) {
-                    console.error('Google sign-in was skipped');
-                    reject(new Error('Google sign-in was cancelled.'));
+                if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+                    // One Tap failed, try renderButton approach
+                    this.renderGoogleSignInButton().then(resolve).catch(reject);
                 }
             });
         });
-    } catch (error) {
-        console.error('Failed to initialize Google Sign-In:', error);
-        throw new Error('Failed to initialize Google Sign-In');
     }
-}
-// New method to process the Google token
-async processGoogleToken(credential) {
-    try {
-        const result = await apiPost('/auth/google', {
-            token: credential
-        });
 
-        if (result.success) {
-            this.setAuthData(result.token, result.user);
-            return result.user;
-        } else {
-            throw new Error(result.message || 'Google authentication failed');
-        }
-    } catch (error) {
-        console.error('Google token processing failed:', error);
-        throw error;
+    // Render Google Sign-In button as last resort
+    async renderGoogleSignInButton() {
+        return new Promise((resolve, reject) => {
+            // Create a temporary container for the button
+            const buttonContainer = document.createElement('div');
+            buttonContainer.id = 'google-signin-button-temp';
+            buttonContainer.style.position = 'fixed';
+            buttonContainer.style.top = '50%';
+            buttonContainer.style.left = '50%';
+            buttonContainer.style.transform = 'translate(-50%, -50%)';
+            buttonContainer.style.zIndex = '10000';
+            buttonContainer.style.background = 'white';
+            buttonContainer.style.padding = '20px';
+            buttonContainer.style.borderRadius = '8px';
+            buttonContainer.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
+            
+            document.body.appendChild(buttonContainer);
+
+            try {
+                window.google.accounts.id.renderButton(buttonContainer, {
+                    theme: 'outline',
+                    size: 'large',
+                    type: 'standard',
+                    callback: async (response) => {
+                        try {
+                            document.body.removeChild(buttonContainer);
+                            const result = await this.processGoogleToken(response.credential);
+                            resolve(result);
+                        } catch (error) {
+                            document.body.removeChild(buttonContainer);
+                            reject(error);
+                        }
+                    }
+                });
+
+                // Add a cancel button
+                const cancelButton = document.createElement('button');
+                cancelButton.textContent = 'Cancel';
+                cancelButton.style.marginTop = '10px';
+                cancelButton.style.padding = '8px 16px';
+                cancelButton.style.background = '#f0f0f0';
+                cancelButton.style.border = '1px solid #ccc';
+                cancelButton.style.borderRadius = '4px';
+                cancelButton.style.cursor = 'pointer';
+                cancelButton.onclick = () => {
+                    document.body.removeChild(buttonContainer);
+                    reject(new Error('Sign-in cancelled'));
+                };
+                buttonContainer.appendChild(cancelButton);
+
+            } catch (error) {
+                document.body.removeChild(buttonContainer);
+                reject(error);
+            }
+        });
     }
-}
+
+    // Process Google user info from OAuth2
+    async processGoogleUserInfo(userInfo, accessToken) {
+        try {
+            const result = await apiPost('/auth/google-oauth', {
+                userInfo: userInfo,
+                accessToken: accessToken
+            });
+
+            if (result.success) {
+                this.setAuthData(result.token, result.user);
+                return result.user;
+            } else {
+                throw new Error(result.message || 'Google authentication failed');
+            }
+        } catch (error) {
+            console.error('Google user info processing failed:', error);
+            throw error;
+        }
+    }
+
+    // Process Google JWT token from One Tap
+    async processGoogleToken(credential) {
+        try {
+            const result = await apiPost('/auth/google', {
+                token: credential
+            });
+
+            if (result.success) {
+                this.setAuthData(result.token, result.user);
+                return result.user;
+            } else {
+                throw new Error(result.message || 'Google authentication failed');
+            }
+        } catch (error) {
+            console.error('Google token processing failed:', error);
+            throw error;
+        }
+    }
+
     // Email Sign Up
     async signUpWithEmail(userData) {
         try {
