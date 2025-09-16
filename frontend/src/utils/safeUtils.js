@@ -1,5 +1,10 @@
 // src/utils/safeUtils.js
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8080';
+// FIXED: Use VITE_API_URL instead of VITE_API_BASE to match vite.config.js
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+
+// For debugging - remove this in production
+console.log('API_BASE configured as:', API_BASE);
+console.log('Environment:', import.meta.env.MODE);
 
 // Token management utilities
 export const getAuthToken = () => {
@@ -63,6 +68,8 @@ export const apiGet = async (endpoint) => {
       return { message: 'Health check OK - Demo mode', status: 'demo' };
     }
     
+    console.log(`Making API GET request to: ${API_BASE}${endpoint}`);
+    
     const response = await fetch(`${API_BASE}${endpoint}`, {
       method: 'GET',
       headers,
@@ -84,6 +91,7 @@ export const apiGet = async (endpoint) => {
     
     // Return demo data for specific endpoints when in demo mode
     if (endpoint === '/leaderboard') {
+      console.log('Returning fallback leaderboard data');
       return [
         {
           username: "SparkViber Pro",
@@ -133,6 +141,7 @@ export const apiGet = async (endpoint) => {
     }
     
     if (endpoint === '/trending-adventures') {
+      console.log('Returning fallback trending adventures data');
       return {
         success: true,
         trending: [
@@ -516,6 +525,8 @@ export const apiPost = async (endpoint, data) => {
         }
       };
     }
+    
+    console.log(`Making API POST request to: ${API_BASE}${endpoint}`);
     
     const response = await fetch(`${API_BASE}${endpoint}`, {
       method: 'POST',
