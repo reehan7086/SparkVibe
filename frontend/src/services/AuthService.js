@@ -55,43 +55,46 @@ class AuthService {
         }
     }
 
-    // Google OAuth2 popup method (more reliable)
-    async signInWithGoogleOAuth() {
-        return new Promise((resolve, reject) => {
-            try {
-                // Initialize OAuth2
-                window.google.accounts.oauth2.initTokenClient({
-                    client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
-                    scope: 'openid email profile',
-                    callback: async (response) => {
-                        if (response.error) {
-                            reject(new Error(`OAuth error: ${response.error}`));
-                            return;
-                        }
-
-                        try {
-                            // Get user info using the access token
-                            const userInfoResponse = await fetch(`https://www.googleapis.com/oauth2/v2/userinfo?access_token=${response.access_token}`);
-                            const userInfo = await userInfoResponse.json();
-                            
-                            // Process the user info
-                            const result = await this.processGoogleUserInfo(userInfo, response.access_token);
-                            resolve(result);
-                        } catch (error) {
-                            reject(error);
-                        }
-                    },
-                    error_callback: (error) => {
-                        console.error('OAuth2 error:', error);
-                        reject(new Error('Google OAuth2 failed'));
+async signInWithGoogleOAuth() {
+    return new Promise((resolve, reject) => {
+        try {
+            window.google.accounts.oauth2.initTokenClient({
+                client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
+                scope: 'openid email profile',
+                callback: async (response) => {
+                    if (response.error) {
+                        console.error('OAuth2 callback error:', response.error, response.error_description);
+                        reject(new Error(`OAuth error: ${response.error} - ${response.error_description}`));
+                        return;
                     }
-                }).requestAccessToken();
-            } catch (error) {
-                reject(error);
-            }
-        });
-    }
 
+                    try {
+                        console.log('Fetching Google user info with access token:', response.access_token);
+                        const userInfoResponse = await fetch(`https://www.googleapis.com/oauth2/v2/userinfo?access_token=${response.access_token}`);
+                        if (!userInfoResponse.ok) {
+                            throw new Error(`Failed to fetch user info: ${userInfoResponse.status}`);
+                        }
+                        const userInfo = await userInfoResponse.json();
+                        console.log('Google user info:', userInfo);
+
+                        const result = await this.processGoogleUserInfo(userInfo, response.access_token);
+                        resolve(result);
+                    } catch (error) {
+                        console.error('User info processing error:', error);
+                        reject(error);
+                    }
+                },
+                error_callback: (error) => {
+                    console.error('OAuth2 initialization error:', error);
+                    reject(new Error(`Google OAuth2 initialization failed: ${error.message}`));
+                }
+            }).requestAccessToken();
+        } catch (error) {
+            console.error('OAuth2 setup error:', error);
+            reject(error);
+        }
+    });
+}
     // Google One Tap method (fallback)
     async signInWithGoogleOneTap() {
         return new Promise((resolve, reject) => {
@@ -182,7 +185,7 @@ class AuthService {
     // Process Google user info from OAuth2
     async processGoogleUserInfo(userInfo, accessToken) {
         try {
-            const result = await apiPost('/auth/google-oauth', {
+            const result = await apiPost('/auth/google', {
                 userInfo: userInfo,
                 accessToken: accessToken
             });

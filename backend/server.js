@@ -151,11 +151,71 @@ const Adventure = mongoose.model('Adventure', AdventureSchema);
 
 const startServer = async () => {
   try {
-    // Connect to MongoDB
-    await mongoose.connect(process.env.MONGODB_URI, {
-      serverSelectionTimeoutMS: 10000
-    });
-    console.log('✅ Connected to MongoDB');
+    // Enhanced MongoDB connection with replica set support
+    console.log('Connecting to MongoDB...');
+    console.log('MongoDB URI (sanitized):', process.env.MONGODB_URI?.replace(/:([^:@]*)@/, ':***@'));
+    
+    const mongooseOptions = {
+      serverSelectionTimeoutMS: 30000, // 30 seconds
+      connectTimeoutMS: 30000,
+      maxPoolSize: 10,
+      minPoolSize: 1,
+      maxIdleTimeMS: 30000,
+      retryWrites: true,
+      writeConcern: {
+        w: 'majority'
+      }
+    };
+
+    // Add replica set specific options if detected
+    if (process.env.MONGODB_URI?.includes('replicaSet') || process.env.MONGODB_URI?.includes('mongo.ondigitalocean.com')) {
+      mongooseOptions.readPreference = 'primaryPreferred';
+      mongooseOptions.directConnection = false;
+    }
+
+    let connected = false;
+    let connectionAttempts = 0;
+    const maxAttempts = 3;
+
+    while (!connected && connectionAttempts < maxAttempts) {
+      try {
+        connectionAttempts++;
+        console.log(`MongoDB connection attempt ${connectionAttempts}/${maxAttempts}`);
+        
+        await mongoose.connect(process.env.MONGODB_URI, mongooseOptions);
+        
+        // Test the connection
+        await mongoose.connection.db.admin().ping();
+        console.log('✅ Connected to MongoDB successfully');
+        console.log('  - Host:', mongoose.connection.host);
+        console.log('  - Database:', mongoose.connection.name);
+        console.log('  - Ready State:', mongoose.connection.readyState);
+        
+        connected = true;
+        
+      } catch (connectError) {
+        console.error(`❌ MongoDB connection attempt ${connectionAttempts} failed:`, connectError.message);
+        
+        if (connectError.message.includes('ReplicaSetNoPrimary')) {
+          console.log('🔄 Replica set has no primary, retrying in 5 seconds...');
+          await new Promise(resolve => setTimeout(resolve, 5000));
+        } else if (connectError.message.includes('ENOTFOUND') || connectError.message.includes('private-')) {
+          console.error('❌ DNS/Network issue detected. Check connection string uses PUBLIC hostname');
+          console.log('   Expected format: mongodb://user:pass@PUBLIC-HOST:27017/db?authSource=admin&replicaSet=SET_NAME');
+          break;
+        } else {
+          console.log(`⏳ Waiting 3 seconds before retry...`);
+          await new Promise(resolve => setTimeout(resolve, 3000));
+        }
+        
+        if (connectionAttempts === maxAttempts) {
+          console.error('❌ Failed to connect to MongoDB after all attempts');
+          console.log('🚀 Starting server anyway with fallback data...');
+          // Don't exit - continue with fallback data
+          break;
+        }
+      }
+    }
 
     // Connect to Redis if available
     if (redisClient) {
@@ -178,7 +238,6 @@ const startServer = async () => {
           'https://sparkvibe.app',
           'https://www.sparkvibe.app',
           'https://walrus-app-cczj4.ondigitalocean.app',
-          // Add your frontend deployment URLs here
         ];
         
         // In development, allow localhost
@@ -190,7 +249,10 @@ const startServer = async () => {
           );
         }
         
+        console.log(`CORS check for origin: ${origin}`);
         const allowed = allowedOrigins.includes(origin);
+        console.log(`Origin ${origin} ${allowed ? 'allowed' : 'denied'}`);
+        
         cb(null, allowed);
       },
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -199,12 +261,13 @@ const startServer = async () => {
       maxAge: 86400,
     });
 
-    await fastify.register(fastifyHelmet, {
-      contentSecurityPolicy: false,
-      crossOriginEmbedderPolicy: false,
-      crossOriginOpenerPolicy: false,
-      crossOriginResourcePolicy: { policy: 'cross-origin' },
-    });
+await fastify.register(fastifyHelmet, {
+    contentSecurityPolicy: false,
+    crossOriginEmbedderPolicy: false,
+    crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' }, // Preferred for security
+    // crossOriginOpenerPolicy: { policy: 'unsafe-none' }, // Less secure, use as fallback
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+});
 
     await fastify.register(fastifyJwt, {
       secret: process.env.JWT_SECRET,
@@ -242,7 +305,7 @@ const startServer = async () => {
 
     // === BASIC ROUTES ===
     
-    // Root endpoint
+    // Root endpoint with MongoDB status
     fastify.get('/', async (request, reply) => {
       const services = await checkServiceHealth();
       return reply.send({
@@ -250,7 +313,13 @@ const startServer = async () => {
         status: 'running',
         timestamp: new Date().toISOString(),
         services,
-        environment: process.env.NODE_ENV || 'development'
+        environment: process.env.NODE_ENV || 'development',
+        mongodb: {
+          connected: mongoose.connection.readyState === 1,
+          readyState: mongoose.connection.readyState,
+          host: mongoose.connection.host,
+          name: mongoose.connection.name
+        }
       });
     });
 
@@ -262,13 +331,89 @@ const startServer = async () => {
         uptime: process.uptime(),
         services: await checkServiceHealth(),
         memory: process.memoryUsage(),
+        mongodb: {
+          connected: mongoose.connection.readyState === 1,
+          readyState: mongoose.connection.readyState,
+          host: mongoose.connection.host,
+          name: mongoose.connection.name,
+          collections: {}
+        }
       };
+
+      // Check collection counts if connected
+      if (mongoose.connection.readyState === 1) {
+        try {
+          health.mongodb.collections.users = await User.countDocuments();
+          health.mongodb.collections.adventures = await Adventure.countDocuments();
+        } catch (error) {
+          health.mongodb.error = error.message;
+        }
+      }
+
       return reply.send(health);
+    });
+
+    // Database connection test
+    fastify.get('/test-db-connection', async (request, reply) => {
+      const result = {
+        timestamp: new Date().toISOString(),
+        environment: process.env.NODE_ENV,
+        mongodb: {}
+      };
+
+      try {
+        const mongoUri = process.env.MONGODB_URI;
+        if (!mongoUri) {
+          result.mongodb.error = 'MONGODB_URI environment variable not set';
+          return reply.status(500).send(result);
+        }
+
+        const cleanUri = mongoUri.replace(/:([^:@]*)@/, ':***@');
+        result.mongodb.connectionString = cleanUri;
+
+        result.mongodb.connectionState = {
+          current: mongoose.connection.readyState,
+          description: {
+            0: 'disconnected',
+            1: 'connected',
+            2: 'connecting',
+            3: 'disconnecting'
+          }[mongoose.connection.readyState]
+        };
+
+        if (mongoose.connection.readyState === 1) {
+          result.mongodb.host = mongoose.connection.host;
+          result.mongodb.port = mongoose.connection.port;
+          result.mongodb.name = mongoose.connection.name;
+
+          try {
+            const pingResult = await mongoose.connection.db.admin().ping();
+            result.mongodb.ping = 'success';
+          } catch (pingError) {
+            result.mongodb.ping = 'failed';
+            result.mongodb.pingError = pingError.message;
+          }
+
+          try {
+            const userCount = await User.countDocuments();
+            const adventureCount = await Adventure.countDocuments();
+            result.mongodb.counts = { users: userCount, adventures: adventureCount };
+          } catch (countError) {
+            result.mongodb.countError = countError.message;
+          }
+        }
+
+        return reply.send(result);
+
+      } catch (error) {
+        result.mongodb.error = error.message;
+        return reply.status(500).send(result);
+      }
     });
 
     // === AUTHENTICATION ROUTES ===
     
-    // Email signup (simplified)
+    // Email signup
     fastify.post('/auth/signup', async (request, reply) => {
       try {
         console.log('Signup attempt:', request.body);
@@ -278,6 +423,13 @@ const startServer = async () => {
           return reply.status(400).send({
             success: false,
             message: 'Name, email and password are required'
+          });
+        }
+
+        if (mongoose.connection.readyState !== 1) {
+          return reply.status(503).send({
+            success: false,
+            message: 'Database connection unavailable. Please try again later.'
           });
         }
 
@@ -300,7 +452,7 @@ const startServer = async () => {
           email: sanitizedEmail,
           password: hashedPassword,
           authProvider: 'email',
-          emailVerified: true, // Skip verification for now
+          emailVerified: true,
           preferences: {
             interests: ['wellness', 'creativity'],
             aiPersonality: 'encouraging',
@@ -347,6 +499,13 @@ const startServer = async () => {
           return reply.status(400).send({
             success: false,
             message: 'Email and password are required',
+          });
+        }
+
+        if (mongoose.connection.readyState !== 1) {
+          return reply.status(503).send({
+            success: false,
+            message: 'Database connection unavailable. Please try again later.'
           });
         }
 
@@ -400,6 +559,7 @@ const startServer = async () => {
     // Google OAuth (optional)
     if (googleClient) {
       fastify.post('/auth/google', async (request, reply) => {
+        reply.header('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
         try {
           const { token } = request.body;
           
@@ -410,9 +570,16 @@ const startServer = async () => {
             });
           }
 
+          if (mongoose.connection.readyState !== 1) {
+            return reply.status(503).send({
+              success: false,
+              message: 'Database connection unavailable. Please try again later.'
+            });
+          }
+
           const ticket = await googleClient.verifyIdToken({
             idToken: token,
-            audience: process.env.GOOGLE_CLIENT_ID, // Fixed: was VITE_GOOGLE_CLIENT_ID
+            audience: process.env.GOOGLE_CLIENT_ID,
           });
           
           const payload = ticket.getPayload();
@@ -473,7 +640,7 @@ const startServer = async () => {
 
     // === CORE APP ROUTES ===
     
-    // Mood analysis (simplified)
+    // Mood analysis
     fastify.post('/analyze-mood', { preHandler: [fastify.authenticate] }, async (request, reply) => {
       try {
         const { textInput } = request.body;
@@ -481,7 +648,6 @@ const startServer = async () => {
 
         let analysis;
         
-        // Try OpenAI if available
         if (openai && textInput) {
           try {
             analysis = await analyzeWithOpenAI(textInput);
@@ -493,10 +659,12 @@ const startServer = async () => {
           analysis = generateFallbackMoodAnalysis(textInput);
         }
 
-        // Update user activity
-        await User.findByIdAndUpdate(userId, {
-          'stats.lastActivity': new Date(),
-        });
+        // Update user activity if DB connected
+        if (mongoose.connection.readyState === 1) {
+          await User.findByIdAndUpdate(userId, {
+            'stats.lastActivity': new Date(),
+          });
+        }
 
         return reply.send(analysis);
       } catch (error) {
@@ -514,10 +682,8 @@ const startServer = async () => {
         const { mood, interests, timeOfDay } = request.body;
         const userId = request.user.userId;
 
-        const user = await User.findById(userId);
         let capsuleData;
 
-        // Try AI generation if OpenAI is available
         if (openai) {
           try {
             capsuleData = await generateWithOpenAI(mood, interests, timeOfDay);
@@ -529,11 +695,13 @@ const startServer = async () => {
           capsuleData = generateFallbackCapsule(mood, timeOfDay, interests);
         }
 
-        // Update user stats
-        await User.findByIdAndUpdate(userId, {
-          $inc: { 'stats.adventuresCompleted': 1 },
-          'stats.lastActivity': new Date(),
-        });
+        // Update user stats if DB connected
+        if (mongoose.connection.readyState === 1) {
+          await User.findByIdAndUpdate(userId, {
+            $inc: { 'stats.adventuresCompleted': 1 },
+            'stats.lastActivity': new Date(),
+          });
+        }
 
         return reply.send(capsuleData);
       } catch (error) {
@@ -551,6 +719,13 @@ const startServer = async () => {
         const { points, action } = request.body;
         const userId = request.user.userId;
 
+        if (mongoose.connection.readyState !== 1) {
+          return reply.status(503).send({
+            success: false,
+            message: 'Database connection unavailable. Points not saved.'
+          });
+        }
+
         const user = await User.findById(userId);
         if (!user) {
           return reply.status(404).send({
@@ -559,12 +734,10 @@ const startServer = async () => {
           });
         }
 
-        // Update user points
         const pointsToAdd = points || 10;
         user.stats.totalPoints += pointsToAdd;
         user.stats.lastActivity = new Date();
 
-        // Update streak if daily activity
         if (action === 'daily_adventure') {
           const today = new Date().toDateString();
           const lastActivity = user.stats.lastActivity ? user.stats.lastActivity.toDateString() : null;
@@ -603,9 +776,16 @@ const startServer = async () => {
       }
     });
 
-    // Leaderboard
+    // Robust Leaderboard with fallback
     fastify.get('/leaderboard', async (request, reply) => {
       try {
+        console.log('Leaderboard request received');
+        
+        if (mongoose.connection.readyState !== 1) {
+          console.log('MongoDB not connected, returning fallback leaderboard');
+          return reply.send(getFallbackLeaderboard());
+        }
+
         const { category = 'points', timeframe = 'all' } = request.query;
         let sortField = 'stats.totalPoints';
         
@@ -624,36 +804,53 @@ const startServer = async () => {
           dateFilter = { 'stats.lastActivity': { $gte: monthAgo } };
         }
 
+        console.log('Querying users with filter:', dateFilter, 'sortField:', sortField);
+
         const leaders = await User.find(dateFilter)
           .sort({ [sortField]: -1 })
           .limit(50)
-          .select('name avatar stats achievements');
+          .select('name avatar stats achievements')
+          .lean();
+
+        console.log(`Found ${leaders.length} users`);
+
+        if (leaders.length === 0) {
+          console.log('No users found, returning fallback data');
+          return reply.send(getFallbackLeaderboard());
+        }
 
         const leaderboard = leaders.map((user, index) => ({
-          username: user.name,
-          avatar: user.avatar,
-          score: user.stats.totalPoints,
+          username: user.name || 'Anonymous User',
+          avatar: user.avatar || '🚀',
+          score: user.stats?.totalPoints || 0,
           rank: index + 1,
-          streak: user.stats.streak,
-          cardsShared: user.stats.cardsShared,
-          cardsGenerated: user.stats.cardsGenerated,
-          level: user.stats.level,
-          achievements: user.achievements.slice(0, 3),
+          streak: user.stats?.streak || 0,
+          cardsShared: user.stats?.cardsShared || 0,
+          cardsGenerated: user.stats?.cardsGenerated || 0,
+          level: user.stats?.level || 1,
+          achievements: (user.achievements || []).slice(0, 3),
         }));
 
+        console.log('Successfully returning leaderboard with', leaderboard.length, 'users');
         return reply.send(leaderboard);
+        
       } catch (error) {
         console.error('Leaderboard fetch failed:', error);
-        return reply.status(500).send({ 
-          success: false,
-          error: 'Leaderboard fetch failed' 
-        });
+        console.error('Error stack:', error.stack);
+        return reply.send(getFallbackLeaderboard());
       }
     });
 
-    // Trending adventures
+    // Robust Trending adventures with fallback
     fastify.get('/trending-adventures', async (request, reply) => {
       try {
+        console.log('Trending adventures request received');
+        
+        if (mongoose.connection.readyState !== 1) {
+          console.log('MongoDB not connected, returning fallback trending');
+          return reply.send(getFallbackTrending());
+        }
+
         const { category } = request.query;
         let filter = { isActive: true };
         
@@ -661,135 +858,283 @@ const startServer = async () => {
           filter.category = sanitize(category);
         }
 
+        console.log('Querying adventures with filter:', filter);
+
         const trending = await Adventure.find(filter)
           .sort({ completions: -1, shares: -1 })
-          .limit(10);
+          .limit(10)
+          .lean();
+
+        console.log(`Found ${trending.length} adventures`);
+
+        if (trending.length === 0) {
+          console.log('No adventures found, returning fallback data');
+          return reply.send(getFallbackTrending());
+        }
 
         const response = {
           success: true,
           trending: trending.map(formatAdventureResponse),
           metadata: {
             totalAdventures: await Adventure.countDocuments({ isActive: true }),
-            category,
+            category: category || null,
             generatedAt: new Date().toISOString(),
           },
         };
 
+        console.log('Successfully returning trending adventures');
         return reply.send(response);
+        
       } catch (error) {
         console.error('Trending fetch failed:', error);
-        return reply.status(500).send({ 
-          success: false,
-          error: 'Trending fetch failed' 
-        });
+        console.error('Error stack:', error.stack);
+        return reply.send(getFallbackTrending());
       }
     });
 
-    // Seed data for testing
+    // Enhanced seed data with proper auth handling
     fastify.get('/seed-data', async (request, reply) => {
       try {
-        // Clear existing data
-        await User.deleteMany({});
-        await Adventure.deleteMany({});
+        console.log('Seed data request received');
+        
+        // Check database connection first
+        if (mongoose.connection.readyState !== 1) {
+          console.error('MongoDB not connected. Connection state:', mongoose.connection.readyState);
+          return reply.status(500).send({ 
+            success: false,
+            error: "Database connection failed",
+            details: `MongoDB connection state: ${mongoose.connection.readyState}. Please check your MONGODB_URI environment variable.`,
+            connectionStates: {
+              0: 'disconnected',
+              1: 'connected',
+              2: 'connecting',
+              3: 'disconnecting'
+            }
+          });
+        }
 
-        // Create test users
-        const users = await User.insertMany([
-          {
-            name: "Alice Johnson",
-            email: "alice@example.com",
-            avatar: "🚀",
-            emailVerified: true,
-            stats: {
-              totalPoints: 1200,
-              streak: 7,
-              cardsGenerated: 15,
-              cardsShared: 8,
-              level: 3,
-              lastActivity: new Date()
+        // Test database permissions first with a simple operation
+        try {
+          console.log('Testing database permissions...');
+          const testResult = await mongoose.connection.db.admin().ping();
+          console.log('Database ping successful:', testResult);
+        } catch (permError) {
+          console.error('Database permission test failed:', permError.message);
+          return reply.status(500).send({ 
+            success: false,
+            error: "Database permission denied",
+            details: `Database authentication failed: ${permError.message}. Please check your MongoDB credentials.`,
+            suggestion: "Verify your MONGODB_URI has correct username, password, and database permissions."
+          });
+        }
+
+        // Check existing data first instead of deleting
+        const existingUsers = await User.countDocuments();
+        const existingAdventures = await Adventure.countDocuments();
+        
+        console.log(`Found ${existingUsers} existing users and ${existingAdventures} existing adventures`);
+        
+        // Only seed if no data exists, or use upsert operations
+        let usersCreated = 0;
+        let adventuresCreated = 0;
+
+        if (existingUsers === 0) {
+          console.log('Creating seed users...');
+          
+          // Create users individually with upsert to avoid duplicates
+          const seedUsers = [
+            {
+              name: "Alice Johnson",
+              email: "alice@example.com",
+              avatar: "🚀",
+              emailVerified: true,
+              authProvider: 'email',
+              stats: {
+                totalPoints: 1200,
+                streak: 7,
+                cardsGenerated: 15,
+                cardsShared: 8,
+                level: 3,
+                lastActivity: new Date(),
+                bestStreak: 7,
+                adventuresCompleted: 15
+              },
+              achievements: [
+                { id: 'early_adopter', unlockedAt: new Date(), type: 'milestone' },
+                { id: 'streak_master', unlockedAt: new Date(), type: 'achievement' }
+              ]
+            },
+            {
+              name: "Bob Smith",
+              email: "bob@example.com",
+              avatar: "🌟",
+              emailVerified: true,
+              authProvider: 'email',
+              stats: {
+                totalPoints: 950,
+                streak: 4,
+                cardsGenerated: 12,
+                cardsShared: 6,
+                level: 2,
+                lastActivity: new Date(),
+                bestStreak: 4,
+                adventuresCompleted: 12
+              },
+              achievements: [
+                { id: 'creative_mind', unlockedAt: new Date(), type: 'achievement' }
+              ]
+            },
+            {
+              name: "Carol Davis",
+              email: "carol@example.com",
+              avatar: "🎯",
+              emailVerified: true,
+              authProvider: 'email',
+              stats: {
+                totalPoints: 750,
+                streak: 2,
+                cardsGenerated: 9,
+                cardsShared: 4,
+                level: 2,
+                lastActivity: new Date(),
+                bestStreak: 2,
+                adventuresCompleted: 9
+              },
+              achievements: [
+                { id: 'getting_started', unlockedAt: new Date(), type: 'milestone' }
+              ]
             }
-          },
-          {
-            name: "Bob Smith",
-            email: "bob@example.com",
-            avatar: "🌟",
-            emailVerified: true,
-            stats: {
-              totalPoints: 950,
-              streak: 4,
-              cardsGenerated: 12,
-              cardsShared: 6,
-              level: 2,
-              lastActivity: new Date()
-            }
-          },
-          {
-            name: "Carol Davis",
-            email: "carol@example.com",
-            avatar: "🎯",
-            emailVerified: true,
-            stats: {
-              totalPoints: 750,
-              streak: 2,
-              cardsGenerated: 9,
-              cardsShared: 4,
-              level: 2,
-              lastActivity: new Date()
+          ];
+
+          for (const userData of seedUsers) {
+            try {
+              const user = await User.findOneAndUpdate(
+                { email: userData.email },
+                userData,
+                { upsert: true, new: true, setDefaultsOnInsert: true }
+              );
+              if (user) usersCreated++;
+              console.log(`User created/updated: ${userData.email}`);
+            } catch (userError) {
+              console.error(`Failed to create user ${userData.email}:`, userError.message);
             }
           }
-        ]);
+        } else {
+          console.log('Users already exist, skipping user creation');
+        }
 
-        // Create test adventures
-        const adventures = await Adventure.insertMany([
-          {
-            title: "Morning Sunrise Meditation",
-            description: "Start your day with peaceful meditation",
-            category: "Mindfulness",
-            completions: 156,
-            shares: 67,
-            viralPotential: 0.85,
-            template: "cosmic",
-            averageRating: 4.8,
-            difficulty: "easy",
-            estimatedTime: "10 minutes"
-          },
-          {
-            title: "Urban Photography Walk",
-            description: "Capture the beauty of city life",
-            category: "Creativity",
-            completions: 134,
-            shares: 89,
-            viralPotential: 0.92,
-            template: "nature",
-            averageRating: 4.6,
-            difficulty: "medium",
-            estimatedTime: "30 minutes"
-          },
-          {
-            title: "Gratitude Journal Challenge",
-            description: "Write three things you're grateful for",
-            category: "Mindfulness",
-            completions: 98,
-            shares: 34,
-            viralPotential: 0.73,
-            template: "minimal",
-            averageRating: 4.4,
-            difficulty: "easy",
-            estimatedTime: "5 minutes"
+        if (existingAdventures === 0) {
+          console.log('Creating seed adventures...');
+          
+          const seedAdventures = [
+            {
+              title: "Morning Sunrise Meditation",
+              description: "Start your day with peaceful meditation as the sun rises",
+              category: "Mindfulness",
+              completions: 156,
+              shares: 67,
+              viralPotential: 0.85,
+              template: "cosmic",
+              averageRating: 4.8,
+              difficulty: "easy",
+              estimatedTime: "10 minutes",
+              isActive: true
+            },
+            {
+              title: "Urban Photography Walk",
+              description: "Capture the beauty of city life through your unique lens",
+              category: "Creativity",
+              completions: 134,
+              shares: 89,
+              viralPotential: 0.92,
+              template: "nature",
+              averageRating: 4.6,
+              difficulty: "medium",
+              estimatedTime: "30 minutes",
+              isActive: true
+            },
+            {
+              title: "Gratitude Journal Challenge",
+              description: "Write three things you're grateful for and feel the positive shift",
+              category: "Mindfulness",
+              completions: 98,
+              shares: 34,
+              viralPotential: 0.73,
+              template: "minimal",
+              averageRating: 4.4,
+              difficulty: "easy",
+              estimatedTime: "5 minutes",
+              isActive: true
+            },
+            {
+              title: "Random Act of Kindness",
+              description: "Brighten someone's day with an unexpected gesture of kindness",
+              category: "Social",
+              completions: 210,
+              shares: 95,
+              viralPotential: 0.94,
+              template: "retro",
+              averageRating: 4.9,
+              difficulty: "easy",
+              estimatedTime: "10 minutes",
+              isActive: true
+            }
+          ];
+
+          for (const adventureData of seedAdventures) {
+            try {
+              const adventure = await Adventure.findOneAndUpdate(
+                { title: adventureData.title },
+                adventureData,
+                { upsert: true, new: true, setDefaultsOnInsert: true }
+              );
+              if (adventure) adventuresCreated++;
+              console.log(`Adventure created/updated: ${adventureData.title}`);
+            } catch (adventureError) {
+              console.error(`Failed to create adventure ${adventureData.title}:`, adventureError.message);
+            }
           }
-        ]);
+        } else {
+          console.log('Adventures already exist, skipping adventure creation');
+        }
 
-        return reply.send({ 
+        // Final counts
+        const totalUsers = await User.countDocuments();
+        const totalAdventures = await Adventure.countDocuments();
+
+        const result = { 
           success: true, 
-          message: "Test data seeded successfully",
-          users: users.length,
-          adventures: adventures.length
-        });
+          message: "Seed data process completed successfully!",
+          created: {
+            users: usersCreated,
+            adventures: adventuresCreated
+          },
+          totals: {
+            users: totalUsers,
+            adventures: totalAdventures
+          },
+          database: {
+            connected: mongoose.connection.readyState === 1,
+            name: mongoose.connection.name,
+            host: mongoose.connection.host
+          }
+        };
+
+        console.log('Seed process completed:', result);
+        return reply.send(result);
+
       } catch (error) {
         console.error('Seed data failed:', error);
         return reply.status(500).send({ 
           success: false,
           error: "Seed data failed",
-          details: error.message 
+          details: error.message,
+          stack: process.env.NODE_ENV === 'development' ? error.stack : undefined,
+          suggestions: [
+            "Check your MONGODB_URI environment variable",
+            "Ensure your MongoDB user has read/write permissions",
+            "Verify your database connection is stable"
+          ]
         });
       }
     });
@@ -806,6 +1151,7 @@ const startServer = async () => {
     console.log('📋 Available endpoints:');
     console.log('  GET  / - Server info');
     console.log('  GET  /health - Health check');
+    console.log('  GET  /test-db-connection - Database connection test');
     console.log('  POST /auth/signup - User registration');
     console.log('  POST /auth/signin - User login');
     console.log('  POST /auth/google - Google OAuth (if configured)');
@@ -1016,6 +1362,130 @@ function formatAdventureResponse(adventure) {
     difficulty: adventure.difficulty,
     estimatedTime: adventure.estimatedTime,
     createdAt: adventure.createdAt
+  };
+}
+
+// Fallback data functions
+function getFallbackLeaderboard() {
+  return [
+    {
+      username: "SparkVibe Pioneer",
+      avatar: "🚀",
+      score: 2340,
+      rank: 1,
+      streak: 15,
+      cardsShared: 12,
+      cardsGenerated: 18,
+      level: 3,
+      achievements: ['Early Adopter', 'Streak Master', 'Community Builder']
+    },
+    {
+      username: "Vibe Explorer",
+      avatar: "🌟",
+      score: 1890,
+      rank: 2,
+      streak: 8,
+      cardsShared: 8,
+      cardsGenerated: 15,
+      level: 2,
+      achievements: ['Creative Mind', 'Daily Achiever']
+    },
+    {
+      username: "Mood Master",
+      avatar: "🎨",
+      score: 1456,
+      rank: 3,
+      streak: 6,
+      cardsShared: 6,
+      cardsGenerated: 12,
+      level: 2,
+      achievements: ['Consistent Creator']
+    },
+    {
+      username: "Adventure Seeker",
+      avatar: "⚡",
+      score: 987,
+      rank: 4,
+      streak: 4,
+      cardsShared: 4,
+      cardsGenerated: 8,
+      level: 1,
+      achievements: ['Getting Started']
+    }
+  ];
+}
+
+function getFallbackTrending() {
+  return {
+    success: true,
+    trending: [
+      {
+        id: 'fallback-1',
+        title: "Morning Gratitude Practice",
+        description: "Start your day by writing down three things you're grateful for",
+        completions: 347,
+        shares: 89,
+        viralScore: 0.85,
+        category: "Mindfulness",
+        template: "cosmic",
+        averageRating: 4.7,
+        difficulty: "easy",
+        estimatedTime: "5 minutes"
+      },
+      {
+        id: 'fallback-2',
+        title: "Urban Photo Adventure",
+        description: "Capture the hidden beauty in your neighborhood",
+        completions: 256,
+        shares: 67,
+        viralScore: 0.78,
+        category: "Creativity",
+        template: "nature",
+        averageRating: 4.5,
+        difficulty: "medium",
+        estimatedTime: "15 minutes"
+      },
+      {
+        id: 'fallback-3',
+        title: "Random Act of Kindness",
+        description: "Brighten someone's day with an unexpected gesture",
+        completions: 198,
+        shares: 92,
+        viralScore: 0.92,
+        category: "Social",
+        template: "retro",
+        averageRating: 4.9,
+        difficulty: "easy",
+        estimatedTime: "10 minutes"
+      },
+      {
+        id: 'fallback-4',
+        title: "Mindful Breathing Break",
+        description: "Take 5 minutes to focus on your breath and center yourself",
+        completions: 423,
+        shares: 78,
+        viralScore: 0.73,
+        category: "Wellness",
+        template: "minimal",
+        averageRating: 4.4,
+        difficulty: "easy",
+        estimatedTime: "5 minutes"
+      }
+    ],
+    viralAdventure: {
+      title: "Random Act of Kindness",
+      description: "Brighten someone's day with an unexpected gesture",
+      completions: 198,
+      shares: 92,
+      viralScore: 0.92
+    },
+    metadata: {
+      totalAdventures: 4,
+      category: null,
+      generatedAt: new Date().toISOString(),
+      fallback: true,
+      reason: "Database connection issue or empty collections"
+    }
   };
 }
 
