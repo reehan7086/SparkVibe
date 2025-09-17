@@ -119,7 +119,6 @@ const AdventureSchema = new mongoose.Schema({
 });
 
 // Create indexes
-UserSchema.index({ email: 1 }, { unique: true });
 AdventureSchema.index({ category: 1, completions: -1 });
 
 const User = mongoose.model('User', UserSchema);
@@ -582,32 +581,108 @@ const startServer = async () => {
     }
 
     // ===== USER ROUTES =====
-    fastify.get('/user/profile', { preHandler: [fastify.authenticate] }, async (request, reply) => {
-      try {
-        const userId = request.user.userId;
-        const user = await User.findById(userId).select('-password').lean();
-        
-        if (!user) {
-          return sendError(reply, 404, 'User not found');
-        }
+// Replace the existing /user/profile route in backend/server.js with this improved version:
 
-        return reply.send({
-          success: true,
-          user: {
-            id: user._id,
-            name: user.name,
-            email: user.email,
-            avatar: user.avatar,
-            emailVerified: user.emailVerified,
-            stats: user.stats,
-            achievements: user.achievements,
-            preferences: user.preferences
+fastify.get('/user/profile', { preHandler: [fastify.authenticate] }, async (request, reply) => {
+  try {
+    const userId = request.user.userId;
+    console.log('Fetching profile for user ID:', userId);
+    
+    let user = await User.findById(userId).select('-password').lean();
+    
+    if (!user) {
+      console.log('User not found in database, this might be a legacy user');
+      
+      // Check if this is a JWT with user info we can use to create the profile
+      const userInfo = request.user;
+      
+      if (userInfo && userInfo.userId) {
+        console.log('Creating user profile from JWT data');
+        
+        // Create a basic user profile
+        const newUser = new User({
+          _id: userInfo.userId,
+          name: userInfo.name || 'SparkVibe Explorer',
+          email: userInfo.email || `user${Date.now()}@sparkvibe.app`,
+          emailVerified: true,
+          authProvider: userInfo.provider || 'legacy',
+          avatar: userInfo.avatar || '🚀',
+          preferences: { 
+            interests: ['wellness', 'creativity'], 
+            aiPersonality: 'encouraging' 
           }
         });
-      } catch (error) {
-        return sendError(reply, 500, 'Failed to fetch profile', error.message);
+
+        try {
+          await newUser.save();
+          user = newUser.toObject();
+          console.log('User profile created successfully');
+        } catch (saveError) {
+          console.error('Failed to create user profile:', saveError.message);
+          
+          // If creation fails, return a default profile without saving
+          user = {
+            _id: userInfo.userId,
+            name: userInfo.name || 'SparkVibe Explorer',
+            email: userInfo.email || `user${Date.now()}@sparkvibe.app`,
+            emailVerified: true,
+            avatar: userInfo.avatar || '🚀',
+            stats: {
+              totalPoints: 0,
+              level: 1,
+              streak: 0,
+              cardsGenerated: 0,
+              cardsShared: 0,
+              lastActivity: new Date(),
+              bestStreak: 0,
+              adventuresCompleted: 0,
+              moodHistory: [],
+              choices: []
+            },
+            achievements: [],
+            preferences: { 
+              interests: ['wellness', 'creativity'], 
+              aiPersonality: 'encouraging' 
+            }
+          };
+        }
+      } else {
+        return sendError(reply, 404, 'User not found and cannot create profile');
+      }
+    }
+
+    return reply.send({
+      success: true,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        avatar: user.avatar,
+        emailVerified: user.emailVerified,
+        stats: user.stats || {
+          totalPoints: 0,
+          level: 1,
+          streak: 0,
+          cardsGenerated: 0,
+          cardsShared: 0,
+          lastActivity: new Date(),
+          bestStreak: 0,
+          adventuresCompleted: 0,
+          moodHistory: [],
+          choices: []
+        },
+        achievements: user.achievements || [],
+        preferences: user.preferences || { 
+          interests: ['wellness', 'creativity'], 
+          aiPersonality: 'encouraging' 
+        }
       }
     });
+  } catch (error) {
+    console.error('Profile fetch error:', error);
+    return sendError(reply, 500, 'Failed to fetch profile', error.message);
+  }
+});
 
     // ===== MOOD AND ADVENTURE ROUTES =====
     fastify.post('/analyze-mood', { preHandler: [fastify.authenticate] }, async (request, reply) => {

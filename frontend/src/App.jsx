@@ -20,48 +20,57 @@ const App = () => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Check authentication and load user data
-  useEffect(() => {
-    const initializeApp = async () => {
-      try {
-        const isAuth = AuthService.isAuthenticated();
-        setIsAuthenticated(isAuth);
+// Fix for App.jsx - Better user profile handling
+// Replace the useEffect that loads user data with this improved version:
+
+useEffect(() => {
+  const initializeApp = async () => {
+    try {
+      const isAuth = AuthService.isAuthenticated();
+      setIsAuthenticated(isAuth);
+      
+      if (isAuth) {
+        const currentUser = AuthService.getCurrentUser();
+        console.log('Current user:', currentUser);
         
-        if (isAuth) {
-          const currentUser = AuthService.getCurrentUser();
-          console.log('Current user:', currentUser);
-          
-          // Load user stats from backend
+        // Set initial user data from localStorage
+        setUser({
+          ...currentUser,
+          name: currentUser.name || 'SparkVibe Explorer',
+          totalPoints: currentUser.stats?.totalPoints || 0,
+          level: currentUser.stats?.level || 1,
+          streak: currentUser.stats?.streak || 0,
+          cardsGenerated: currentUser.stats?.cardsGenerated || 0,
+          cardsShared: currentUser.stats?.cardsShared || 0
+        });
+        
+        // Try to load user stats from backend, but don't fail if user doesn't exist
+        if (!currentUser.isGuest) {
           try {
             const userStats = await apiGet('/user/profile');
-            setUser({
-              ...currentUser,
-              ...userStats.user,
-              name: currentUser.name || userStats.user?.name || 'SparkVibe Explorer'
-            });
+            if (userStats.success && userStats.user) {
+              setUser(prevUser => ({
+                ...prevUser,
+                ...userStats.user,
+                name: currentUser.name || userStats.user.name || 'SparkVibe Explorer'
+              }));
+            }
           } catch (error) {
-            console.warn('Failed to load user stats:', error);
-            setUser({
-              ...currentUser,
-              name: currentUser.name || 'SparkVibe Explorer',
-              totalPoints: currentUser.totalPoints || 0,
-              level: currentUser.level || 1,
-              streak: currentUser.streak || 0,
-              cardsGenerated: currentUser.cardsGenerated || 0,
-              cardsShared: currentUser.cardsShared || 0
-            });
+            console.warn('Failed to load user stats from backend:', error.message);
+            // Continue with localStorage user data - don't throw error
           }
         }
-      } catch (error) {
-        console.error('App initialization failed:', error);
-        setIsAuthenticated(false);
-      } finally {
-        setLoading(false);
       }
-    };
+    } catch (error) {
+      console.error('App initialization failed:', error);
+      setIsAuthenticated(false);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    initializeApp();
-  }, []);
+  initializeApp();
+}, []);
 
   // Health check with improved error handling
   useEffect(() => {
