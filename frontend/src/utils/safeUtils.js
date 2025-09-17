@@ -107,9 +107,7 @@ export const apiGet = async (endpoint, options = {}) => {
       }
 
       const headers = {
-        'Content-Type': 'application/json',
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
-        'Pragma': 'no-cache'
+        'Content-Type': 'application/json'
       };
       if (token) {
         headers['Authorization'] = `Bearer ${token}`;
@@ -192,7 +190,6 @@ export const apiPost = async (endpoint, data, options = {}) => {
 
       const headers = {
         'Content-Type': 'application/json',
-        'Cache-Control': 'no-cache',
         ...customHeaders,
       };
       if (token) {

@@ -198,31 +198,39 @@ const startServer = async () => {
       }
     }
 
-    // Register Fastify plugins
-    await fastify.register(fastifyCors, {
-      origin: (origin, cb) => {
-        const allowedOrigins = [
-          'https://sparkvibe.app',
-          'https://www.sparkvibe.app',
-          'http://localhost:5173',
-          'http://localhost:3000',
-          'http://localhost:8080'
-        ];
-        
-        if (process.env.NODE_ENV !== 'production') {
-          allowedOrigins.push(/^http:\/\/localhost:\d+$/);
-          allowedOrigins.push(/^https:\/\/.*\.app\.github\.dev$/);
-          allowedOrigins.push(/^https:\/\/.*\.gitpod\.io$/);
-        }
-        
-        const allowed = !origin || allowedOrigins.some(o => typeof o === 'string' ? o === origin : o.test(origin));
-        cb(null, allowed);
-      },
-      methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-      credentials: true,
-      maxAge: 86400
-    });
+// In your backend/server.js, replace the CORS configuration with this:
+
+await fastify.register(fastifyCors, {
+  origin: (origin, cb) => {
+    const allowedOrigins = [
+      'https://sparkvibe.app',
+      'https://www.sparkvibe.app',
+      'http://localhost:5173',
+      'http://localhost:3000',
+      'http://localhost:8080'
+    ];
+    
+    if (process.env.NODE_ENV !== 'production') {
+      allowedOrigins.push(/^http:\/\/localhost:\d+$/);
+      allowedOrigins.push(/^https:\/\/.*\.app\.github\.dev$/);
+      allowedOrigins.push(/^https:\/\/.*\.gitpod\.io$/);
+    }
+    
+    const allowed = !origin || allowedOrigins.some(o => typeof o === 'string' ? o === origin : o.test(origin));
+    cb(null, allowed);
+  },
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: [
+    'Content-Type', 
+    'Authorization', 
+    'X-Requested-With',
+    'Cache-Control',        // ADD THIS
+    'Pragma',               // ADD THIS
+    'Expires'               // ADD THIS
+  ],
+  credentials: true,
+  maxAge: 86400
+}); 
 
     await fastify.register(fastifyHelmet, {
       contentSecurityPolicy: false,
