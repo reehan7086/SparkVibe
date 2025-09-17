@@ -810,6 +810,96 @@ fastify.get('/user/profile', { preHandler: [fastify.authenticate] }, async (requ
       }
     });
 
+fastify.post('/generate-vibe-card', { preHandler: [fastify.authenticate] }, async (request, reply) => {
+  try {
+    const { capsuleData, userChoices, completionStats, user } = request.body;
+    
+    if (!capsuleData) {
+      return sendError(reply, 400, 'Capsule data is required');
+    }
+
+    const userId = request.user.userId;
+
+    // Generate vibe card data
+    const cardData = {
+      id: `vibe_card_${Date.now()}`,
+      content: {
+        adventure: {
+          title: capsuleData.adventure?.title || 'Your Adventure',
+          outcome: 'You completed an amazing SparkVibe adventure and earned points!'
+        },
+        achievement: {
+          points: completionStats?.vibePointsEarned || 50,
+          streak: user?.streak || 1,
+          badge: getBadgeForPoints(completionStats?.vibePointsEarned || 50)
+        },
+        mood: {
+          before: 'Curious',
+          after: 'Accomplished',
+          boost: '+15%'
+        }
+      },
+      design: {
+        template: capsuleData.moodData?.suggestedTemplate || 'cosmic',
+        colors: getTemplateColors(capsuleData.moodData?.suggestedTemplate || 'cosmic'),
+        style: 'modern'
+      },
+      user: {
+        name: user?.name || 'SparkVibe Explorer',
+        level: user?.level || 1,
+        totalPoints: user?.totalPoints || 0,
+        avatar: user?.avatar || '🌟'
+      },
+      sharing: {
+        captions: [
+          'Just completed an amazing SparkVibe adventure!',
+          `Earned ${completionStats?.vibePointsEarned || 50} points and feeling great!`,
+          'Level up your mindset with SparkVibe!',
+          'Daily dose of inspiration unlocked! ✨'
+        ],
+        hashtags: ['#SparkVibe', '#Adventure', '#Growth', '#Inspiration', '#Mindfulness'],
+        qrCode: 'https://sparkvibe.app',
+        socialLinks: {
+          twitter: generateTwitterShare(capsuleData, completionStats),
+          instagram: generateInstagramShare(capsuleData, completionStats),
+          facebook: generateFacebookShare(capsuleData, completionStats)
+        }
+      },
+      metadata: {
+        generatedAt: new Date().toISOString(),
+        capsuleId: capsuleData.id,
+        choices: userChoices,
+        version: '2.1.0'
+      }
+    };
+
+    // Update user stats
+    if (mongoose.connection.readyState === 1) {
+      await User.findByIdAndUpdate(userId, {
+        $inc: { 'stats.cardsGenerated': 1 },
+        'stats.lastActivity': new Date(),
+        $push: { 
+          'stats.cardHistory': {
+            cardId: cardData.id,
+            generatedAt: new Date(),
+            template: cardData.design.template,
+            points: cardData.content.achievement.points
+          }
+        }
+      });
+    }
+
+    return reply.send({
+      success: true,
+      card: cardData,
+      message: 'Vibe card generated successfully!'
+    });
+  } catch (error) {
+    return sendError(reply, 500, 'Failed to generate vibe card', error.message);
+  }
+});
+
+
     // ===== LEADERBOARD AND SOCIAL ROUTES =====
     fastify.get('/leaderboard', async (request, reply) => {
       try {
@@ -1331,6 +1421,37 @@ function getFallbackTrending() {
       fallback: true
     }
   };
+}
+
+function getBadgeForPoints(points) {
+  if (points >= 100) return 'Adventure Master';
+  if (points >= 75) return 'Vibe Champion';
+  if (points >= 50) return 'Growth Seeker';
+  if (points >= 25) return 'Explorer';
+  return 'Getting Started';
+}
+
+function getTemplateColors(template) {
+  const colorSchemes = {
+    cosmic: ['#533483', '#7209b7', '#a663cc', '#4cc9f0'],
+    nature: ['#60a531', '#7cb342', '#8bc34a', '#9ccc65'],
+    retro: ['#8338ec', '#3a86ff', '#06ffa5', '#ffbe0b'],
+    minimal: ['#495057', '#6c757d', '#adb5bd', '#ced4da']
+  };
+  return colorSchemes[template] || colorSchemes.cosmic;
+}
+
+function generateTwitterShare(capsuleData, completionStats) {
+  const text = `Just completed "${capsuleData.adventure?.title}" and earned ${completionStats?.vibePointsEarned || 50} points! 🌟 #SparkVibe #Adventure`;
+  return `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=https://sparkvibe.app`;
+}
+
+function generateInstagramShare(capsuleData, completionStats) {
+  return `https://www.instagram.com/create/story/`;
+}
+
+function generateFacebookShare(capsuleData, completionStats) {
+  return `https://www.facebook.com/sharer/sharer.php?u=https://sparkvibe.app&quote=${encodeURIComponent('Just completed an amazing SparkVibe adventure!')}`;
 }
 
 // Graceful shutdown handling
