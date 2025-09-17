@@ -1,4 +1,4 @@
-// Complete Debug-enhanced LoginScreen.jsx
+// src/components/LoginScreen.jsx - Working Google Authentication
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import AuthService from '../services/AuthService';
@@ -14,32 +14,30 @@ const LoginScreen = ({ onAuthSuccess }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [googleReady, setGoogleReady] = useState(false);
-  const [debugInfo, setDebugInfo] = useState('');
+  const [googleStatus, setGoogleStatus] = useState('Loading Google Sign-In...');
 
-  // Enhanced Google initialization with debugging
+  // Initialize Google OAuth
   useEffect(() => {
     const initGoogle = async () => {
       try {
         setError('');
-        setDebugInfo('Initializing Google Sign-In...');
         
-        // Check environment variables
+        // Check environment variables first
         const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
         if (!clientId) {
-          const msg = 'VITE_GOOGLE_CLIENT_ID environment variable is not set';
-          setError(msg);
-          setDebugInfo(msg);
+          setError('Google Sign-In not configured (missing VITE_GOOGLE_CLIENT_ID)');
+          setGoogleStatus('Google Sign-In not configured');
           return;
         }
         
-        setDebugInfo(`Using Google Client ID: ${clientId.substring(0, 20)}...`);
+        console.log('Initializing Google Sign-In with Client ID:', clientId.substring(0, 20) + '...');
         
-        // Set up global callback handlers with debugging
+        // Set up global callback handlers BEFORE initializing Google
         window.handleGoogleLoginSuccess = (userData) => {
           console.log('✅ Google login successful:', userData);
           setLoading(false);
           setError('');
-          setDebugInfo('Google authentication successful!');
+          setGoogleStatus('Google authentication successful!');
           onAuthSuccess(userData);
         };
         
@@ -47,41 +45,30 @@ const LoginScreen = ({ onAuthSuccess }) => {
           console.error('❌ Google login error:', errorMessage);
           setLoading(false);
           setError(`Google Sign-In failed: ${errorMessage}`);
-          setDebugInfo(`Error details: ${errorMessage}`);
-          
-          // Show detailed error for debugging
-          if (errorMessage.includes('segments')) {
-            setDebugInfo(prev => prev + '\n\nThis is usually caused by:\n1. Invalid Google Client ID\n2. Token corruption during transmission\n3. Browser security settings blocking the token\n\nTry refreshing the page or using incognito mode.');
-          }
+          setGoogleStatus(`Google Sign-In error: ${errorMessage}`);
         };
 
-        // Initialize Google Auth with enhanced error handling
-        try {
-          const ready = await AuthService.initializeGoogleAuth();
-          setGoogleReady(ready);
-          setDebugInfo('Google Sign-In initialized successfully');
-          
-          if (ready) {
-            // Wait for DOM and render button
-            setTimeout(() => {
-              const success = AuthService.renderGoogleButton('google-signin-button');
-              if (success) {
-                setDebugInfo('Google button rendered successfully');
-              } else {
-                setDebugInfo('Google button rendering failed');
-              }
-            }, 1000);
-          }
-        } catch (initError) {
-          console.error('Google init error:', initError);
-          setError(`Google initialization failed: ${initError.message}`);
-          setDebugInfo(`Init error: ${initError.message}`);
-        }
+        // Initialize Google Auth
+        const ready = await AuthService.initializeGoogleAuth();
+        setGoogleReady(ready);
         
+        if (ready) {
+          setGoogleStatus('Google Sign-In ready');
+          
+          // Render the Google button
+          setTimeout(() => {
+            const success = AuthService.renderGoogleButton('google-signin-button');
+            if (success) {
+              setGoogleStatus('Google button ready');
+            } else {
+              setGoogleStatus('Google button failed to render');
+            }
+          }, 500);
+        }
       } catch (error) {
-        console.error('Overall Google setup error:', error);
-        setError(`Google setup failed: ${error.message}`);
-        setDebugInfo(`Setup error: ${error.message}`);
+        console.error('Google initialization failed:', error);
+        setError(`Google Sign-In setup failed: ${error.message}`);
+        setGoogleStatus(`Setup failed: ${error.message}`);
       }
     };
 
@@ -106,7 +93,6 @@ const LoginScreen = ({ onAuthSuccess }) => {
     e.preventDefault();
     setLoading(true);
     setError('');
-    setDebugInfo('Processing email authentication...');
 
     try {
       let response;
@@ -126,13 +112,10 @@ const LoginScreen = ({ onAuthSuccess }) => {
       }
 
       if (response.success) {
-        setDebugInfo('Email authentication successful!');
         onAuthSuccess(response.user);
       }
     } catch (error) {
-      const errorMsg = error.message || `${isLogin ? 'Login' : 'Registration'} failed`;
-      setError(errorMsg);
-      setDebugInfo(`Email auth error: ${errorMsg}`);
+      setError(error.message || `${isLogin ? 'Login' : 'Registration'} failed`);
     } finally {
       setLoading(false);
     }
@@ -142,33 +125,22 @@ const LoginScreen = ({ onAuthSuccess }) => {
     try {
       setLoading(true);
       setError('');
-      setDebugInfo('Initiating Google Sign-In...');
 
       if (!googleReady) {
         throw new Error('Google Sign-In is not ready yet. Please wait a moment and try again.');
       }
 
-      // Enhanced debugging for Google sign-in
-      console.log('=== Google Sign-In Debug ===');
-      console.log('Google ready:', googleReady);
-      console.log('Window.google exists:', !!window.google);
-      console.log('Google accounts exists:', !!window.google?.accounts);
-      console.log('Client ID:', import.meta.env.VITE_GOOGLE_CLIENT_ID?.substring(0, 20) + '...');
-
-      setDebugInfo('Triggering Google authentication popup...');
+      console.log('Triggering Google Sign-In...');
       AuthService.signInWithGoogle();
     } catch (error) {
       setLoading(false);
-      const errorMsg = error.message || 'Google Sign-In failed';
-      setError(errorMsg);
-      setDebugInfo(`Google sign-in error: ${errorMsg}`);
+      setError(error.message);
     }
   };
 
   const toggleMode = () => {
     setIsLogin(!isLogin);
     setError('');
-    setDebugInfo('');
     setFormData({
       email: '',
       password: '',
@@ -178,7 +150,6 @@ const LoginScreen = ({ onAuthSuccess }) => {
   };
 
   const handleGuestLogin = () => {
-    setDebugInfo('Creating guest session...');
     const guestUser = {
       id: `guest_${Date.now()}`,
       name: 'Guest Explorer',
@@ -203,51 +174,7 @@ const LoginScreen = ({ onAuthSuccess }) => {
     localStorage.setItem('sparkvibe_token', `guest_token_${Date.now()}`);
     localStorage.setItem('sparkvibe_user', JSON.stringify(guestUser));
     
-    setDebugInfo('Guest session created successfully');
     onAuthSuccess(guestUser);
-  };
-
-  // Test Google token function (for development)
-  const testGoogleToken = () => {
-    if (window.google?.accounts) {
-      console.log('Testing Google token generation...');
-      
-      window.google.accounts.id.initialize({
-        client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
-        callback: (response) => {
-          console.log('=== Test Token Response ===');
-          console.log('Full response:', response);
-          if (response.credential) {
-            const token = response.credential;
-            console.log('Token type:', typeof token);
-            console.log('Token length:', token.length);
-            console.log('Token segments:', token.split('.').length);
-            console.log('Token preview:', token.substring(0, 100) + '...');
-            
-            // Try to decode header and payload for debugging
-            try {
-              const parts = token.split('.');
-              const header = JSON.parse(atob(parts[0]));
-              const payload = JSON.parse(atob(parts[1]));
-              console.log('Header:', header);
-              console.log('Payload preview:', {
-                iss: payload.iss,
-                aud: payload.aud,
-                exp: new Date(payload.exp * 1000),
-                email: payload.email
-              });
-            } catch (e) {
-              console.error('Failed to decode token:', e);
-            }
-          }
-          console.log('=== End Test ===');
-        }
-      });
-      
-      window.google.accounts.id.prompt();
-    } else {
-      console.log('Google not available for testing');
-    }
   };
 
   return (
@@ -288,19 +215,15 @@ const LoginScreen = ({ onAuthSuccess }) => {
           transition={{ delay: 0.3 }}
           className="bg-white/10 backdrop-blur-sm rounded-xl p-6 md:p-8"
         >
-          {/* Debug Info Panel (show in development) */}
-          {import.meta.env.DEV && debugInfo && (
+          {/* Debug/Status Info (only in development) */}
+          {import.meta.env.DEV && (
             <div className="mb-4 p-3 bg-blue-500/20 border border-blue-500/30 rounded-lg text-blue-200 text-xs">
-              <div className="font-semibold mb-1">Debug Info:</div>
-              <div style={{ whiteSpace: 'pre-line' }}>{debugInfo}</div>
-              {import.meta.env.DEV && (
-                <button
-                  onClick={testGoogleToken}
-                  className="mt-2 text-xs bg-blue-500/30 px-2 py-1 rounded hover:bg-blue-500/50"
-                >
-                  Test Google Token
-                </button>
-              )}
+              <div className="font-semibold mb-1">Status:</div>
+              <div>{googleStatus}</div>
+              <div className="mt-1 text-xs opacity-75">
+                Google Ready: {googleReady ? '✅' : '❌'} | 
+                Client ID: {import.meta.env.VITE_GOOGLE_CLIENT_ID ? '✅' : '❌'}
+              </div>
             </div>
           )}
 
@@ -310,8 +233,7 @@ const LoginScreen = ({ onAuthSuccess }) => {
               animate={{ opacity: 1, y: 0 }}
               className="mb-4 p-3 bg-red-500/20 border border-red-500/30 rounded-lg text-red-200 text-sm"
             >
-              <div className="font-semibold mb-1">Error:</div>
-              <div>{error}</div>
+              {error}
             </motion.div>
           )}
 
@@ -343,24 +265,8 @@ const LoginScreen = ({ onAuthSuccess }) => {
                 )}
               </button>
 
-              {/* Status indicators */}
-              <div className="text-center text-xs text-white/60">
-                {!googleReady && !error && (
-                  <div className="flex items-center justify-center space-x-2">
-                    <div className="w-3 h-3 border border-white/40 border-t-transparent rounded-full animate-spin"></div>
-                    <span>Loading Google Sign-In...</span>
-                  </div>
-                )}
-                {googleReady && !error && (
-                  <span className="text-green-400">✓ Google Sign-In ready</span>
-                )}
-                {error && (
-                  <span className="text-red-400">⚠ Google Sign-In issue</span>
-                )}
-              </div>
-
-              {/* Hidden Google Sign In Container */}
-              <div id="google-signin-button" className="hidden"></div>
+              {/* Hidden Google Sign In Container for the rendered button */}
+              <div id="google-signin-button" className="w-full"></div>
             </div>
           </div>
 
