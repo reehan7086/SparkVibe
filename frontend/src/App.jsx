@@ -8,6 +8,9 @@ import TrendingAdventures from './components/TrendingAdventures';
 import LoginScreen from './components/LoginScreen';
 import ConnectionStatus from './components/ConnectionStatus';
 import AuthService from './services/AuthService';
+import CapsuleExperience from './components/CapsuleExperience';
+import MoodSummary from './components/MoodSummary';
+import CompletionCelebration from './components/CompletionCelebration';
 
 const App = () => {
   const [health, setHealth] = useState('Checking...');
@@ -20,57 +23,55 @@ const App = () => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-// Fix for App.jsx - Better user profile handling
-// Replace the useEffect that loads user data with this improved version:
-
-useEffect(() => {
-  const initializeApp = async () => {
-    try {
-      const isAuth = AuthService.isAuthenticated();
-      setIsAuthenticated(isAuth);
-      
-      if (isAuth) {
-        const currentUser = AuthService.getCurrentUser();
-        console.log('Current user:', currentUser);
+  // Check authentication and load user data
+  useEffect(() => {
+    const initializeApp = async () => {
+      try {
+        const isAuth = AuthService.isAuthenticated();
+        setIsAuthenticated(isAuth);
         
-        // Set initial user data from localStorage
-        setUser({
-          ...currentUser,
-          name: currentUser.name || 'SparkVibe Explorer',
-          totalPoints: currentUser.stats?.totalPoints || 0,
-          level: currentUser.stats?.level || 1,
-          streak: currentUser.stats?.streak || 0,
-          cardsGenerated: currentUser.stats?.cardsGenerated || 0,
-          cardsShared: currentUser.stats?.cardsShared || 0
-        });
-        
-        // Try to load user stats from backend, but don't fail if user doesn't exist
-        if (!currentUser.isGuest) {
-          try {
-            const userStats = await apiGet('/user/profile');
-            if (userStats.success && userStats.user) {
-              setUser(prevUser => ({
-                ...prevUser,
-                ...userStats.user,
-                name: currentUser.name || userStats.user.name || 'SparkVibe Explorer'
-              }));
+        if (isAuth) {
+          const currentUser = AuthService.getCurrentUser();
+          console.log('Current user:', currentUser);
+          
+          // Set initial user data from localStorage
+          setUser({
+            ...currentUser,
+            name: currentUser.name || 'SparkVibe Explorer',
+            totalPoints: currentUser.stats?.totalPoints || 0,
+            level: currentUser.stats?.level || 1,
+            streak: currentUser.stats?.streak || 0,
+            cardsGenerated: currentUser.stats?.cardsGenerated || 0,
+            cardsShared: currentUser.stats?.cardsShared || 0
+          });
+          
+          // Try to load user stats from backend, but don't fail if user doesn't exist
+          if (!currentUser.isGuest) {
+            try {
+              const userStats = await apiGet('/user/profile');
+              if (userStats.success && userStats.user) {
+                setUser(prevUser => ({
+                  ...prevUser,
+                  ...userStats.user,
+                  name: currentUser.name || userStats.user.name || 'SparkVibe Explorer'
+                }));
+              }
+            } catch (error) {
+              console.warn('Failed to load user stats from backend:', error.message);
+              // Continue with localStorage user data - don't throw error
             }
-          } catch (error) {
-            console.warn('Failed to load user stats from backend:', error.message);
-            // Continue with localStorage user data - don't throw error
           }
         }
+      } catch (error) {
+        console.error('App initialization failed:', error);
+        setIsAuthenticated(false);
+      } finally {
+        setLoading(false);
       }
-    } catch (error) {
-      console.error('App initialization failed:', error);
-      setIsAuthenticated(false);
-    } finally {
-      setLoading(false);
-    }
-  };
+    };
 
-  initializeApp();
-}, []);
+    initializeApp();
+  }, []);
 
   // Health check with improved error handling
   useEffect(() => {
@@ -494,3 +495,5 @@ useEffect(() => {
     </div>
   );
 };
+
+export default App;
