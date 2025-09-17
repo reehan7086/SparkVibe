@@ -432,87 +432,155 @@ const startServer = async () => {
       }
     });
 
-    // Google OAuth
-    if (googleClient) {
-      fastify.post('/auth/google', async (request, reply) => {
-        try {
-          const { token } = request.body;
-          
-          if (!token) {
-            return sendError(reply, 400, 'Google token is required');
-          }
+if (googleClient) {
+  fastify.post('/auth/google', async (request, reply) => {
+    try {
+      const { token } = request.body;
+      
+      console.log('Google auth request received');
+      console.log('Token type:', typeof token);
+      console.log('Token length:', token?.length);
+      console.log('Token preview:', token?.substring(0, 50) + '...');
+      
+      if (!token) {
+        return sendError(reply, 400, 'Google token is required');
+      }
 
-          if (mongoose.connection.readyState !== 1) {
-            return sendError(reply, 503, 'Database connection unavailable');
-          }
+      if (typeof token !== 'string') {
+        return sendError(reply, 400, 'Google token must be a string');
+      }
 
-          // Verify Google token
-          const ticket = await googleClient.verifyIdToken({
-            idToken: token,
-            audience: process.env.GOOGLE_CLIENT_ID
-          });
+      // Check if token looks like a valid JWT (3 parts separated by dots)
+      const tokenParts = token.split('.');
+      if (tokenParts.length !== 3) {
+        console.error(`Invalid JWT format: ${tokenParts.length} segments instead of 3`);
+        return sendError(reply, 401, `Invalid Google token format: ${tokenParts.length} segments`);
+      }
 
-          const payload = ticket.getPayload();
-          if (!payload) {
-            return sendError(reply, 401, 'Invalid Google token');
-          }
+      if (mongoose.connection.readyState !== 1) {
+        return sendError(reply, 503, 'Database connection unavailable');
+      }
 
-          const { sub: googleId, name, email, picture: avatar } = payload;
+      console.log('Attempting to verify Google ID token...');
 
-          // Find or create user
-          let user = await User.findOne({ googleId });
-          if (!user) {
-            user = await User.findOne({ email });
-            if (user) {
-              // Link existing account
-              user.googleId = googleId;
-              user.avatar = avatar;
-              user.authProvider = 'google';
-              user.emailVerified = true;
-            } else {
-              // Create new user
-              user = new User({
-                email,
-                name: sanitize(name),
-                avatar,
-                googleId,
-                authProvider: 'google',
-                emailVerified: true,
-                preferences: { 
-                  interests: ['wellness', 'creativity'], 
-                  aiPersonality: 'encouraging' 
-                }
-              });
+      let ticket;
+      try {
+        // Verify Google ID token
+        ticket = await googleClient.verifyIdToken({
+          idToken: token.trim(), // Trim any whitespace
+          audience: process.env.GOOGLE_CLIENT_ID
+        });
+      } catch (verifyError) {
+        console.error('Google token verification failed:', verifyError.message);
+        
+        // More specific error handling
+        if (verifyError.message.includes('Wrong number of segments')) {
+          return sendError(reply, 401, 'Invalid Google token format - token appears corrupted');
+        }
+        if (verifyError.message.includes('Invalid token signature')) {
+          return sendError(reply, 401, 'Invalid Google token signature');
+        }
+        if (verifyError.message.includes('Token used too early')) {
+          return sendError(reply, 401, 'Google token used too early');
+        }
+        if (verifyError.message.includes('Token used too late')) {
+          return sendError(reply, 401, 'Google token expired');
+        }
+        
+        return sendError(reply, 401, `Google token verification failed: ${verifyError.message}`);
+      }
+
+      const payload = ticket.getPayload();
+      if (!payload) {
+        return sendError(reply, 401, 'Invalid Google token payload');
+      }
+
+      console.log('Google token verified successfully');
+      console.log('User email:', payload.email);
+      console.log('User name:', payload.name);
+
+      const { sub: googleId, name, email, picture: avatar, email_verified } = payload;
+
+      if (!email_verified) {
+        return sendError(reply, 401, 'Google account email is not verified');
+      }
+
+      // Sanitize user data
+      const sanitizedEmail = sanitize(email.toLowerCase());
+      const sanitizedName = sanitize(name);
+
+      // Find or create user
+      let user = await User.findOne({ googleId });
+      
+      if (!user) {
+        // Check if user exists with this email but different provider
+        user = await User.findOne({ email: sanitizedEmail });
+        
+        if (user) {
+          // Link existing account to Google
+          console.log('Linking existing account to Google');
+          user.googleId = googleId;
+          user.avatar = avatar;
+          user.authProvider = 'google';
+          user.emailVerified = true;
+        } else {
+          // Create new user
+          console.log('Creating new Google user');
+          user = new User({
+            email: sanitizedEmail,
+            name: sanitizedName,
+            avatar,
+            googleId,
+            authProvider: 'google',
+            emailVerified: true,
+            preferences: { 
+              interests: ['wellness', 'creativity'], 
+              aiPersonality: 'encouraging' 
             }
-            await user.save();
-          }
-
-          // Update last activity
-          user.stats.lastActivity = new Date();
+          });
+        }
+        
+        await user.save();
+        console.log('User saved successfully');
+      } else {
+        console.log('Existing Google user found');
+        // Update user info if needed
+        if (user.avatar !== avatar) {
+          user.avatar = avatar;
           await user.save();
+        }
+      }
 
-          // Generate JWT token
-          const jwtToken = fastify.jwt.sign({ userId: user._id }, { expiresIn: '7d' });
+      // Update last activity
+      user.stats.lastActivity = new Date();
+      await user.save();
 
-          return reply.send({
-            success: true,
-            token: jwtToken,
-            user: {
-              id: user._id,
-              name: user.name,
-              email: user.email,
-              avatar: user.avatar,
-              emailVerified: user.emailVerified,
-              stats: user.stats,
-              achievements: user.achievements,
-              preferences: user.preferences
-            }
-          });
-        } catch (error) {
-          return sendError(reply, 401, 'Google authentication failed', error.message);
+      // Generate JWT token for our app
+      const jwtToken = fastify.jwt.sign({ userId: user._id }, { expiresIn: '7d' });
+
+      return reply.send({
+        success: true,
+        message: 'Google authentication successful',
+        token: jwtToken,
+        user: {
+          id: user._id,
+          name: user.name,
+          email: user.email,
+          avatar: user.avatar,
+          emailVerified: user.emailVerified,
+          stats: user.stats,
+          achievements: user.achievements,
+          preferences: user.preferences,
+          provider: 'google'
         }
       });
+    } catch (error) {
+      console.error('Google authentication error:', error);
+      return sendError(reply, 500, 'Google authentication failed', error.message);
     }
+  });
+}
+
 
     // ===== USER ROUTES =====
     fastify.get('/user/profile', { preHandler: [fastify.authenticate] }, async (request, reply) => {

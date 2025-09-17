@@ -400,6 +400,94 @@ class AuthService {
     }
   }
 
+  async handleGoogleCallback(response) {
+  try {
+    console.log('Google callback received');
+    console.log('Response object:', response);
+    
+    if (!response.credential) {
+      throw new Error('No credential received from Google');
+    }
+
+    // Validate the credential format
+    const credential = response.credential.trim();
+    const tokenParts = credential.split('.');
+    
+    if (tokenParts.length !== 3) {
+      console.error('Invalid JWT format from Google:', tokenParts.length, 'segments');
+      throw new Error(`Invalid token format from Google: ${tokenParts.length} segments instead of 3`);
+    }
+
+    console.log('Sending ID token to backend...');
+    console.log('Token segments:', tokenParts.length);
+    console.log('Token preview:', credential.substring(0, 50) + '...');
+
+    // Send ID token to backend
+    const result = await apiPost('/auth/google', {
+      token: credential
+    });
+
+    if (result.success) {
+      console.log('Backend authentication successful');
+      this.setAuthData(result.token, result.user);
+      
+      // Call success handler if available
+      if (window.handleGoogleLoginSuccess) {
+        window.handleGoogleLoginSuccess(result.user);
+      }
+    } else {
+      throw new Error(result.message || 'Google authentication failed');
+    }
+  } catch (error) {
+    console.error('Google authentication error:', error);
+    
+    // Call error handler if available
+    if (window.handleGoogleLoginError) {
+      window.handleGoogleLoginError(error.message);
+    } else {
+      throw error;
+    }
+  }
+}
+
+debugGoogleToken(token) {
+  console.log('=== Google Token Debug Info ===');
+  console.log('Token type:', typeof token);
+  console.log('Token length:', token?.length);
+  console.log('Token starts with:', token?.substring(0, 20));
+  console.log('Token ends with:', token?.substring(token.length - 20));
+  
+  if (token) {
+    const parts = token.split('.');
+    console.log('Number of segments:', parts.length);
+    
+    if (parts.length >= 1) {
+      try {
+        const header = JSON.parse(atob(parts[0]));
+        console.log('JWT Header:', header);
+      } catch (e) {
+        console.log('Could not decode header:', e.message);
+      }
+    }
+    
+    if (parts.length >= 2) {
+      try {
+        const payload = JSON.parse(atob(parts[1]));
+        console.log('JWT Payload (preview):', {
+          iss: payload.iss,
+          aud: payload.aud,
+          sub: payload.sub?.substring(0, 10) + '...',
+          exp: new Date(payload.exp * 1000),
+          iat: new Date(payload.iat * 1000)
+        });
+      } catch (e) {
+        console.log('Could not decode payload:', e.message);
+      }
+    }
+  }
+  console.log('=== End Debug Info ===');
+}
+
   urlBase64ToUint8Array(base64String) {
     try {
       const padding = '='.repeat((4 - base64String.length % 4) % 4);
