@@ -1,4 +1,4 @@
-// src/components/LoginScreen.jsx - Working Google Authentication
+// Fixed LoginScreen.jsx - Complete Working Version
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import AuthService from '../services/AuthService';
@@ -14,80 +14,70 @@ const LoginScreen = ({ onAuthSuccess }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [googleReady, setGoogleReady] = useState(false);
-  const [googleStatus, setGoogleStatus] = useState('Loading Google Sign-In...');
+  const [debugInfo, setDebugInfo] = useState('');
 
-  // Initialize Google OAuth
   useEffect(() => {
-    const initGoogle = async () => {
+    const initializeAuth = async () => {
       try {
-        setError('');
+        setDebugInfo('Initializing authentication...');
         
-        // Check environment variables first
+        // Check environment
         const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+        console.log('=== Auth Debug ===');
+        console.log('Client ID exists:', !!clientId);
+        console.log('Client ID preview:', clientId ? clientId.substring(0, 20) + '...' : 'MISSING');
+        
         if (!clientId) {
-          setError('Google Sign-In not configured (missing VITE_GOOGLE_CLIENT_ID)');
-          setGoogleStatus('Google Sign-In not configured');
+          setError('Google Client ID not configured');
+          setDebugInfo('VITE_GOOGLE_CLIENT_ID is missing from environment variables');
           return;
         }
-        
-        console.log('Initializing Google Sign-In with Client ID:', clientId.substring(0, 20) + '...');
-        
-        // Set up global callback handlers BEFORE initializing Google
+
+        // Set up callbacks FIRST
         window.handleGoogleLoginSuccess = (userData) => {
-          console.log('✅ Google login successful:', userData);
+          console.log('✅ Login success callback:', userData);
           setLoading(false);
           setError('');
-          setGoogleStatus('Google authentication successful!');
+          setDebugInfo('Authentication successful!');
           onAuthSuccess(userData);
         };
-        
+
         window.handleGoogleLoginError = (errorMessage) => {
-          console.error('❌ Google login error:', errorMessage);
+          console.error('❌ Login error callback:', errorMessage);
           setLoading(false);
-          setError(`Google Sign-In failed: ${errorMessage}`);
-          setGoogleStatus(`Google Sign-In error: ${errorMessage}`);
+          setError(errorMessage);
+          setDebugInfo(`Error: ${errorMessage}`);
         };
 
-        // Initialize Google Auth
+        // Initialize Google
+        setDebugInfo('Loading Google services...');
         const ready = await AuthService.initializeGoogleAuth();
-        setGoogleReady(ready);
         
         if (ready) {
-          setGoogleStatus('Google Sign-In ready');
+          setGoogleReady(true);
+          setDebugInfo('Google services ready');
           
-          // Render the Google button
+          // Render button after short delay
           setTimeout(() => {
-            const success = AuthService.renderGoogleButton('google-signin-button');
-            if (success) {
-              setGoogleStatus('Google button ready');
-            } else {
-              setGoogleStatus('Google button failed to render');
-            }
+            const success = AuthService.renderGoogleButton('google-button-container');
+            setDebugInfo(success ? 'Google button rendered' : 'Button render failed');
           }, 500);
         }
+
       } catch (error) {
-        console.error('Google initialization failed:', error);
-        setError(`Google Sign-In setup failed: ${error.message}`);
-        setGoogleStatus(`Setup failed: ${error.message}`);
+        console.error('Auth initialization failed:', error);
+        setError(error.message);
+        setDebugInfo(`Initialization failed: ${error.message}`);
       }
     };
 
-    initGoogle();
+    initializeAuth();
 
-    // Cleanup
     return () => {
       delete window.handleGoogleLoginSuccess;
       delete window.handleGoogleLoginError;
     };
   }, [onAuthSuccess]);
-
-  const handleInputChange = (e) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value
-    });
-    if (error) setError('');
-  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -95,91 +85,64 @@ const LoginScreen = ({ onAuthSuccess }) => {
     setError('');
 
     try {
-      let response;
+      let result;
       if (isLogin) {
-        response = await AuthService.login(formData.email, formData.password);
+        result = await AuthService.login(formData.email, formData.password);
       } else {
-        if (!formData.name.trim()) {
-          throw new Error('Name is required');
-        }
-        if (formData.password !== formData.confirmPassword) {
-          throw new Error('Passwords do not match');
-        }
-        if (formData.password.length < 6) {
-          throw new Error('Password must be at least 6 characters long');
-        }
-        response = await AuthService.register(formData.email, formData.password, formData.name);
+        if (!formData.name.trim()) throw new Error('Name is required');
+        if (formData.password !== formData.confirmPassword) throw new Error('Passwords do not match');
+        if (formData.password.length < 6) throw new Error('Password must be at least 6 characters');
+        
+        result = await AuthService.register(formData.email, formData.password, formData.name);
       }
 
-      if (response.success) {
-        onAuthSuccess(response.user);
+      if (result.success) {
+        onAuthSuccess(result.user);
       }
     } catch (error) {
-      setError(error.message || `${isLogin ? 'Login' : 'Registration'} failed`);
+      setError(error.message);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleGoogleSignIn = async () => {
+  const handleGoogleClick = () => {
+    if (!googleReady) {
+      setError('Google Sign-In not ready yet');
+      return;
+    }
+
     try {
       setLoading(true);
       setError('');
-
-      if (!googleReady) {
-        throw new Error('Google Sign-In is not ready yet. Please wait a moment and try again.');
-      }
-
-      console.log('Triggering Google Sign-In...');
+      setDebugInfo('Starting Google sign-in...');
       AuthService.signInWithGoogle();
     } catch (error) {
       setLoading(false);
       setError(error.message);
+      setDebugInfo(`Google sign-in failed: ${error.message}`);
     }
-  };
-
-  const toggleMode = () => {
-    setIsLogin(!isLogin);
-    setError('');
-    setFormData({
-      email: '',
-      password: '',
-      name: '',
-      confirmPassword: ''
-    });
   };
 
   const handleGuestLogin = () => {
     const guestUser = {
       id: `guest_${Date.now()}`,
-      name: 'Guest Explorer',
-      email: 'guest@sparkvibe.demo',
+      name: 'Guest User',
+      email: 'guest@demo.com',
       avatar: '👤',
       emailVerified: true,
       isGuest: true,
-      provider: 'guest',
-      stats: {
-        totalPoints: 0,
-        level: 1,
-        streak: 0,
-        cardsGenerated: 0,
-        cardsShared: 0,
-      },
-      preferences: {
-        adventureTypes: ['general'],
-        difficulty: 'easy',
-      },
+      stats: { totalPoints: 0, level: 1, streak: 0, cardsGenerated: 0, cardsShared: 0 }
     };
     
-    localStorage.setItem('sparkvibe_token', `guest_token_${Date.now()}`);
+    localStorage.setItem('sparkvibe_token', `guest_${Date.now()}`);
     localStorage.setItem('sparkvibe_user', JSON.stringify(guestUser));
-    
     onAuthSuccess(guestUser);
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 flex items-center justify-center px-4">
-      {/* Background Animation */}
+      {/* Background */}
       <div className="absolute inset-0 overflow-hidden">
         <div className="absolute -top-40 -right-40 w-80 h-80 bg-purple-500 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-pulse"></div>
         <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-yellow-500 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-pulse"></div>
@@ -189,10 +152,9 @@ const LoginScreen = ({ onAuthSuccess }) => {
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6 }}
         className="relative z-10 w-full max-w-md"
       >
-        {/* Logo and Header */}
+        {/* Header */}
         <div className="text-center mb-8">
           <motion.div
             initial={{ scale: 0 }}
@@ -203,73 +165,61 @@ const LoginScreen = ({ onAuthSuccess }) => {
             <span className="text-white font-bold text-3xl">S</span>
           </motion.div>
           <h1 className="text-4xl font-bold text-white mb-2">SparkVibe</h1>
-          <p className="text-blue-200">
-            {isLogin ? 'Welcome back!' : 'Start your journey'} 
-          </p>
+          <p className="text-blue-200">{isLogin ? 'Welcome back!' : 'Start your journey'}</p>
         </div>
 
-        {/* Login/Register Form */}
+        {/* Form */}
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.3 }}
-          className="bg-white/10 backdrop-blur-sm rounded-xl p-6 md:p-8"
+          className="bg-white/10 backdrop-blur-sm rounded-xl p-6"
         >
-          {/* Debug/Status Info (only in development) */}
-          {import.meta.env.DEV && (
-            <div className="mb-4 p-3 bg-blue-500/20 border border-blue-500/30 rounded-lg text-blue-200 text-xs">
-              <div className="font-semibold mb-1">Status:</div>
-              <div>{googleStatus}</div>
-              <div className="mt-1 text-xs opacity-75">
-                Google Ready: {googleReady ? '✅' : '❌'} | 
-                Client ID: {import.meta.env.VITE_GOOGLE_CLIENT_ID ? '✅' : '❌'}
-              </div>
+          {/* Debug Info */}
+          {import.meta.env.DEV && debugInfo && (
+            <div className="mb-4 p-2 bg-blue-500/20 rounded text-blue-200 text-xs">
+              <strong>Debug:</strong> {debugInfo}
             </div>
           )}
 
+          {/* Error */}
           {error && (
-            <motion.div
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="mb-4 p-3 bg-red-500/20 border border-red-500/30 rounded-lg text-red-200 text-sm"
-            >
+            <div className="mb-4 p-3 bg-red-500/20 border border-red-500/30 rounded text-red-200 text-sm">
               {error}
-            </motion.div>
+            </div>
           )}
 
-          {/* Google Sign In Section */}
+          {/* Google Button */}
           <div className="mb-6">
-            <div className="space-y-3">
-              {/* Manual Google Sign In Button */}
-              <button
-                type="button"
-                onClick={handleGoogleSignIn}
-                disabled={loading || !googleReady}
-                className="w-full py-3 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-gray-900 font-semibold transition-all duration-300 flex items-center justify-center space-x-2"
-              >
-                {loading ? (
-                  <div className="flex items-center space-x-2">
-                    <div className="w-5 h-5 border-2 border-gray-600 border-t-transparent rounded-full animate-spin"></div>
-                    <span>Signing in...</span>
-                  </div>
-                ) : (
-                  <>
-                    <svg className="w-5 h-5" viewBox="0 0 24 24">
-                      <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                      <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                      <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-                      <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-                    </svg>
-                    <span>Continue with Google</span>
-                  </>
-                )}
-              </button>
+            <button
+              type="button"
+              onClick={handleGoogleClick}
+              disabled={loading || !googleReady}
+              className="w-full py-3 bg-white hover:bg-gray-50 disabled:opacity-50 rounded-lg text-gray-900 font-semibold transition-all flex items-center justify-center space-x-2"
+            >
+              {loading ? (
+                <>
+                  <div className="w-5 h-5 border-2 border-gray-600 border-t-transparent rounded-full animate-spin"></div>
+                  <span>Signing in...</span>
+                </>
+              ) : (
+                <>
+                  <svg className="w-5 h-5" viewBox="0 0 24 24">
+                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                  </svg>
+                  <span>Continue with Google</span>
+                </>
+              )}
+            </button>
 
-              {/* Hidden Google Sign In Container for the rendered button */}
-              <div id="google-signin-button" className="w-full"></div>
-            </div>
+            {/* Hidden container for Google's rendered button */}
+            <div id="google-button-container" className="mt-2 hidden"></div>
           </div>
 
+          {/* Divider */}
           <div className="flex items-center my-6">
             <div className="flex-1 border-t border-white/30"></div>
             <span className="px-4 text-white/60 text-sm">or</span>
@@ -279,85 +229,61 @@ const LoginScreen = ({ onAuthSuccess }) => {
           {/* Email Form */}
           <form onSubmit={handleSubmit} className="space-y-4">
             {!isLogin && (
-              <div>
-                <label htmlFor="name" className="block text-white text-sm font-medium mb-2">
-                  Full Name
-                </label>
-                <input
-                  type="text"
-                  id="name"
-                  name="name"
-                  value={formData.name}
-                  onChange={handleInputChange}
-                  required={!isLogin}
-                  className="w-full px-4 py-3 bg-white/20 border border-white/30 rounded-lg text-white placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all"
-                  placeholder="Enter your full name"
-                />
-              </div>
+              <input
+                type="text"
+                name="name"
+                placeholder="Full Name"
+                value={formData.name}
+                onChange={(e) => setFormData({...formData, name: e.target.value})}
+                className="w-full px-4 py-3 bg-white/20 border border-white/30 rounded-lg text-white placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-pink-500"
+                required={!isLogin}
+              />
             )}
 
-            <div>
-              <label htmlFor="email" className="block text-white text-sm font-medium mb-2">
-                Email
-              </label>
-              <input
-                type="email"
-                id="email"
-                name="email"
-                value={formData.email}
-                onChange={handleInputChange}
-                required
-                className="w-full px-4 py-3 bg-white/20 border border-white/30 rounded-lg text-white placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all"
-                placeholder="Enter your email"
-              />
-            </div>
+            <input
+              type="email"
+              name="email"
+              placeholder="Email"
+              value={formData.email}
+              onChange={(e) => setFormData({...formData, email: e.target.value})}
+              className="w-full px-4 py-3 bg-white/20 border border-white/30 rounded-lg text-white placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-pink-500"
+              required
+            />
 
-            <div>
-              <label htmlFor="password" className="block text-white text-sm font-medium mb-2">
-                Password
-              </label>
-              <input
-                type="password"
-                id="password"
-                name="password"
-                value={formData.password}
-                onChange={handleInputChange}
-                required
-                minLength={6}
-                className="w-full px-4 py-3 bg-white/20 border border-white/30 rounded-lg text-white placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all"
-                placeholder="Enter your password"
-              />
-            </div>
+            <input
+              type="password"
+              name="password"
+              placeholder="Password"
+              value={formData.password}
+              onChange={(e) => setFormData({...formData, password: e.target.value})}
+              className="w-full px-4 py-3 bg-white/20 border border-white/30 rounded-lg text-white placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-pink-500"
+              required
+              minLength={6}
+            />
 
             {!isLogin && (
-              <div>
-                <label htmlFor="confirmPassword" className="block text-white text-sm font-medium mb-2">
-                  Confirm Password
-                </label>
-                <input
-                  type="password"
-                  id="confirmPassword"
-                  name="confirmPassword"
-                  value={formData.confirmPassword}
-                  onChange={handleInputChange}
-                  required={!isLogin}
-                  minLength={6}
-                  className="w-full px-4 py-3 bg-white/20 border border-white/30 rounded-lg text-white placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all"
-                  placeholder="Confirm your password"
-                />
-              </div>
+              <input
+                type="password"
+                name="confirmPassword"
+                placeholder="Confirm Password"
+                value={formData.confirmPassword}
+                onChange={(e) => setFormData({...formData, confirmPassword: e.target.value})}
+                className="w-full px-4 py-3 bg-white/20 border border-white/30 rounded-lg text-white placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-pink-500"
+                required={!isLogin}
+                minLength={6}
+              />
             )}
 
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3 bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-white font-semibold transition-all duration-300 flex items-center justify-center"
+              className="w-full py-3 bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 disabled:opacity-50 rounded-lg text-white font-semibold transition-all flex items-center justify-center"
             >
               {loading ? (
-                <div className="flex items-center space-x-2">
-                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  <span>{isLogin ? 'Signing in...' : 'Creating account...'}</span>
-                </div>
+                <>
+                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
+                  {isLogin ? 'Signing in...' : 'Creating account...'}
+                </>
               ) : (
                 <span>{isLogin ? 'Sign In' : 'Create Account'}</span>
               )}
@@ -366,7 +292,11 @@ const LoginScreen = ({ onAuthSuccess }) => {
             <div className="text-center">
               <button
                 type="button"
-                onClick={toggleMode}
+                onClick={() => {
+                  setIsLogin(!isLogin);
+                  setError('');
+                  setFormData({ email: '', password: '', name: '', confirmPassword: '' });
+                }}
                 className="text-blue-200 hover:text-white text-sm underline"
               >
                 {isLogin ? 'Need an account? Sign up' : 'Already have an account? Sign in'}
@@ -374,47 +304,16 @@ const LoginScreen = ({ onAuthSuccess }) => {
             </div>
           </form>
 
-          {/* Alternative Options */}
+          {/* Guest Option */}
           <div className="mt-6 pt-6 border-t border-white/20">
             <button
               type="button"
               onClick={handleGuestLogin}
-              className="w-full py-3 bg-white/10 hover:bg-white/20 border border-white/30 rounded-lg text-white font-medium transition-all duration-300 flex items-center justify-center space-x-2"
+              className="w-full py-3 bg-white/10 hover:bg-white/20 border border-white/30 rounded-lg text-white font-medium transition-all flex items-center justify-center space-x-2"
             >
-              <span className="text-lg">👤</span>
+              <span>👤</span>
               <span>Continue as Guest</span>
             </button>
-          </div>
-
-          {/* Features showcase */}
-          <div className="mt-6 pt-6 border-t border-white/20">
-            <p className="text-center text-sm text-white/60 mb-4">
-              Transform your mood into meaningful moments
-            </p>
-            <div className="grid grid-cols-3 gap-4 text-center">
-              <div className="text-white/60">
-                <div className="text-2xl mb-1">🧠</div>
-                <p className="text-xs">AI Mood Analysis</p>
-              </div>
-              <div className="text-white/60">
-                <div className="text-2xl mb-1">🎨</div>
-                <p className="text-xs">Viral Card Generation</p>
-              </div>
-              <div className="text-white/60">
-                <div className="text-2xl mb-1">🏆</div>
-                <p className="text-xs">Social Challenges</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Privacy notice */}
-          <div className="mt-4 text-center">
-            <p className="text-xs text-white/50">
-              By continuing, you agree to our{' '}
-              <a href="/terms" className="underline hover:text-white">Terms of Service</a>{' '}
-              and{' '}
-              <a href="/privacy" className="underline hover:text-white">Privacy Policy</a>
-            </p>
           </div>
         </motion.div>
       </motion.div>
