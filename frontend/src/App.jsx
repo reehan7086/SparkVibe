@@ -299,12 +299,12 @@ const App = () => {
   }
 
   return (
-    <div className="min-h-screen w-full bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900
-                    flex flex-col items-center justify-start
+    <div className="min-h-screen w-full bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 
+                    flex flex-col items-center justify-start 
                     px-3 py-4 sm:px-4 sm:py-6 lg:px-8 lg:py-8
                     overflow-x-hidden">
-
-      {/* Responsive header with better mobile layout */}
+      
+      {/* FIXED: Responsive header with better mobile layout */}
       <motion.div
         initial={{ opacity: 0, y: -50 }}
         animate={{ opacity: 1, y: 0 }}
@@ -319,8 +319,8 @@ const App = () => {
         <p className="text-base sm:text-lg lg:text-xl text-blue-200 mb-3">
           AI-Powered Daily Adventures
         </p>
-
-        {/* User Welcome with better mobile spacing */}
+        
+        {/* FIXED: User Welcome with better mobile spacing */}
         {user && (
           <div className="mb-3">
             <p className="text-white text-sm sm:text-base">
@@ -333,8 +333,8 @@ const App = () => {
             </p>
           </div>
         )}
-
-        {/* Responsive stats bar with better mobile layout */}
+        
+        {/* FIXED: Responsive stats bar with better mobile layout */}
         <div className="flex flex-wrap justify-center items-center gap-2 mb-4">
           <div className="flex items-center space-x-1 bg-white/10 rounded-full px-3 py-1.5 text-xs sm:text-sm">
             <span className="text-yellow-400">⚡</span>
@@ -352,7 +352,7 @@ const App = () => {
           </div>
         </div>
 
-        {/* Responsive progress indicator */}
+        {/* FIXED: Responsive progress indicator */}
         <div className="flex items-center justify-center space-x-2 mb-4">
           <div className={`w-2 h-2 rounded-full ${currentStep === 'mood' ? 'bg-purple-400' : 'bg-purple-400 opacity-50'}`}></div>
           <div className="w-6 sm:w-12 h-0.5 bg-white/30">
@@ -365,7 +365,7 @@ const App = () => {
           <div className={`w-2 h-2 rounded-full ${currentStep === 'card' ? 'bg-purple-400' : 'bg-white/30'}`}></div>
         </div>
 
-        {/* Backend status with responsive layout */}
+        {/* FIXED: Backend status with responsive layout */}
         <div className="flex flex-col sm:flex-row items-center justify-center gap-2 sm:gap-4">
           <p className="text-xs sm:text-sm text-gray-300">
             Backend Status:{" "}
@@ -377,7 +377,7 @@ const App = () => {
         </div>
       </motion.div>
 
-      {/* Main Content with improved mobile-first grid */}
+      {/* FIXED: Main Content with improved mobile-first grid */}
       <div className="w-full max-w-7xl">
         <AnimatePresence mode="wait">
           {currentStep === 'mood' && (
@@ -396,9 +396,8 @@ const App = () => {
               </div>
               <div className="space-y-4 order-2">
                 <TrendingAdventures />
-                <div className="hidden sm:block">
-                  <Leaderboard />
-                </div>
+                {/* FIXED: Show leaderboard on mobile too */}
+                <Leaderboard />
               </div>
             </motion.div>
           )}
@@ -421,9 +420,8 @@ const App = () => {
               </div>
               <div className="space-y-4 order-2">
                 <MoodSummary moodData={moodData} />
-                <div className="hidden sm:block">
-                  <Leaderboard />
-                </div>
+                {/* FIXED: Show leaderboard on mobile too */}
+                <Leaderboard />
               </div>
             </motion.div>
           )}
@@ -480,16 +478,15 @@ const App = () => {
                   completionStats={completionStats}
                   moodData={moodData}
                 />
-                <div className="hidden sm:block">
-                  <Leaderboard />
-                </div>
+                {/* FIXED: Show leaderboard on mobile too */}
+                <Leaderboard />
               </div>
             </motion.div>
           )}
         </AnimatePresence>
       </div>
 
-      {/* Responsive footer */}
+      {/* FIXED: Responsive footer */}
       <div className="text-center text-xs sm:text-sm text-blue-300 opacity-75 mt-6 px-4 w-full">
         <p className="mb-2">Create • Share • Inspire</p>
         <p className="text-xs opacity-75">

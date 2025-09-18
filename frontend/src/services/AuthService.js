@@ -1,4 +1,4 @@
-// Fixed AuthService.js - Resolves Google button language and user data issues
+// Updated AuthService.js - Responsive Google button that matches input field widths
 import { apiPost } from '../utils/safeUtils.js';
 
 class AuthService {
@@ -173,10 +173,29 @@ class AuthService {
     try {
       container.innerHTML = '';
       
-      // FIXED: Responsive button configuration with language settings
-      const containerWidth = container.offsetWidth || 280;
-      const buttonWidth = Math.min(containerWidth - 20, 400); // Max 400px, min container width - 20px
+      // FIXED: Calculate responsive width based on container/input field width
+      let buttonWidth = 320; // Default width
       
+      // Try to match the width of the form inputs
+      const parentForm = container.closest('form') || container.closest('.bg-white\\/10');
+      if (parentForm) {
+        const inputField = parentForm.querySelector('input[type="email"], input[type="text"], input[type="password"]');
+        if (inputField) {
+          const inputWidth = inputField.offsetWidth;
+          if (inputWidth > 0) {
+            buttonWidth = Math.min(inputWidth, 400); // Max 400px, but match input width
+            console.log(`Setting Google button width to match input: ${buttonWidth}px`);
+          }
+        }
+      }
+      
+      // Fallback: use container width if available
+      if (buttonWidth === 320 && container.offsetWidth > 0) {
+        buttonWidth = Math.min(container.offsetWidth - 20, 400);
+        console.log(`Using container width for Google button: ${buttonWidth}px`);
+      }
+      
+      // FIXED: Responsive button configuration with proper width
       window.google.accounts.id.renderButton(container, {
         theme: 'outline',
         size: 'large',

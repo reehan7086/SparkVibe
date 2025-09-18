@@ -1,4 +1,4 @@
-// Fixed LoginScreen.jsx - Improved Google button handling and error management
+// Fixed LoginScreen.jsx - Google button alignment with input fields
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import AuthService from '../services/AuthService';
@@ -57,12 +57,20 @@ const LoginScreen = ({ onAuthSuccess }) => {
           setGoogleReady(true);
           setDebugInfo('Google services ready');
           
-          // Render button after DOM is ready
+          // Render button after DOM is ready with proper width calculation
           setTimeout(() => {
             const container = document.getElementById('google-button-container');
             if (container) {
+              // FIXED: Set container width to match input fields
+              const inputField = document.querySelector('input[type="email"]');
+              if (inputField) {
+                const inputWidth = inputField.offsetWidth;
+                container.style.width = `${inputWidth}px`;
+                container.style.margin = '0 auto';
+              }
+              
               const success = AuthService.renderGoogleButton('google-button-container');
-              setDebugInfo(success ? 'Google button rendered' : 'Button render failed');
+              setDebugInfo(success ? 'Google button rendered with proper width' : 'Button render failed');
               
               // Show the container if button rendered successfully
               if (success) {
@@ -200,7 +208,7 @@ const LoginScreen = ({ onAuthSuccess }) => {
 
           {/* Google Sign-In Section */}
           <div className="mb-6">
-            {/* Custom Google Button (fallback) */}
+            {/* Custom Google Button (fallback) - FIXED: Full width */}
             <button
               type="button"
               onClick={handleCustomGoogleClick}
@@ -225,10 +233,10 @@ const LoginScreen = ({ onAuthSuccess }) => {
               )}
             </button>
 
-            {/* Official Google Button Container */}
+            {/* Official Google Button Container - FIXED: Full width and centered */}
             <div 
               id="google-button-container" 
-              className="mt-2"
+              className="mt-2 w-full"
               style={{ 
                 display: 'none',
                 width: '100%',
