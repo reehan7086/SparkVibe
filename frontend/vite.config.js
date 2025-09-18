@@ -2,47 +2,49 @@ import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 
 export default defineConfig(({ mode }) => {
- const env = loadEnv(mode, process.cwd(), '');
- 
- const getApiUrl = () => {
-   if (mode === 'production') {
-     return 'https://backend-sv-3n4v6.ondigitalocean.app';
-   }
-   return env.VITE_API_URL || 'http://localhost:8080';
- };
- 
- const apiUrl = getApiUrl();
- 
- return {
-   plugins: [react()],
-   resolve: {
-     extensions: ['.js', '.jsx'],
-     alias: {
-       'framer-motion/dist/es': 'framer-motion/dist/es',
-     },
-   },
-   server: {
-     port: 5173,
-   },
-   preview: {
-     port: 8080,
-     host: '0.0.0.0',
-   },
-   define: {
-     'process.env': {
-       VITE_API_URL: JSON.stringify(apiUrl),
-       VITE_ENV: JSON.stringify(env.VITE_ENV || mode),
-       NODE_ENV: JSON.stringify(mode),
-     },
-   },
-   build: {
-     outDir: 'dist',
-     sourcemap: false,
-     minify: 'esbuild',
-   },
-   optimizeDeps: {
-     include: ['framer-motion'],
-     exclude: [],
-   },
- };
+  const env = loadEnv(mode, process.cwd(), '');
+
+  const getApiUrl = () => {
+    if (mode === 'production') {
+      return 'https://backend-sv-3n4v6.ondigitalocean.app';
+    }
+    return env.VITE_API_URL || 'http://localhost:8080';
+  };
+
+  const apiUrl = getApiUrl();
+
+  return {
+    plugins: [react()],
+    resolve: {
+      extensions: ['.js', '.jsx', '.ts', '.tsx'], // Added .ts, .tsx
+      alias: {
+        '@': '/src', // Added for easier imports
+        'framer-motion/dist/es': 'framer-motion/dist/es',
+      },
+    },
+    server: {
+      port: 5173,
+      host: '0.0.0.0', // Ensure accessible in cloud environments
+    },
+    preview: {
+      port: 8080,
+      host: '0.0.0.0',
+    },
+    define: {
+      'process.env': {
+        VITE_API_URL: JSON.stringify(apiUrl),
+        VITE_ENV: JSON.stringify(env.VITE_ENV || mode),
+        NODE_ENV: JSON.stringify(mode),
+      },
+    },
+    build: {
+      outDir: 'dist',
+      sourcemap: false,
+      minify: 'esbuild',
+    },
+    optimizeDeps: {
+      include: ['framer-motion', '@formkit/auto-animate'], // Added @formkit/auto-animate
+      exclude: [],
+    },
+  };
 });

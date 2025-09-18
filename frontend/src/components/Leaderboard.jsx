@@ -6,11 +6,10 @@ const Leaderboard = () => {
   const [leaderboardData, setLeaderboardData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  
-  // AutoAnimate hook
+  const [retryCount, setRetryCount] = useState(3);
+
   const [containerRef] = useAutoAnimate();
 
-  // Get current user from localStorage to merge with leaderboard
   const getCurrentUser = () => {
     try {
       const userData = localStorage.getItem('sparkvibe_user');
@@ -24,12 +23,12 @@ const Leaderboard = () => {
     try {
       setLoading(true);
       setError(null);
+      setRetryCount(retries);
       console.log('Fetching leaderboard from: /leaderboard');
-      
+
       const response = await apiGet('/leaderboard');
       console.log('Leaderboard data received:', response);
-      
-      // Handle different response formats
+
       let data = [];
       if (response && response.success && Array.isArray(response.data)) {
         data = response.data;
@@ -41,38 +40,35 @@ const Leaderboard = () => {
         console.warn('Unexpected leaderboard data format:', response);
         data = [];
       }
-      
-      // ADDED: Try to include current user in leaderboard if not present
+
       const currentUser = getCurrentUser();
       if (currentUser && !currentUser.isGuest && data.length > 0) {
-        const userInLeaderboard = data.find(player => 
-          player.username === currentUser.name || 
-          player.id === currentUser.id ||
-          player.email === currentUser.email
+        const userInLeaderboard = data.find(
+          (player) =>
+            player.username === currentUser.name ||
+            player.id === currentUser.id ||
+            player.email === currentUser.email
         );
-        
+
         if (!userInLeaderboard && (currentUser.totalPoints > 0 || currentUser.stats?.totalPoints > 0)) {
-          // Add current user to leaderboard
           const userEntry = {
             id: currentUser.id,
             username: currentUser.name,
             score: currentUser.totalPoints || currentUser.stats?.totalPoints || 0,
             totalPoints: currentUser.totalPoints || currentUser.stats?.totalPoints || 0,
-            rank: data.length + 1, // Will be recalculated below
+            rank: data.length + 1,
             streak: currentUser.streak || currentUser.stats?.streak || 0,
             cardsGenerated: currentUser.cardsGenerated || currentUser.stats?.cardsGenerated || 0,
             cardsShared: currentUser.cardsShared || currentUser.stats?.cardsShared || 0,
             level: currentUser.level || currentUser.stats?.level || 1,
             avatar: currentUser.avatar || '🌟',
-            isCurrentUser: true
+            isCurrentUser: true,
           };
-          
           data.push(userEntry);
           console.log('Added current user to leaderboard:', userEntry);
         } else if (userInLeaderboard) {
-          // Update existing user with latest points
           userInLeaderboard.score = Math.max(
-            userInLeaderboard.score || 0, 
+            userInLeaderboard.score || 0,
             currentUser.totalPoints || currentUser.stats?.totalPoints || 0
           );
           userInLeaderboard.totalPoints = userInLeaderboard.score;
@@ -80,13 +76,12 @@ const Leaderboard = () => {
           console.log('Updated current user in leaderboard:', userInLeaderboard);
         }
       }
-      
-      // Sort by score and update ranks
+
       data.sort((a, b) => (b.score || b.totalPoints || 0) - (a.score || a.totalPoints || 0));
       data.forEach((player, index) => {
         player.rank = index + 1;
       });
-      
+
       setLeaderboardData(data);
     } catch (error) {
       console.error('Error fetching leaderboard:', error);
@@ -94,23 +89,23 @@ const Leaderboard = () => {
         setTimeout(() => fetchLeaderboard(retries - 1, delay * 2), delay);
       } else {
         setError('Failed to load leaderboard');
-        
-        // ADDED: In case of error, show at least current user
         const currentUser = getCurrentUser();
         if (currentUser && (currentUser.totalPoints > 0 || currentUser.stats?.totalPoints > 0)) {
-          setLeaderboardData([{
-            id: currentUser.id,
-            username: currentUser.name,
-            score: currentUser.totalPoints || currentUser.stats?.totalPoints || 0,
-            totalPoints: currentUser.totalPoints || currentUser.stats?.totalPoints || 0,
-            rank: 1,
-            streak: currentUser.streak || currentUser.stats?.streak || 0,
-            cardsGenerated: currentUser.cardsGenerated || currentUser.stats?.cardsGenerated || 0,
-            cardsShared: currentUser.cardsShared || currentUser.stats?.cardsShared || 0,
-            level: currentUser.level || currentUser.stats?.level || 1,
-            avatar: currentUser.avatar || '🌟',
-            isCurrentUser: true
-          }]);
+          setLeaderboardData([
+            {
+              id: currentUser.id,
+              username: currentUser.name,
+              score: currentUser.totalPoints || currentUser.stats?.totalPoints || 0,
+              totalPoints: currentUser.totalPoints || currentUser.stats?.totalPoints || 0,
+              rank: 1,
+              streak: currentUser.streak || currentUser.stats?.streak || 0,
+              cardsGenerated: currentUser.cardsGenerated || currentUser.stats?.cardsGenerated || 0,
+              cardsShared: currentUser.cardsShared || currentUser.stats?.cardsShared || 0,
+              level: currentUser.level || currentUser.stats?.level || 1,
+              avatar: currentUser.avatar || '🌟',
+              isCurrentUser: true,
+            },
+          ]);
           console.log('Showing current user in leaderboard during error state');
         } else {
           setLeaderboardData([]);
@@ -123,30 +118,26 @@ const Leaderboard = () => {
 
   useEffect(() => {
     fetchLeaderboard();
-    // UPDATED: More frequent refresh to catch point updates faster
-    const interval = setInterval(() => fetchLeaderboard(3, 1000), 15000); // Every 15 seconds instead of 30
+    const interval = setInterval(() => fetchLeaderboard(3, 1000), 30000); // Changed to 30 seconds
     return () => clearInterval(interval);
   }, []);
 
-  // ADDED: Listen for localStorage changes to update leaderboard when user data changes
   useEffect(() => {
     const handleStorageChange = (e) => {
       if (e.key === 'sparkvibe_user') {
         console.log('User data changed, refreshing leaderboard');
-        setTimeout(() => fetchLeaderboard(1, 500), 1000); // Small delay to ensure data is synced
+        setTimeout(() => fetchLeaderboard(1, 500), 1000);
       }
     };
 
-    window.addEventListener('storage', handleStorageChange);
-    
-    // Also listen for custom events from within the same tab
     const handleUserUpdate = () => {
       console.log('User update detected, refreshing leaderboard');
       setTimeout(() => fetchLeaderboard(1, 500), 1000);
     };
-    
+
+    window.addEventListener('storage', handleStorageChange);
     window.addEventListener('userDataUpdated', handleUserUpdate);
-    
+
     return () => {
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('userDataUpdated', handleUserUpdate);
@@ -180,8 +171,8 @@ const Leaderboard = () => {
           {error ? 'Offline' : 'Live'}
         </div>
       </div>
-      
-      {error && (
+
+      {error && retryCount === 0 && (
         <div className="text-center text-yellow-400 text-sm mb-4 bg-yellow-500/10 rounded-lg p-2">
           {error}
           <button
@@ -192,15 +183,20 @@ const Leaderboard = () => {
           </button>
         </div>
       )}
-      
+      {error && retryCount > 0 && (
+        <div className="text-center text-yellow-400 text-sm mb-4 bg-yellow-500/10 rounded-lg p-2">
+          Retrying... ({retryCount} attempts left)
+        </div>
+      )}
+
       <div className="space-y-3">
         {Array.isArray(leaderboardData) && leaderboardData.length > 0 ? (
           leaderboardData.map((player, index) => (
             <div
-              key={player.id || player.username + index || `player-${index}`}
+              key={player.id || `player-${index}`}
               className={`flex items-center justify-between p-3 rounded-lg border transition-all duration-300 transform hover:scale-[1.02] ${
-                player.isCurrentUser 
-                  ? 'bg-purple-500/20 border-purple-400/50 ring-1 ring-purple-400/30' 
+                player.isCurrentUser
+                  ? 'bg-purple-500/20 border-purple-400/50 ring-1 ring-purple-400/30'
                   : 'bg-white/5 border-white/10 hover:bg-white/10'
               }`}
             >
@@ -241,10 +237,10 @@ const Leaderboard = () => {
           </div>
         )}
       </div>
-      
+
       <div className="mt-4 pt-4 border-t border-white/10">
         <p className="text-xs text-white/40 text-center">
-          Updates every 15 seconds • Your progress syncs automatically
+          Updates every 30 seconds • Your progress syncs automatically
         </p>
       </div>
     </div>
