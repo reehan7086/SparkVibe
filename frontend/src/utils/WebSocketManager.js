@@ -25,7 +25,7 @@ class WebSocketManager {
       try {
         // Determine WebSocket URL
         const wsUrl = this.getWebSocketUrl();
-        console.log('🔌 Connecting to WebSocket:', wsUrl);
+        // Connecting to WebSocket
         
         this.ws = new WebSocket(`${wsUrl}?userId=${encodeURIComponent(this.userId)}`);
         
@@ -117,7 +117,7 @@ class WebSocketManager {
             break;
           
           default:
-            console.log('Unknown WebSocket message type:', data.type);
+            // Unknown WebSocket message type
         }
       } catch (error) {
         console.error('❌ Failed to parse WebSocket message:', error);
@@ -158,12 +158,15 @@ class WebSocketManager {
     scheduleReconnect() {
       if (this.reconnectAttempts >= this.maxReconnectAttempts) {
         console.log('❌ Max reconnection attempts reached');
+        if (this.callbacks.onMaxReconnect) {
+          this.callbacks.onMaxReconnect();
+        }
         return;
       }
-  
+
       this.reconnectAttempts++;
-      const baseDelay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1);
-      const jitter = Math.random() * 100; // NEW: Add jitter to prevent synchronized reconnects
+      const baseDelay = Math.min(this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1), 30000);
+      const jitter = Math.random() * 1000; // Add jitter to prevent synchronized reconnects
       const delay = baseDelay + jitter;
       
       console.log(`🔄 Scheduling reconnect attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts} in ${Math.round(delay)}ms`);
@@ -180,8 +183,11 @@ class WebSocketManager {
           if (this.isConnected && this.ws?.readyState === WebSocket.OPEN) {
             console.log('🏓 Sending ping');
             this.send({ type: 'ping' });
+          } else if (this.isConnected && this.ws?.readyState === WebSocket.CLOSED) {
+            console.log('🔌 Connection lost, attempting reconnect');
+            this.scheduleReconnect();
           }
-        }, 60000); // Increased to 60 seconds
+        }, 30000); // 30 seconds ping interval
       }
   
     stopPing() {

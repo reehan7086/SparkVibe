@@ -119,7 +119,7 @@ export const apiGet = async (endpoint, options = {}) => {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      console.log(`API GET attempt ${attempt}/${retries} to: ${API_BASE}${endpoint}`);
+      // API GET attempt
 
       const response = await fetch(`${API_BASE}${endpoint}`, {
         method: 'GET',
@@ -199,7 +199,7 @@ export const apiPost = async (endpoint, data, options = {}) => {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      console.log(`API POST attempt ${attempt}/${retries} to: ${API_BASE}${endpoint}`);
+      // API POST attempt
 
       const response = await fetch(`${API_BASE}${endpoint}`, {
         method: 'POST',

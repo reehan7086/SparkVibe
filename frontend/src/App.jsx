@@ -520,7 +520,6 @@ const App = () => {
         <main className="relative z-10 container mx-auto px-4 py-8">
           <ErrorBoundary fallback={<div className="text-red-400 text-center p-4 bg-red-500/20 rounded-lg">Error in main content. Check console for details.</div>}>
             <AnimatePresence mode="wait">
-              {console.log('Rendering currentStep:', currentStep) || true}
               {currentStep === 'mood' && (
                 <motion.div
                   key="mood"
@@ -529,7 +528,6 @@ const App = () => {
                   exit={{ opacity: 0, y: -20 }}
                   transition={{ duration: 0.5 }}
                 >
-                  <div className="text-white text-center mb-4">Debug: MoodAnalyzer rendering for {user?.name}</div>
                   <MoodAnalyzer 
                     onComplete={handleMoodAnalysisComplete}
                     user={user}

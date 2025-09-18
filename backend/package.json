@@ -4,7 +4,8 @@
   "description": "SparkVibe Backend with AI Integration",
   "main": "server.js",
   "engines": {
-    "node": "18.x"
+    "node": "20.x",
+    "npm": "10.x"
   },
   "scripts": {
     "start": "node server.js",

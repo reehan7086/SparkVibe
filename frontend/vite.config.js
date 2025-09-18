@@ -41,10 +41,16 @@ export default defineConfig(({ mode }) => {
         output: {
           manualChunks: {
             vendor: ['react', 'react-dom'],
-            motion: ['framer-motion']
-          }
+            motion: ['framer-motion'],
+            utils: ['axios', '@formkit/auto-animate']
+          },
+          chunkFileNames: 'assets/[name]-[hash].js',
+          entryFileNames: 'assets/[name]-[hash].js',
+          assetFileNames: 'assets/[name]-[hash].[ext]'
         }
-      }
+      },
+      target: 'es2020',
+      cssCodeSplit: true
     },
     optimizeDeps: {
       include: ['react', 'react-dom', 'framer-motion', '@formkit/auto-animate']

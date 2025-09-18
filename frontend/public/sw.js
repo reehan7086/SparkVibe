@@ -5,8 +5,7 @@ const OFFLINE_URL = '/offline.html';
 // Files to cache for offline functionality
 const urlsToCache = [
   '/',
-  '/index.css', // Updated to match your file
-  '/index-2fadc093.js', // Example hashed bundle; adjust to current hash
+  '/index.css',
   '/icon-192x192.png',
   '/icon-512x512.png',
   '/badge-72x72.png',
@@ -23,11 +22,16 @@ self.addEventListener('install', (event) => {
         const failedResources = [];
         for (const url of urlsToCache) {
           try {
-            const response = await fetch(url, { mode: 'no-cors', cache: 'no-store' }); // Force fresh fetch
+            const response = await fetch(url, { 
+              cache: 'no-cache',
+              headers: {
+                'Cache-Control': 'no-cache'
+              }
+            });
             if (!response.ok || response.status === 404 || response.redirected) {
               throw new Error(`Invalid response for ${url}: status ${response.status}`);
             }
-            await cache.put(url, response.clone()); // Clone to avoid response consumption
+            await cache.put(url, response.clone());
             console.log(`Cached: ${url}`);
           } catch (error) {
             console.error(`Failed to cache ${url}:`, error.message);
