@@ -16,35 +16,41 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react()],
     resolve: {
-      extensions: ['.js', '.jsx', '.ts', '.tsx'], // Added .ts, .tsx
-      alias: {
-        '@': '/src', // Added for easier imports
-        'framer-motion/dist/es': 'framer-motion/dist/es',
-      },
+      extensions: ['.js', '.jsx', '.ts', '.tsx']
     },
     server: {
       port: 5173,
-      host: '0.0.0.0', // Ensure accessible in cloud environments
+      host: '0.0.0.0'
     },
     preview: {
       port: 8080,
-      host: '0.0.0.0',
+      host: '0.0.0.0'
     },
     define: {
       'process.env': {
         VITE_API_URL: JSON.stringify(apiUrl),
         VITE_ENV: JSON.stringify(env.VITE_ENV || mode),
-        NODE_ENV: JSON.stringify(mode),
-      },
+        NODE_ENV: JSON.stringify(mode)
+      }
     },
     build: {
       outDir: 'dist',
       sourcemap: false,
       minify: 'esbuild',
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            vendor: ['react', 'react-dom'],
+            motion: ['framer-motion']
+          }
+        }
+      }
     },
     optimizeDeps: {
-      include: ['framer-motion', '@formkit/auto-animate'], // Added @formkit/auto-animate
-      exclude: [],
+      include: ['react', 'react-dom', 'framer-motion', '@formkit/auto-animate']
     },
+    esbuild: {
+      target: 'es2020'
+    }
   };
 });

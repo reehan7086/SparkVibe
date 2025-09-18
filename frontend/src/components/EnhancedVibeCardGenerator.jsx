@@ -1,22 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-
-// Mock API function - replace with your actual API
-const apiPost = async (endpoint, data) => {
-  // Simulate API delay
-  await new Promise(resolve => setTimeout(resolve, 2000));
-  return {
-    card: {
-      id: `enhanced_${Date.now()}`,
-      design: { template: 'cosmic', animated: true },
-      content: {
-        adventure: data.choices.adventure,
-        reflection: data.choices.reflection,
-        action: data.choices.action
-      }
-    }
-  };
-};
+import { apiPostWithFallback } from '../utils/safeUtils';
 
 const EnhancedVibeCardGenerator = ({ 
   moodData, 
@@ -69,7 +53,7 @@ const EnhancedVibeCardGenerator = ({
   const generateVibeCard = async (choices) => {
     setIsGenerating(true);
     try {
-      const cardData = await apiPost('/generate-enhanced-vibe-card', {
+      const cardData = await apiPostWithFallback('/generate-enhanced-vibe-card', {
         moodData: mockMoodData,
         choices,
         user: mockUser
@@ -185,7 +169,7 @@ const EnhancedVibeCardGenerator = ({
             <button className="bg-blue-600 hover:bg-blue-700 px-6 py-2 rounded-xl text-white font-semibold transition-colors">
               Share on Social
             </button>
-            <button className="bg-green-600 hover:green-700 px-6 py-2 rounded-xl text-white font-semibold transition-colors">
+            <button className="bg-green-600 hover:bg-green-700 px-6 py-2 rounded-xl text-white font-semibold transition-colors">
               Save to Gallery
             </button>
           </div>
