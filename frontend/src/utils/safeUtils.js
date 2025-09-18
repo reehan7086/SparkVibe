@@ -4,7 +4,7 @@
 const getApiUrl = () => {
   // Production: always use the API subdomain
   if (import.meta.env.PROD) {
-    return 'https://api.sparkvibe.app';
+    return 'https://backend-sv-3n4v6.ondigitalocean.app';
   }
 
   // Check environment variable

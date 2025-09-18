@@ -47,7 +47,7 @@ class WebSocketManager {
       
       // Production
       if (hostname.includes('sparkvibe.app')) {
-        return 'wss://api.sparkvibe.app/ws';
+        return 'wss://backend-sv-3n4v6.ondigitalocean.app/ws';
       }
       
       // Development environments
