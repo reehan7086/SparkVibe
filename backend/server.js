@@ -1613,6 +1613,79 @@ fastify.get('/user/profile', { preHandler: [fastify.authenticate] }, async (requ
       }
     });
 
+// Get User Challenges Route
+fastify.get('/challenges', { preHandler: [fastify.authenticate] }, async (request, reply) => {
+  try {
+    const userId = request.user.userId;
+
+    if (mongoose.connection.readyState !== 1) {
+      return reply.send({
+        success: true,
+        message: 'Challenges retrieved from fallback (database unavailable)',
+        challenges: [
+          {
+            id: 'offline-challenge-1',
+            title: 'Daily Wellness Challenge',
+            description: 'Complete a 10-minute meditation session',
+            category: 'Wellness',
+            points: 50,
+            status: 'available',
+            createdAt: new Date().toISOString(),
+            expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+          },
+          {
+            id: 'offline-challenge-2',
+            title: 'Creative Writing Challenge',
+            description: 'Write a 100-word story',
+            category: 'Creativity',
+            points: 75,
+            status: 'available',
+            createdAt: new Date().toISOString(),
+            expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+          }
+        ],
+        fallback: true
+      });
+    }
+
+    const user = await User.findById(userId).select('challenges').lean();
+    if (!user) {
+      return sendError(reply, 404, 'User not found');
+    }
+
+    // Transform challenges to match client-side expectations
+    const challenges = user.challenges.map(challenge => ({
+      id: challenge._id || `challenge_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      title: `${challenge.type.charAt(0).toUpperCase() + challenge.type.slice(1)} Challenge`,
+      description: `Complete a ${challenge.type} challenge with target ${challenge.target}`,
+      category: challenge.type === 'streak' ? 'Consistency' : 
+                challenge.type === 'points' ? 'Points' : 
+                challenge.type === 'adventure' ? 'Adventure' : 'Creativity',
+      points: challenge.target || 50,
+      status: challenge.status,
+      createdAt: challenge.createdAt.toISOString(),
+      expiresAt: challenge.deadline.toISOString(),
+      challengerId: challenge.challengerId,
+      challengedId: challenge.challengedId
+    }));
+
+    await trackEvent('challenges_view', userId, { challengeCount: challenges.length });
+
+    return reply.send({
+      success: true,
+      challenges,
+      metadata: {
+        totalChallenges: challenges.length,
+        timestamp: new Date().toISOString(),
+        fallback: false
+      }
+    });
+  } catch (error) {
+    console.error('Challenges fetch error:', error);
+    return sendError(reply, 500, 'Failed to fetch challenges', error.message);
+  }
+});
+
     async function checkServiceHealth() {
       const services = {};
 
