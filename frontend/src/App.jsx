@@ -142,7 +142,6 @@ const App = () => {
     }
   };
 
-  // Fetch friends
   const fetchFriends = async () => {
     if (!isAuthenticated || !user || user.isGuest) return;
     
@@ -151,12 +150,14 @@ const App = () => {
       console.log('Friends response:', response);
       if (response.success) {
         setFriends(response.data || []);
+      } else {
+        setFriends([]); // Fallback empty
       }
     } catch (error) {
       console.warn('Failed to fetch friends:', error);
+      setFriends([]); // Ensure state set
     }
   };
-
   // FIXED: Fetch challenges on mount (not just when expanded)
   const fetchChallenges = async () => {
     if (!isAuthenticated || !user || user.isGuest) return;
@@ -528,6 +529,7 @@ const App = () => {
                   exit={{ opacity: 0, y: -20 }}
                   transition={{ duration: 0.5 }}
                 >
+                  <div className="text-white text-center mb-4">Debug: MoodAnalyzer rendering for {user?.name}</div>
                   <MoodAnalyzer 
                     onComplete={handleMoodAnalysisComplete}
                     user={user}

@@ -1,54 +1,52 @@
 name: sparkvibe-app
 services:
-- name: frontend
-  source_dir: /frontend
-  github:
-    repo: reehan7086/SparkVibe
-    branch: main
-  environment_slug: node-js
-  run_command: npm run preview -- --host --port 8080
-  build_command: npm install && npm run build
-  http_port: 8080
-  instance_size_slug: basic-xxs
-  instance_count: 1
-  routes:
-  - path: /
-    domain: sparkvibe.app
-  health_check:
-    http_path: /
-    port: 8080
-    initial_delay_seconds: 15
-    period_seconds: 10
-  envs:
-  - key: VITE_API_URL
-    value: https://sparkvibe.app/api
-  - key: NODE_ENV
-    value: production
+  # Backend service
+  - name: backend
+    source_dir: /backend
+    github:
+      repo: reehan7086/SparkVibe
+      branch: main
+    run_command: node server.js
+    environment_slug: node-js
+    instance_count: 1
+    instance_size_slug: basic-xxs
+    envs:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "8080"
+    routes:
+      - path: /
+    health_check:
+      http_path: /health
 
-- name: backend
-  source_dir: /backend
-  github:
-    repo: reehan7086/SparkVibe
-    branch: main
-  environment_slug: node-js
-  run_command: npm start
-  build_command: npm install
-  http_port: 5000
-  instance_size_slug: basic-xxs
-  instance_count: 1
-  routes:
-  - path: /api
-    domain: sparkvibe.app
-    preserve_path_prefix: true
-  health_check:
-    http_path: /health
-    port: 5000
-    initial_delay_seconds: 20
-    period_seconds: 15
-  envs:
-  - key: NODE_ENV
-    value: production
-  - key: PORT
-    value: "5000"
-  - key: CORS_ORIGIN
-    value: https://sparkvibe.app
+  # Frontend service  
+  - name: frontend
+    source_dir: /frontend
+    github:
+      repo: reehan7086/SparkVibe
+      branch: main
+    build_command: node --version && npm --version && npm ci && npm run build
+    run_command: npx serve -s dist -l 8080
+    environment_slug: node-js
+    instance_count: 1 
+    instance_size_slug: basic-xxs
+    envs:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "20.11.0"
+      - key: NPM_VERSION  
+        value: "10.2.4"
+      - key: VITE_API_URL
+        value: https://backend-sv-3n4v6.ondigitalocean.app
+    routes:
+      - path: /
+    health_check:
+      http_path: /
+
+domains:
+  - domain: sparkvibe.app
+    type: PRIMARY
+  - domain: www.sparkvibe.app
+    type: ALIAS

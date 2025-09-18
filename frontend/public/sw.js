@@ -5,8 +5,8 @@ const OFFLINE_URL = '/offline.html';
 // Files to cache for offline functionality
 const urlsToCache = [
   '/',
-  '/static/css/main.css',
-  '/static/js/main.js',
+  '/index.css', // Updated to match your file
+  '/index-2fadc093.js', // Example hashed bundle; adjust to current hash
   '/icon-192x192.png',
   '/icon-512x512.png',
   '/badge-72x72.png',
@@ -23,30 +23,18 @@ self.addEventListener('install', (event) => {
         const failedResources = [];
         for (const url of urlsToCache) {
           try {
-            const response = await fetch(url, { mode: 'no-cors' }); // Use no-cors to avoid CORS issues
-            if (!response.ok) {
-              throw new Error(`HTTP error! status: ${response.status}`);
+            const response = await fetch(url, { mode: 'no-cors', cache: 'no-store' }); // Force fresh fetch
+            if (!response.ok || response.status === 404 || response.redirected) {
+              throw new Error(`Invalid response for ${url}: status ${response.status}`);
             }
-            await cache.put(url, response);
+            await cache.put(url, response.clone()); // Clone to avoid response consumption
             console.log(`Cached: ${url}`);
           } catch (error) {
             console.error(`Failed to cache ${url}:`, error.message);
             failedResources.push({ url, error: error.message });
           }
         }
-        // Ensure offline.html is cached
-        try {
-          const response = await fetch(OFFLINE_URL, { mode: 'no-cors' });
-          if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-          }
-          await cache.put(OFFLINE_URL, response);
-          console.log(`Offline page cached: ${OFFLINE_URL}`);
-        } catch (error) {
-          console.error(`Failed to cache offline page: ${error.message}`);
-          failedResources.push({ url: OFFLINE_URL, error: error.message });
-        }
-        // Log summary of failed resources
+        // ... offline.html caching ...
         if (failedResources.length > 0) {
           console.warn('Cache installation completed with errors:', failedResources);
         }

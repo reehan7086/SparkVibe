@@ -550,10 +550,13 @@ const startServer = async () => {
           }
         });
 
-        connection.socket.on('close', () => {
+        connection.socket.on('close', (code, reason) => {
           if (userId) {
             wsConnections.delete(userId);
-            console.log(`WebSocket disconnected: ${userId}`);
+            console.log(`WebSocket disconnected: ${userId}, Code: ${code}, Reason: ${reason || 'No reason'}`);
+          }
+          if (code === 1006) {
+            console.warn('Abnormal WebSocket closure (1006) - Check load balancer timeout');
           }
         });
       });
@@ -1683,6 +1686,58 @@ fastify.get('/challenges', { preHandler: [fastify.authenticate] }, async (reques
   } catch (error) {
     console.error('Challenges fetch error:', error);
     return sendError(reply, 500, 'Failed to fetch challenges', error.message);
+  }
+});
+
+// Add to server.js before startServer()
+fastify.get('/friends', { preHandler: [fastify.authenticate] }, async (request, reply) => {
+  try {
+    const userId = request.user.userId;
+
+    if (mongoose.connection.readyState !== 1) {
+      return reply.send({
+        success: true,
+        message: 'Friends retrieved from fallback (database unavailable)',
+        data: [
+          {
+            id: 'fallback-friend-1',
+            name: 'Vibe Explorer',
+            avatar: '🌟',
+            status: 'accepted',
+            connectedAt: new Date().toISOString()
+          }
+        ],
+        fallback: true
+      });
+    }
+
+    const user = await User.findById(userId).populate('friends.userId', 'name avatar').lean();
+    if (!user) {
+      return sendError(reply, 404, 'User not found');
+    }
+
+    const friendsData = user.friends.map(friend => ({
+      id: friend.userId._id,
+      name: friend.userId.name,
+      avatar: friend.userId.avatar || '👤',
+      status: friend.status,
+      connectedAt: friend.connectedAt.toISOString()
+    }));
+
+    await trackEvent('friends_view', userId, { friendCount: friendsData.length });
+
+    return reply.send({
+      success: true,
+      data: friendsData,
+      metadata: {
+        totalFriends: friendsData.length,
+        timestamp: new Date().toISOString(),
+        fallback: false
+      }
+    });
+  } catch (error) {
+    console.error('Friends fetch error:', error);
+    return sendError(reply, 500, 'Failed to fetch friends', error.message);
   }
 });
 

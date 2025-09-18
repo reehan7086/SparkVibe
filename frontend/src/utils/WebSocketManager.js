@@ -176,13 +176,13 @@ class WebSocketManager {
     }
   
     startPing() {
-      this.pingInterval = setInterval(() => {
-        if (this.isConnected && this.ws?.readyState === WebSocket.OPEN) {
-          console.log('🏓 Sending ping');
-          this.send({ type: 'ping' });
-        }
-      }, 30000); // Ping every 30 seconds
-    }
+        this.pingInterval = setInterval(() => {
+          if (this.isConnected && this.ws?.readyState === WebSocket.OPEN) {
+            console.log('🏓 Sending ping');
+            this.send({ type: 'ping' });
+          }
+        }, 60000); // Increased to 60 seconds
+      }
   
     stopPing() {
       if (this.pingInterval) {
