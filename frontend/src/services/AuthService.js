@@ -1,4 +1,4 @@
-// Updated AuthService.js - Responsive Google button that matches input field widths
+// Updated AuthService.js - Better user data persistence and retrieval
 import { apiPost } from '../utils/safeUtils.js';
 
 class AuthService {
@@ -107,13 +107,33 @@ class AuthService {
       if (result.success) {
         console.log('✅ Backend auth successful');
         
-        // FIXED: Ensure user data includes parsed info
+        // FIXED: Ensure user data includes parsed info with proper structure
         const userData = {
           ...result.user,
           name: result.user.name || userInfo.name || 'Google User',
           email: result.user.email || userInfo.email || '',
           avatar: result.user.avatar || userInfo.picture || '👤',
-          provider: 'google'
+          provider: 'google',
+          // FIXED: Ensure totalPoints is at top level for easy access
+          totalPoints: result.user.stats?.totalPoints || 0,
+          level: result.user.stats?.level || 1,
+          streak: result.user.stats?.streak || 0,
+          cardsGenerated: result.user.stats?.cardsGenerated || 0,
+          cardsShared: result.user.stats?.cardsShared || 0,
+          // Also keep stats object for compatibility
+          stats: {
+            totalPoints: result.user.stats?.totalPoints || 0,
+            level: result.user.stats?.level || 1,
+            streak: result.user.stats?.streak || 0,
+            cardsGenerated: result.user.stats?.cardsGenerated || 0,
+            cardsShared: result.user.stats?.cardsShared || 0,
+            lastActivity: new Date(),
+            bestStreak: result.user.stats?.bestStreak || 0,
+            adventuresCompleted: result.user.stats?.adventuresCompleted || 0,
+            moodHistory: result.user.stats?.moodHistory || [],
+            choices: result.user.stats?.choices || [],
+            ...result.user.stats
+          }
         };
         
         this.setAuthData(result.token, userData);
@@ -239,8 +259,30 @@ class AuthService {
       });
 
       if (result.success) {
-        this.setAuthData(result.token, result.user);
-        return result;
+        // FIXED: Structure user data properly for consistency
+        const userData = {
+          ...result.user,
+          totalPoints: result.user.stats?.totalPoints || 0,
+          level: result.user.stats?.level || 1,
+          streak: result.user.stats?.streak || 0,
+          cardsGenerated: result.user.stats?.cardsGenerated || 0,
+          cardsShared: result.user.stats?.cardsShared || 0,
+          stats: {
+            totalPoints: result.user.stats?.totalPoints || 0,
+            level: result.user.stats?.level || 1,
+            streak: result.user.stats?.streak || 0,
+            cardsGenerated: result.user.stats?.cardsGenerated || 0,
+            cardsShared: result.user.stats?.cardsShared || 0,
+            lastActivity: new Date(),
+            bestStreak: result.user.stats?.bestStreak || 0,
+            adventuresCompleted: result.user.stats?.adventuresCompleted || 0,
+            moodHistory: result.user.stats?.moodHistory || [],
+            choices: result.user.stats?.choices || [],
+            ...result.user.stats
+          }
+        };
+        this.setAuthData(result.token, userData);
+        return { ...result, user: userData };
       } else {
         throw new Error(result.message || 'Registration failed');
       }
@@ -258,8 +300,30 @@ class AuthService {
       });
 
       if (result.success) {
-        this.setAuthData(result.token, result.user);
-        return result;
+        // FIXED: Structure user data properly for consistency
+        const userData = {
+          ...result.user,
+          totalPoints: result.user.stats?.totalPoints || 0,
+          level: result.user.stats?.level || 1,
+          streak: result.user.stats?.streak || 0,
+          cardsGenerated: result.user.stats?.cardsGenerated || 0,
+          cardsShared: result.user.stats?.cardsShared || 0,
+          stats: {
+            totalPoints: result.user.stats?.totalPoints || 0,
+            level: result.user.stats?.level || 1,
+            streak: result.user.stats?.streak || 0,
+            cardsGenerated: result.user.stats?.cardsGenerated || 0,
+            cardsShared: result.user.stats?.cardsShared || 0,
+            lastActivity: new Date(),
+            bestStreak: result.user.stats?.bestStreak || 0,
+            adventuresCompleted: result.user.stats?.adventuresCompleted || 0,
+            moodHistory: result.user.stats?.moodHistory || [],
+            choices: result.user.stats?.choices || [],
+            ...result.user.stats
+          }
+        };
+        this.setAuthData(result.token, userData);
+        return { ...result, user: userData };
       } else {
         throw new Error(result.message || 'Login failed');
       }
@@ -274,7 +338,40 @@ class AuthService {
     this.user = user;
     localStorage.setItem('sparkvibe_token', token);
     localStorage.setItem('sparkvibe_user', JSON.stringify(user));
-    console.log('✅ Auth data saved:', user);
+    console.log('✅ Auth data saved with points:', user.totalPoints, user);
+  }
+
+  // FIXED: Helper method to update user data and keep localStorage in sync
+  updateUser(updates) {
+    if (!this.user) return null;
+    
+    this.user = {
+      ...this.user,
+      ...updates,
+      stats: {
+        ...this.user.stats,
+        ...updates.stats,
+        lastActivity: new Date()
+      }
+    };
+    
+    // Ensure top-level properties are in sync with stats
+    if (updates.totalPoints !== undefined) {
+      this.user.totalPoints = updates.totalPoints;
+      this.user.stats.totalPoints = updates.totalPoints;
+    }
+    if (updates.level !== undefined) {
+      this.user.level = updates.level;
+      this.user.stats.level = updates.level;
+    }
+    if (updates.streak !== undefined) {
+      this.user.streak = updates.streak;
+      this.user.stats.streak = updates.streak;
+    }
+    
+    localStorage.setItem('sparkvibe_user', JSON.stringify(this.user));
+    console.log('✅ User data updated with points:', this.user.totalPoints);
+    return this.user;
   }
 
   signOut() {
@@ -295,6 +392,15 @@ class AuthService {
   }
 
   getCurrentUser() {
+    // FIXED: Always return the most recent user data from localStorage
+    try {
+      const storedUser = localStorage.getItem('sparkvibe_user');
+      if (storedUser) {
+        this.user = JSON.parse(storedUser);
+      }
+    } catch (error) {
+      console.error('Failed to parse stored user:', error);
+    }
     return this.user;
   }
 

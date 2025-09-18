@@ -23,6 +23,14 @@ const App = () => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  // FIXED: Helper function to update user in both state and localStorage
+  const updateUserData = (updatedUser) => {
+    setUser(updatedUser);
+    // Always sync to localStorage
+    localStorage.setItem('sparkvibe_user', JSON.stringify(updatedUser));
+    console.log('User data updated and persisted:', updatedUser);
+  };
+
   // Check authentication and load user data
   useEffect(() => {
     const initializeApp = async () => {
@@ -32,31 +40,52 @@ const App = () => {
         
         if (isAuth) {
           const currentUser = AuthService.getCurrentUser();
-          console.log('Current user:', currentUser);
+          console.log('Current user from storage:', currentUser);
           
           // FIXED: Ensure user name is always available
           const userData = {
             ...currentUser,
             name: currentUser.name || currentUser.given_name || 'SparkVibe Explorer',
-            totalPoints: currentUser.stats?.totalPoints || 0,
-            level: currentUser.stats?.level || 1,
-            streak: currentUser.stats?.streak || 0,
-            cardsGenerated: currentUser.stats?.cardsGenerated || 0,
-            cardsShared: currentUser.stats?.cardsShared || 0
+            totalPoints: currentUser.totalPoints || currentUser.stats?.totalPoints || 0,
+            level: currentUser.level || currentUser.stats?.level || 1,
+            streak: currentUser.streak || currentUser.stats?.streak || 0,
+            cardsGenerated: currentUser.cardsGenerated || currentUser.stats?.cardsGenerated || 0,
+            cardsShared: currentUser.cardsShared || currentUser.stats?.cardsShared || 0,
+            // Ensure stats object exists
+            stats: {
+              totalPoints: currentUser.totalPoints || currentUser.stats?.totalPoints || 0,
+              level: currentUser.level || currentUser.stats?.level || 1,
+              streak: currentUser.streak || currentUser.stats?.streak || 0,
+              cardsGenerated: currentUser.cardsGenerated || currentUser.stats?.cardsGenerated || 0,
+              cardsShared: currentUser.cardsShared || currentUser.stats?.cardsShared || 0,
+              lastActivity: currentUser.stats?.lastActivity || new Date(),
+              bestStreak: currentUser.stats?.bestStreak || 0,
+              adventuresCompleted: currentUser.stats?.adventuresCompleted || 0,
+              moodHistory: currentUser.stats?.moodHistory || [],
+              choices: currentUser.stats?.choices || []
+            }
           };
           
-          setUser(userData);
+          updateUserData(userData);
           
           // Try to load user stats from backend, but don't fail if user doesn't exist
           if (!currentUser.isGuest) {
             try {
               const userStats = await apiGet('/user/profile');
               if (userStats.success && userStats.user) {
-                setUser(prevUser => ({
-                  ...prevUser,
+                const mergedUser = {
+                  ...userData,
                   ...userStats.user,
-                  name: prevUser.name || userStats.user.name || 'SparkVibe Explorer'
-                }));
+                  name: userData.name || userStats.user.name || 'SparkVibe Explorer',
+                  // Ensure we keep the higher point values (local vs backend)
+                  totalPoints: Math.max(userData.totalPoints, userStats.user.stats?.totalPoints || 0),
+                  stats: {
+                    ...userData.stats,
+                    ...userStats.user.stats,
+                    totalPoints: Math.max(userData.totalPoints, userStats.user.stats?.totalPoints || 0)
+                  }
+                };
+                updateUserData(mergedUser);
               }
             } catch (error) {
               console.warn('Failed to load user stats from backend:', error.message);
@@ -106,10 +135,24 @@ const App = () => {
     // FIXED: Ensure name is always set immediately
     const enrichedUserData = {
       ...userData,
-      name: userData.name || userData.given_name || 'SparkVibe Explorer'
+      name: userData.name || userData.given_name || 'SparkVibe Explorer',
+      totalPoints: userData.totalPoints || userData.stats?.totalPoints || 0,
+      stats: {
+        totalPoints: userData.totalPoints || userData.stats?.totalPoints || 0,
+        level: userData.level || userData.stats?.level || 1,
+        streak: userData.streak || userData.stats?.streak || 0,
+        cardsGenerated: userData.cardsGenerated || userData.stats?.cardsGenerated || 0,
+        cardsShared: userData.cardsShared || userData.stats?.cardsShared || 0,
+        lastActivity: new Date(),
+        bestStreak: userData.stats?.bestStreak || 0,
+        adventuresCompleted: userData.stats?.adventuresCompleted || 0,
+        moodHistory: userData.stats?.moodHistory || [],
+        choices: userData.stats?.choices || [],
+        ...userData.stats
+      }
     };
     
-    setUser(enrichedUserData);
+    updateUserData(enrichedUserData);
     
     // Store user in backend if not guest
     if (!userData.isGuest && userData.provider !== 'demo') {
@@ -120,17 +163,13 @@ const App = () => {
           email: userData.email,
           provider: userData.provider,
           avatar: userData.picture || userData.avatar,
-          stats: userData.stats || {
-            totalPoints: 0,
-            level: 1,
-            streak: 0,
-            cardsGenerated: 0,
-            cardsShared: 0
-          }
+          stats: enrichedUserData.stats
         });
         
-        setUser(savedUser);
-        console.log('User saved to backend:', savedUser);
+        if (savedUser.success) {
+          updateUserData({ ...enrichedUserData, ...savedUser.user });
+          console.log('User saved to backend:', savedUser);
+        }
       } catch (error) {
         console.warn('Failed to save user to backend:', error);
         // Keep the enriched user data even if backend save fails
@@ -214,12 +253,18 @@ const App = () => {
       vibePointsEarned: (prev.vibePointsEarned || 0) + points 
     }));
     
-    // Update user points
+    // FIXED: Update user points properly
     if (user) {
-      setUser(prev => ({
-        ...prev,
-        totalPoints: (prev.totalPoints || 0) + points
-      }));
+      const updatedUser = {
+        ...user,
+        totalPoints: (user.totalPoints || 0) + points,
+        stats: {
+          ...user.stats,
+          totalPoints: (user.stats?.totalPoints || user.totalPoints || 0) + points,
+          lastActivity: new Date()
+        }
+      };
+      updateUserData(updatedUser);
     }
   };
 
@@ -231,15 +276,23 @@ const App = () => {
       vibePointsEarned: (prev.vibePointsEarned || 0) + bonusPoints
     }));
     
-    // Update user stats
+    // FIXED: Update user stats properly with persistence
     if (user) {
-      const newStats = {
+      const updatedUser = {
         ...user,
         totalPoints: (user.totalPoints || 0) + bonusPoints,
-        streak: (user.streak || 0) + 1
+        streak: (user.streak || 0) + 1,
+        stats: {
+          ...user.stats,
+          totalPoints: (user.stats?.totalPoints || user.totalPoints || 0) + bonusPoints,
+          streak: (user.stats?.streak || user.streak || 0) + 1,
+          adventuresCompleted: (user.stats?.adventuresCompleted || 0) + 1,
+          bestStreak: Math.max((user.stats?.bestStreak || 0), (user.stats?.streak || user.streak || 0) + 1),
+          lastActivity: new Date()
+        }
       };
       
-      setUser(newStats);
+      updateUserData(updatedUser);
       
       // Save completion to backend
       if (!user.isGuest) {
@@ -338,17 +391,17 @@ const App = () => {
         <div className="flex flex-wrap justify-center items-center gap-2 mb-4">
           <div className="flex items-center space-x-1 bg-white/10 rounded-full px-3 py-1.5 text-xs sm:text-sm">
             <span className="text-yellow-400">⚡</span>
-            <span className="text-white font-semibold">{user?.totalPoints || 0}</span>
+            <span className="text-white font-semibold">{user?.totalPoints || user?.stats?.totalPoints || 0}</span>
             <span className="text-white/60">pts</span>
           </div>
           <div className="flex items-center space-x-1 bg-white/10 rounded-full px-3 py-1.5 text-xs sm:text-sm">
             <span className="text-orange-400">🔥</span>
-            <span className="text-white font-semibold">{user?.streak || 0}</span>
+            <span className="text-white font-semibold">{user?.streak || user?.stats?.streak || 0}</span>
             <span className="text-white/60">days</span>
           </div>
           <div className="flex items-center space-x-1 bg-white/10 rounded-full px-3 py-1.5 text-xs sm:text-sm">
             <span className="text-purple-400">🏆</span>
-            <span className="text-white font-semibold">Lv.{user?.level || 1}</span>
+            <span className="text-white font-semibold">Lv.{user?.level || user?.stats?.level || 1}</span>
           </div>
         </div>
 
@@ -443,12 +496,20 @@ const App = () => {
                   moodData={moodData}
                   onCardGenerated={(card) => {
                     console.log('Card generated:', card);
-                    const newUser = {
+                    // FIXED: Proper point calculation and persistence
+                    const cardPoints = card.content?.achievement?.points || 25;
+                    const updatedUser = {
                       ...user,
-                      cardsGenerated: (user.cardsGenerated || 0) + 1,
-                      totalPoints: (user.totalPoints || 0) + (card.content?.achievement?.points || 25)
+                      cardsGenerated: (user.cardsGenerated || user.stats?.cardsGenerated || 0) + 1,
+                      totalPoints: (user.totalPoints || user.stats?.totalPoints || 0) + cardPoints,
+                      stats: {
+                        ...user.stats,
+                        cardsGenerated: (user.stats?.cardsGenerated || 0) + 1,
+                        totalPoints: (user.stats?.totalPoints || user.totalPoints || 0) + cardPoints,
+                        lastActivity: new Date()
+                      }
                     };
-                    setUser(newUser);
+                    updateUserData(updatedUser);
                     
                     // Save card generation to backend
                     if (!user.isGuest) {
