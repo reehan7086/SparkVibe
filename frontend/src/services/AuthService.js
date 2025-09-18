@@ -7,12 +7,24 @@ class AuthService {
       this.token = localStorage.getItem('sparkvibe_token');
       this.user = this.token ? JSON.parse(localStorage.getItem('sparkvibe_user') || '{}') : null;
       this.googleInitialized = false;
+      // NEW: Store success callback for Google login
+      this.googleLoginSuccessCallback = null;
     } catch (error) {
       console.error('Failed to parse user from localStorage:', error);
       this.token = null;
       this.user = null;
       localStorage.removeItem('sparkvibe_token');
       localStorage.removeItem('sparkvibe_user');
+    }
+  }
+
+  // NEW: Method to register a success callback for Google login
+  setGoogleLoginSuccessCallback(callback) {
+    if (typeof callback === 'function') {
+      this.googleLoginSuccessCallback = callback;
+      console.log('✅ Google login success callback registered');
+    } else {
+      console.warn('⚠️ Invalid callback provided for Google login');
     }
   }
 
@@ -138,9 +150,17 @@ class AuthService {
         
         this.setAuthData(result.token, userData);
         
-        // Call global success handler with enriched data
-        if (window.handleGoogleLoginSuccess) {
+        // FIXED: Use internal callback if set, otherwise check window handler
+        if (this.googleLoginSuccessCallback) {
+          console.log('✅ Calling registered Google login success callback');
+          this.googleLoginSuccessCallback(userData);
+        } else if (window.handleGoogleLoginSuccess && typeof window.handleGoogleLoginSuccess === 'function') {
+          console.log('✅ Calling window.handleGoogleLoginSuccess');
           window.handleGoogleLoginSuccess(userData);
+        } else {
+          console.warn('⚠️ No Google login success callback defined, skipping');
+          // Default behavior: Log success and store data
+          console.log('✅ Login success callback:', userData);
         }
       } else {
         throw new Error(result.message || 'Backend auth failed');
@@ -149,8 +169,10 @@ class AuthService {
       console.error('❌ Google auth error:', error);
       
       // Call global error handler
-      if (window.handleGoogleLoginError) {
+      if (window.handleGoogleLoginError && typeof window.handleGoogleLoginError === 'function') {
         window.handleGoogleLoginError(error.message);
+      } else {
+        console.warn('⚠️ No Google login error callback defined, logging error:', error.message);
       }
     }
   }
