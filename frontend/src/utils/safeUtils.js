@@ -1,18 +1,24 @@
 // src/utils/safeUtils.js - Improved error handling and connection stability
+
 // API URL detection function
 const getApiUrl = () => {
-  // First check environment variable
+  // Production: always use the API subdomain
+  if (import.meta.env.PROD) {
+    return 'https://api.sparkvibe.app';
+  }
+
+  // Check environment variable
   if (import.meta.env.VITE_API_URL) {
     return import.meta.env.VITE_API_URL;
   }
-  
-  // Fallback: construct from current hostname
+
+  // Construct from current hostname
   const hostname = window.location.hostname || '';
   if (hostname.includes('app.github.dev') || hostname.includes('gitpod.io')) {
     const baseUrl = hostname.replace('-5173', '-8080');
     return `https://${baseUrl}`;
   }
-  
+
   // Default localhost for development
   return 'http://localhost:8080';
 };
@@ -75,7 +81,7 @@ const updateConnectionHealth = (success) => {
     if (connectionHealth.consecutiveFailures >= 3) {
       connectionHealth.isHealthy = false;
       connectionHealth.backoffMultiplier = Math.min(
-        connectionHealth.backoffMultiplier * 1.5, 
+        connectionHealth.backoffMultiplier * 1.5,
         10
       );
     }
@@ -119,7 +125,6 @@ export const apiGet = async (endpoint, options = {}) => {
         method: 'GET',
         headers,
         signal: controller.signal,
-        // Add connection options for better reliability
         keepalive: false,
         mode: 'cors'
       });
@@ -151,21 +156,19 @@ export const apiGet = async (endpoint, options = {}) => {
       console.error(`API GET attempt ${attempt}/${retries} failed for ${endpoint}:`, error.message);
       updateConnectionHealth(false);
 
-      // Handle specific error types
       if (error.name === 'AbortError') {
         console.warn(`Request timeout after ${dynamicTimeout}ms`);
       }
-      
+
       if (attempt === retries) {
         console.warn(`All ${retries} attempts failed for ${endpoint}, using fallback`);
         return getFallbackData(endpoint);
       }
 
-      // Exponential backoff with jitter
       const baseDelay = attempt * 1000 * connectionHealth.backoffMultiplier;
       const jitter = Math.random() * 500;
       const delay = baseDelay + jitter;
-      
+
       console.log(`Retrying in ${Math.round(delay)}ms...`);
       await new Promise(resolve => setTimeout(resolve, delay));
     }
@@ -237,21 +240,62 @@ export const apiPost = async (endpoint, data, options = {}) => {
       if (error.name === 'AbortError') {
         console.warn(`Request timeout after ${dynamicTimeout}ms`);
       }
-      
+
       if (attempt === retries) {
         console.warn(`All ${retries} attempts failed for ${endpoint}, using fallback`);
         return getPostFallbackData(endpoint, data);
       }
 
-      // Exponential backoff with jitter
       const baseDelay = attempt * 1000 * connectionHealth.backoffMultiplier;
       const jitter = Math.random() * 500;
       const delay = baseDelay + jitter;
-      
+
       console.log(`Retrying in ${Math.round(delay)}ms...`);
       await new Promise(resolve => setTimeout(resolve, delay));
     }
   }
+};
+
+// Additional HTTP methods
+export const apiPut = async (endpoint, data, options = {}) => {
+  return fetchWithConfig(endpoint, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+    ...options
+  });
+};
+
+export const apiDelete = async (endpoint, options = {}) => {
+  return fetchWithConfig(endpoint, {
+    method: 'DELETE',
+    ...options
+  });
+};
+
+// Fetch API wrapper with consistent configuration
+const fetchWithConfig = async (endpoint, options = {}) => {
+  const apiUrl = getApiUrl();
+  const url = endpoint.startsWith('http') ?
+    endpoint :
+    `${apiUrl}${endpoint.startsWith('/') ? endpoint : '/' + endpoint}`;
+
+  const config = {
+    headers: {
+      'Content-Type': 'application/json',
+      ...options.headers,
+    },
+    ...options,
+  };
+
+  console.log(`Making ${options.method || 'GET'} request to:`, url);
+
+  const response = await fetch(url, config);
+
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+  }
+
+  return response.json();
 };
 
 // Get connection health status
@@ -270,14 +314,30 @@ export const safeIncludes = (str, searchString) => {
   return str.toLowerCase().includes(searchString.toLowerCase());
 };
 
+// Safe utility functions to prevent errors
+export const safeMap = (array, callback) => {
+  if (!Array.isArray(array)) return [];
+  return array.map(callback);
+};
+
+export const safeFilter = (array, callback) => {
+  if (!Array.isArray(array)) return [];
+  return array.filter(callback);
+};
+
+export const safeFind = (array, callback) => {
+  if (!Array.isArray(array)) return undefined;
+  return array.find(callback);
+};
+
 // Fallback data for GET endpoints
 const getFallbackData = (endpoint) => {
   console.log(`Returning fallback data for GET ${endpoint}`);
 
   if (endpoint === '/health') {
-    return { 
-      message: 'Backend offline - Demo mode', 
-      status: 'offline', 
+    return {
+      message: 'Backend offline - Demo mode',
+      status: 'offline',
       timestamp: new Date().toISOString(),
       fallback: true
     };
@@ -300,9 +360,9 @@ const getFallbackData = (endpoint) => {
           cardsGenerated: 0,
           cardsShared: 0,
         },
-        preferences: storedUser.preferences || { 
-          adventureTypes: ['general'], 
-          difficulty: 'easy' 
+        preferences: storedUser.preferences || {
+          adventureTypes: ['general'],
+          difficulty: 'easy'
         },
       },
       fallback: true
@@ -409,16 +469,17 @@ const getFallbackData = (endpoint) => {
     };
   }
 
-  throw new Error(`No fallback data available for GET ${endpoint}`);
+  return {
+    error: 'No fallback available',
+    fallback: true
+  };
 };
 
 // Fallback data for POST endpoints
 const getPostFallbackData = (endpoint, data) => {
   console.log(`Returning fallback data for POST ${endpoint}`);
 
-  // ADDED: Handle the new sync endpoint - THIS WAS MISSING!
   if (endpoint === '/user/sync-stats') {
-    // For demo/offline mode, just confirm the sync
     console.log('Demo mode: Points sync simulated for user:', data.userId, 'Points:', data.totalPoints);
     return {
       success: true,
@@ -538,7 +599,6 @@ const getPostFallbackData = (endpoint, data) => {
     const text = data.textInput ? data.textInput.toLowerCase() : '';
     let mood, confidence, emotions, recommendations, suggestedTemplate, energyLevel, socialMood;
 
-    // Simple keyword-based mood analysis
     if (safeIncludes(text, 'excited') || safeIncludes(text, 'happy') || safeIncludes(text, 'great')) {
       mood = 'happy';
       confidence = 0.92;
@@ -663,7 +723,7 @@ const getPostFallbackData = (endpoint, data) => {
   if (endpoint === '/generate-vibe-card') {
     const templateNames = ['cosmic', 'nature', 'retro', 'minimal'];
     const randomTemplate = templateNames[Math.floor(Math.random() * templateNames.length)];
-    
+
     return {
       success: true,
       card: {
@@ -671,25 +731,28 @@ const getPostFallbackData = (endpoint, data) => {
         content: {
           adventure: {
             title: data.capsuleData?.adventure?.title || 'Your Adventure Awaits',
-            outcome: 'You embraced creativity and discovered new possibilities!'
+            outcome: 'You embraced creativity and discovered new possibilities!',
+            category: data.capsuleData?.adventure?.category || 'Personal Growth'
           },
           achievement: {
             points: data.completionStats?.vibePointsEarned || 50,
             streak: Math.floor(Math.random() * 10) + 1,
-            badge: 'Creative Explorer'
+            badge: 'Creative Explorer',
+            level: data.user?.level || 1
           },
           mood: {
-            before: 'Curious',
-            after: 'Accomplished', 
+            before: data.capsuleData?.moodData?.mood || 'curious',
+            after: 'Accomplished',
             boost: '+15%'
           }
         },
-        design: { 
+        design: {
           template: randomTemplate,
           colors: getTemplateColors(randomTemplate),
-          style: 'modern'
+          style: 'modern',
+          animations: ['slideIn', 'pulse', 'sparkle']
         },
-        user: { 
+        user: {
           name: data.user?.name || 'Explorer',
           level: data.user?.level || 1,
           totalPoints: data.user?.totalPoints || 1000,
@@ -721,6 +784,95 @@ const getPostFallbackData = (endpoint, data) => {
     };
   }
 
+  if (endpoint === '/generate-enhanced-vibe-card') {
+    const { moodData, choices, user } = data;
+    const completedPhases = Object.keys(choices || {}).length;
+    const totalPoints = 25 + (completedPhases * 15);
+
+    return {
+      success: true,
+      card: {
+        id: `demo_enhanced_${Date.now()}`,
+        type: 'enhanced',
+        version: '2.0',
+        content: {
+          title: 'Your Creative Journey',
+          subtitle: 'Multi-Phase Adventure Complete',
+          adventure: {
+            choice: choices?.adventure?.title || 'Creative Expression',
+            outcome: 'Unleashed your creative potential',
+            impact: 'Discovered new forms of self-expression',
+            visual: '🎨'
+          },
+          reflection: {
+            choice: choices?.reflection?.title || 'Personal Growth',
+            insight: 'Every challenge is a stepping stone to strength',
+            wisdom: 'Resilience grows through embracing discomfort',
+            mantra: 'I am becoming stronger every day'
+          },
+          action: {
+            choice: choices?.action?.title || 'Daily Practice',
+            commitment: 'Dedicate 10 minutes daily to growth',
+            strategy: 'Small consistent steps create transformation',
+            timeline: 'Starting today, building for 30 days'
+          },
+          achievement: {
+            totalPoints: totalPoints,
+            phasesCompleted: completedPhases,
+            badge: completedPhases >= 3 ? 'Journey Master' : 'Path Walker',
+            level: Math.floor(((user?.totalPoints || 0) + totalPoints) / 100) + 1,
+            streak: Math.floor(Math.random() * 10) + 1
+          },
+          moodJourney: {
+            before: moodData?.mood || 'curious',
+            after: 'inspired',
+            transformation: 'Elevated through mindful action',
+            energyBoost: `+${Math.floor(Math.random() * 25) + 15}%`
+          }
+        },
+        design: {
+          template: 'cosmic',
+          theme: 'inspiring',
+          colors: { primary: '#ff6b9d', secondary: '#ffd93d', accent: '#6bcf7f' },
+          animations: ['morphGradient', 'particleField', 'pulseGlow'],
+          layout: 'multi-phase'
+        },
+        user: {
+          name: user?.name || 'Vibe Explorer',
+          avatar: user?.avatar || '🌟',
+          level: Math.floor(((user?.totalPoints || 0) + totalPoints) / 100) + 1,
+          totalPoints: (user?.totalPoints || 0) + totalPoints
+        },
+        sharing: {
+          title: `Enhanced Vibe Journey Complete!`,
+          description: `Completed a 3-phase adventure and earned ${totalPoints} points!`,
+          captions: [
+            `🚀 Just completed my Enhanced Vibe Journey and earned ${totalPoints} points!`,
+            `✨ Unleashed my creative potential #SparkVibeJourney`,
+            `🌟 Three phases, infinite possibilities. I am becoming stronger every day.`,
+            `⚡ Dedicate 10 minutes daily to growth. Starting today!`
+          ],
+          hashtags: ['#SparkVibe', '#EnhancedJourney', '#MindfulAdventure', '#PersonalGrowth']
+        },
+        analytics: {
+          viralScore: Math.random() * 0.3 + 0.7,
+          engagementPotential: Math.random() * 0.3 + 0.7,
+          uniqueness: Math.random() * 0.3 + 0.7
+        },
+        metadata: {
+          generatedAt: new Date().toISOString(),
+          type: 'enhanced-multi-phase',
+          fallback: true,
+          phases: completedPhases,
+          processingTime: '2.1s'
+        }
+      },
+      message: '🎨 Enhanced vibe card generated (demo mode)',
+      pointsEarned: totalPoints,
+      fallback: true
+    };
+  }
+
   if (endpoint === '/adventure/complete') {
     const points = Math.floor(Math.random() * 50) + 25;
     return {
@@ -736,21 +888,20 @@ const getPostFallbackData = (endpoint, data) => {
     };
   }
 
-  // Data persistence endpoints
   if (endpoint.includes('/user/save-')) {
     const dataType = endpoint.split('-')[1];
     const storageKey = `${dataType}_history`;
     const history = JSON.parse(localStorage.getItem(storageKey) || '[]');
     history.push({ ...data, savedAt: new Date().toISOString() });
     localStorage.setItem(storageKey, JSON.stringify(history.slice(-20)));
-    return { 
-      success: true, 
+    return {
+      success: true,
       message: `${dataType} saved locally`,
-      fallback: true 
+      fallback: true
     };
   }
 
-  throw new Error(`No fallback data available for POST ${endpoint}`);
+  return { error: 'No fallback available for this endpoint', fallback: true };
 };
 
 function getTemplateColors(template) {
@@ -762,3 +913,22 @@ function getTemplateColors(template) {
   };
   return colorSchemes[template] || colorSchemes.cosmic;
 }
+
+// Enhanced API calls with automatic fallback
+export const apiGetWithFallback = async (endpoint) => {
+  try {
+    return await apiGet(endpoint);
+  } catch (error) {
+    console.warn(`API call failed for ${endpoint}, using fallback:`, error.message);
+    return getFallbackData(endpoint);
+  }
+};
+
+export const apiPostWithFallback = async (endpoint, data) => {
+  try {
+    return await apiPost(endpoint, data);
+  } catch (error) {
+    console.warn(`API call failed for ${endpoint}, using fallback:`, error.message);
+    return getPostFallbackData(endpoint, data);
+  }
+};
