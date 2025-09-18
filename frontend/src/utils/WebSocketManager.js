@@ -64,7 +64,7 @@ class WebSocketManager {
       console.log('✅ WebSocket connected');
       this.isConnecting = false;
       this.isConnected = true;
-      this.reconnectAttempts = 0;
+      this.reconnectAttempts = 0; // Reset attempts on successful connection
       this.reconnectDelay = 1000;
       
       // Start ping interval to keep connection alive
@@ -87,35 +87,35 @@ class WebSocketManager {
               this.callbacks.onAchievement(data.data);
             }
             break;
-            
+          
           case 'leaderboard_update':
             if (this.callbacks.onLeaderboardUpdate) {
               this.callbacks.onLeaderboardUpdate(data.data);
             }
             break;
-            
+          
           case 'notification':
             if (this.callbacks.onNotification) {
               this.callbacks.onNotification(data.data);
             }
             break;
-            
+          
           case 'friend_update':
             if (this.callbacks.onFriendUpdate) {
               this.callbacks.onFriendUpdate(data.data);
             }
             break;
-            
+          
           case 'challenge_update':
             if (this.callbacks.onChallengeUpdate) {
               this.callbacks.onChallengeUpdate(data.data);
             }
             break;
-            
+          
           case 'pong':
-            // Response to ping, connection is alive
+            console.log('🏓 Received pong, connection alive');
             break;
-            
+          
           default:
             console.log('Unknown WebSocket message type:', data.type);
         }
@@ -125,8 +125,9 @@ class WebSocketManager {
     }
   
     handleClose(event) {
-      console.log('🔌 WebSocket disconnected:', event.code, event.reason);
+      console.log('🔌 WebSocket disconnected:', event.code, event.reason || 'No reason provided');
       this.isConnected = false;
+      this.isConnecting = false; // NEW: Ensure isConnecting is reset
       this.stopPing();
       
       // Notify callbacks
@@ -137,6 +138,11 @@ class WebSocketManager {
       // Only attempt reconnect if it wasn't a clean close
       if (event.code !== 1000 && this.reconnectAttempts < this.maxReconnectAttempts) {
         this.scheduleReconnect();
+      } else if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+        console.warn('❌ Max reconnect attempts reached, switching to fallback mode');
+        if (this.callbacks.onMaxReconnect) {
+          this.callbacks.onMaxReconnect();
+        }
       }
     }
   
@@ -156,12 +162,14 @@ class WebSocketManager {
       }
   
       this.reconnectAttempts++;
-      const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1); // Exponential backoff
+      const baseDelay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1);
+      const jitter = Math.random() * 100; // NEW: Add jitter to prevent synchronized reconnects
+      const delay = baseDelay + jitter;
       
-      console.log(`🔄 Scheduling reconnect attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts} in ${delay}ms`);
+      console.log(`🔄 Scheduling reconnect attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts} in ${Math.round(delay)}ms`);
       
       setTimeout(() => {
-        if (!this.isConnected) {
+        if (!this.isConnected && !this.isConnecting) {
           this.connect();
         }
       }, delay);
@@ -170,6 +178,7 @@ class WebSocketManager {
     startPing() {
       this.pingInterval = setInterval(() => {
         if (this.isConnected && this.ws?.readyState === WebSocket.OPEN) {
+          console.log('🏓 Sending ping');
           this.send({ type: 'ping' });
         }
       }, 30000); // Ping every 30 seconds
@@ -309,7 +318,6 @@ class WebSocketManager {
       this.stopPing();
       
       if (this.ws) {
-        // Set attempts to max to prevent auto-reconnect
         this.reconnectAttempts = this.maxReconnectAttempts;
         this.ws.close(1000, 'Manual disconnect');
         this.ws = null;
@@ -340,7 +348,6 @@ class WebSocketManager {
     }
   }
   
-  // Fallback class for environments without WebSocket support
   class WebSocketFallback {
     constructor(userId, callbacks = {}) {
       this.userId = userId;
