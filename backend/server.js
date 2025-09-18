@@ -748,6 +748,57 @@ const startServer = async () => {
       }
     });
 
+// User Profile Route
+fastify.get('/user/profile', { preHandler: [fastify.authenticate] }, async (request, reply) => {
+  try {
+    const userId = request.user.userId;
+
+    if (mongoose.connection.readyState !== 1) {
+      return reply.send({
+        success: true,
+        message: 'Profile retrieved from fallback (database unavailable)',
+        user: {
+          id: userId,
+          email: 'user@example.com',
+          name: 'Anonymous User',
+          avatar: '🌟',
+          preferences: { interests: ['wellness', 'creativity'], aiPersonality: 'encouraging' },
+          stats: { totalPoints: 0, level: 1, streak: 0, cardsGenerated: 0, cardsShared: 0 },
+          fallback: true
+        }
+      });
+    }
+
+    const user = await User.findById(userId).select(
+      'email name avatar preferences stats achievements referralCode emailVerified'
+    );
+    if (!user) {
+      return sendError(reply, 404, 'User not found');
+    }
+
+    await trackEvent('profile_view', userId, { timestamp: new Date().toISOString() });
+
+    return reply.send({
+      success: true,
+      user: {
+        id: user._id,
+        email: user.email,
+        name: user.name,
+        avatar: user.avatar,
+        preferences: user.preferences,
+        stats: user.stats,
+        achievements: user.achievements,
+        referralCode: user.referralCode,
+        emailVerified: user.emailVerified,
+        fallback: false
+      }
+    });
+  } catch (error) {
+    console.error('Profile fetch error:', error);
+    return sendError(reply, 500, 'Failed to fetch profile', error.message);
+  }
+});
+
     // Leaderboard Route
     fastify.get('/leaderboard', async (request, reply) => {
       try {
