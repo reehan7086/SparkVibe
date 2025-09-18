@@ -1,4 +1,4 @@
-// Fixed AuthService.js - Resolves Google button width warning
+// Fixed AuthService.js - Resolves Google button language and user data issues
 import { apiPost } from '../utils/safeUtils.js';
 
 class AuthService {
@@ -31,13 +31,15 @@ class AuthService {
       // Load Google script
       await this.loadGoogleScript();
       
-      // Initialize with callback
+      // Initialize with callback - FIXED: Added hl parameter for English
       window.google.accounts.id.initialize({
         client_id: clientId,
         callback: (response) => this.handleGoogleResponse(response),
         auto_select: false,
         cancel_on_tap_outside: true,
-        use_fedcm_for_prompt: false
+        use_fedcm_for_prompt: false,
+        hl: 'en', // FORCE ENGLISH LANGUAGE
+        locale: 'en' // ADDITIONAL LOCALE SETTING
       });
 
       this.googleInitialized = true;
@@ -57,7 +59,8 @@ class AuthService {
       }
 
       const script = document.createElement('script');
-      script.src = 'https://accounts.google.com/gsi/client';
+      // FIXED: Add language parameter to script URL
+      script.src = 'https://accounts.google.com/gsi/client?hl=en';
       script.async = true;
       script.defer = true;
       
@@ -86,6 +89,10 @@ class AuthService {
       const token = response.credential;
       console.log('Token received, length:', token.length);
       
+      // FIXED: Parse JWT to get user info immediately
+      const userInfo = this.parseJWT(token);
+      console.log('Parsed user info:', userInfo);
+
       // Validate JWT format
       const parts = token.split('.');
       if (parts.length !== 3) {
@@ -99,11 +106,21 @@ class AuthService {
       
       if (result.success) {
         console.log('✅ Backend auth successful');
-        this.setAuthData(result.token, result.user);
         
-        // Call global success handler
+        // FIXED: Ensure user data includes parsed info
+        const userData = {
+          ...result.user,
+          name: result.user.name || userInfo.name || 'Google User',
+          email: result.user.email || userInfo.email || '',
+          avatar: result.user.avatar || userInfo.picture || '👤',
+          provider: 'google'
+        };
+        
+        this.setAuthData(result.token, userData);
+        
+        // Call global success handler with enriched data
         if (window.handleGoogleLoginSuccess) {
-          window.handleGoogleLoginSuccess(result.user);
+          window.handleGoogleLoginSuccess(userData);
         }
       } else {
         throw new Error(result.message || 'Backend auth failed');
@@ -115,6 +132,29 @@ class AuthService {
       if (window.handleGoogleLoginError) {
         window.handleGoogleLoginError(error.message);
       }
+    }
+  }
+
+  // FIXED: Added JWT parser to extract user info
+  parseJWT(token) {
+    try {
+      const base64Url = token.split('.')[1];
+      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+      const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
+        return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+      }).join(''));
+      
+      const payload = JSON.parse(jsonPayload);
+      return {
+        name: payload.name,
+        email: payload.email,
+        picture: payload.picture,
+        given_name: payload.given_name,
+        family_name: payload.family_name
+      };
+    } catch (error) {
+      console.error('Failed to parse JWT:', error);
+      return {};
     }
   }
 
@@ -133,17 +173,22 @@ class AuthService {
     try {
       container.innerHTML = '';
       
-      // FIX: Use proper width value instead of percentage
+      // FIXED: Responsive button configuration with language settings
+      const containerWidth = container.offsetWidth || 280;
+      const buttonWidth = Math.min(containerWidth - 20, 400); // Max 400px, min container width - 20px
+      
       window.google.accounts.id.renderButton(container, {
         theme: 'outline',
         size: 'large',
         type: 'standard',
-        width: 320, // Fixed: Use pixel value instead of '100%'
+        width: buttonWidth, // RESPONSIVE WIDTH
         shape: 'rectangular',
-        logo_alignment: 'left'
+        logo_alignment: 'left',
+        locale: 'en', // FORCE ENGLISH
+        text: 'continue_with' // ENGLISH TEXT
       });
 
-      console.log('✅ Google button rendered');
+      console.log('✅ Google button rendered with width:', buttonWidth);
       return true;
     } catch (error) {
       console.error('❌ Button render failed:', error);
@@ -210,7 +255,7 @@ class AuthService {
     this.user = user;
     localStorage.setItem('sparkvibe_token', token);
     localStorage.setItem('sparkvibe_user', JSON.stringify(user));
-    console.log('✅ Auth data saved');
+    console.log('✅ Auth data saved:', user);
   }
 
   signOut() {
