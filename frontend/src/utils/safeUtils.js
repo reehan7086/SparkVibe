@@ -409,72 +409,31 @@ const getFallbackData = (endpoint) => {
     };
   }
 
-if (endpoint === '/generate-vibe-card') {
-  const templateNames = ['cosmic', 'nature', 'retro', 'minimal'];
-  const randomTemplate = templateNames[Math.floor(Math.random() * templateNames.length)];
-  
-  return {
-    success: true,
-    card: {
-      id: `demo_vibe_card_${Date.now()}`,
-      content: {
-        adventure: {
-          title: data.capsuleData?.adventure?.title || 'Your Adventure Awaits',
-          outcome: 'You embraced creativity and discovered new possibilities!'
-        },
-        achievement: {
-          points: data.completionStats?.vibePointsEarned || 50,
-          streak: Math.floor(Math.random() * 10) + 1,
-          badge: 'Creative Explorer'
-        },
-        mood: {
-          before: 'Curious',
-          after: 'Accomplished', 
-          boost: '+15%'
-        }
-      },
-      design: { 
-        template: randomTemplate,
-        colors: getTemplateColors(randomTemplate),
-        style: 'modern'
-      },
-      user: { 
-        name: data.user?.name || 'Explorer',
-        level: data.user?.level || 1,
-        totalPoints: data.user?.totalPoints || 1000,
-        avatar: data.user?.avatar || '🌟'
-      },
-      sharing: {
-        captions: [
-          'Just completed an amazing SparkVibe adventure!',
-          'Level up your mindset with SparkVibe!',
-          'Daily dose of inspiration unlocked!'
-        ],
-        hashtags: ['#SparkVibe', '#Adventure', '#Growth', '#Inspiration'],
-        qrCode: 'https://sparkvibe.app',
-        socialLinks: {
-          twitter: 'https://twitter.com/intent/tweet?text=Just%20completed%20a%20SparkVibe%20adventure!',
-          instagram: 'https://www.instagram.com/create/story/',
-          facebook: 'https://www.facebook.com/sharer/sharer.php?u=https://sparkvibe.app'
-        }
-      },
-      metadata: {
-        generatedAt: new Date().toISOString(),
-        fallback: true,
-        version: '2.1.0'
-      }
-    },
-    message: 'Vibe card generated successfully (demo mode)!',
-    fallback: true
-  };
-}
-
   throw new Error(`No fallback data available for GET ${endpoint}`);
 };
 
 // Fallback data for POST endpoints
 const getPostFallbackData = (endpoint, data) => {
   console.log(`Returning fallback data for POST ${endpoint}`);
+
+  // ADDED: Handle the new sync endpoint - THIS WAS MISSING!
+  if (endpoint === '/user/sync-stats') {
+    // For demo/offline mode, just confirm the sync
+    console.log('Demo mode: Points sync simulated for user:', data.userId, 'Points:', data.totalPoints);
+    return {
+      success: true,
+      message: 'User stats synced (demo mode)',
+      stats: data.stats,
+      synced: {
+        totalPoints: data.totalPoints,
+        level: data.level,
+        streak: data.streak,
+        cardsGenerated: data.cardsGenerated,
+        cardsShared: data.cardsShared
+      },
+      fallback: true
+    };
+  }
 
   if (endpoint === '/auth/google') {
     const user = {
@@ -697,6 +656,67 @@ const getPostFallbackData = (endpoint, data) => {
       habitNudge: `Build on today's ${mood} energy by making this a daily practice!`,
       viralPotential: 0.7,
       id: `demo_capsule_${Date.now()}`,
+      fallback: true
+    };
+  }
+
+  if (endpoint === '/generate-vibe-card') {
+    const templateNames = ['cosmic', 'nature', 'retro', 'minimal'];
+    const randomTemplate = templateNames[Math.floor(Math.random() * templateNames.length)];
+    
+    return {
+      success: true,
+      card: {
+        id: `demo_vibe_card_${Date.now()}`,
+        content: {
+          adventure: {
+            title: data.capsuleData?.adventure?.title || 'Your Adventure Awaits',
+            outcome: 'You embraced creativity and discovered new possibilities!'
+          },
+          achievement: {
+            points: data.completionStats?.vibePointsEarned || 50,
+            streak: Math.floor(Math.random() * 10) + 1,
+            badge: 'Creative Explorer'
+          },
+          mood: {
+            before: 'Curious',
+            after: 'Accomplished', 
+            boost: '+15%'
+          }
+        },
+        design: { 
+          template: randomTemplate,
+          colors: getTemplateColors(randomTemplate),
+          style: 'modern'
+        },
+        user: { 
+          name: data.user?.name || 'Explorer',
+          level: data.user?.level || 1,
+          totalPoints: data.user?.totalPoints || 1000,
+          avatar: data.user?.avatar || '🌟'
+        },
+        sharing: {
+          captions: [
+            'Just completed an amazing SparkVibe adventure!',
+            'Level up your mindset with SparkVibe!',
+            'Daily dose of inspiration unlocked!'
+          ],
+          hashtags: ['#SparkVibe', '#Adventure', '#Growth', '#Inspiration'],
+          qrCode: 'https://sparkvibe.app',
+          socialLinks: {
+            twitter: 'https://twitter.com/intent/tweet?text=Just%20completed%20a%20SparkVibe%20adventure!',
+            instagram: 'https://www.instagram.com/create/story/',
+            facebook: 'https://www.facebook.com/sharer/sharer.php?u=https://sparkvibe.app'
+          }
+        },
+        metadata: {
+          generatedAt: new Date().toISOString(),
+          fallback: true,
+          version: '2.1.0'
+        },
+        isDemo: true
+      },
+      message: 'Vibe card generated successfully (demo mode)!',
       fallback: true
     };
   }

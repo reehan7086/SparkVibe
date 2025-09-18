@@ -23,12 +23,35 @@ const App = () => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // FIXED: Helper function to update user in both state and localStorage
-  const updateUserData = (updatedUser) => {
+  // FIXED: Helper function to update user AND sync with backend
+  const updateUserData = async (updatedUser) => {
     setUser(updatedUser);
     // Always sync to localStorage
     localStorage.setItem('sparkvibe_user', JSON.stringify(updatedUser));
     console.log('User data updated and persisted:', updatedUser);
+
+    // ADDED: Sync with backend if not a guest user
+    if (!updatedUser.isGuest && !updatedUser.provider?.includes('demo')) {
+      try {
+        console.log('Syncing points with backend:', updatedUser.totalPoints);
+        const syncResult = await apiPost('/user/sync-stats', {
+          userId: updatedUser.id,
+          stats: updatedUser.stats,
+          totalPoints: updatedUser.totalPoints,
+          level: updatedUser.level,
+          streak: updatedUser.streak,
+          cardsGenerated: updatedUser.cardsGenerated,
+          cardsShared: updatedUser.cardsShared
+        });
+        
+        if (syncResult.success) {
+          console.log('✅ Points synced with backend successfully');
+        }
+      } catch (error) {
+        console.warn('Failed to sync points with backend:', error.message);
+        // Don't fail the update if backend sync fails - local update still worked
+      }
+    }
   };
 
   // Check authentication and load user data
@@ -66,7 +89,7 @@ const App = () => {
             }
           };
           
-          updateUserData(userData);
+          await updateUserData(userData);
           
           // Try to load user stats from backend, but don't fail if user doesn't exist
           if (!currentUser.isGuest) {
@@ -85,7 +108,7 @@ const App = () => {
                     totalPoints: Math.max(userData.totalPoints, userStats.user.stats?.totalPoints || 0)
                   }
                 };
-                updateUserData(mergedUser);
+                await updateUserData(mergedUser);
               }
             } catch (error) {
               console.warn('Failed to load user stats from backend:', error.message);
@@ -152,7 +175,7 @@ const App = () => {
       }
     };
     
-    updateUserData(enrichedUserData);
+    await updateUserData(enrichedUserData);
     
     // Store user in backend if not guest
     if (!userData.isGuest && userData.provider !== 'demo') {
@@ -167,7 +190,7 @@ const App = () => {
         });
         
         if (savedUser.success) {
-          updateUserData({ ...enrichedUserData, ...savedUser.user });
+          await updateUserData({ ...enrichedUserData, ...savedUser.user });
           console.log('User saved to backend:', savedUser);
         }
       } catch (error) {
@@ -253,7 +276,7 @@ const App = () => {
       vibePointsEarned: (prev.vibePointsEarned || 0) + points 
     }));
     
-    // FIXED: Update user points properly
+    // FIXED: Update user points properly with backend sync
     if (user) {
       const updatedUser = {
         ...user,
@@ -264,7 +287,7 @@ const App = () => {
           lastActivity: new Date()
         }
       };
-      updateUserData(updatedUser);
+      await updateUserData(updatedUser);
     }
   };
 
@@ -276,7 +299,7 @@ const App = () => {
       vibePointsEarned: (prev.vibePointsEarned || 0) + bonusPoints
     }));
     
-    // FIXED: Update user stats properly with persistence
+    // FIXED: Update user stats properly with persistence AND backend sync
     if (user) {
       const updatedUser = {
         ...user,
@@ -292,7 +315,7 @@ const App = () => {
         }
       };
       
-      updateUserData(updatedUser);
+      await updateUserData(updatedUser);
       
       // Save completion to backend
       if (!user.isGuest) {
@@ -494,9 +517,9 @@ const App = () => {
                   completionStats={completionStats}
                   user={user}
                   moodData={moodData}
-                  onCardGenerated={(card) => {
+                  onCardGenerated={async (card) => {
                     console.log('Card generated:', card);
-                    // FIXED: Proper point calculation and persistence
+                    // FIXED: Proper point calculation and persistence with backend sync
                     const cardPoints = card.content?.achievement?.points || 25;
                     const updatedUser = {
                       ...user,
@@ -509,7 +532,7 @@ const App = () => {
                         lastActivity: new Date()
                       }
                     };
-                    updateUserData(updatedUser);
+                    await updateUserData(updatedUser);
                     
                     // Save card generation to backend
                     if (!user.isGuest) {
