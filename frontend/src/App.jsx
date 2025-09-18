@@ -1,4 +1,4 @@
-// Complete App.jsx - Main application component
+// Complete App.jsx - Main application component with fixes for post-login rendering
 import { useEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { apiGet, apiPost, safeIncludes } from './utils/safeUtils';
@@ -28,7 +28,7 @@ const App = () => {
   const [userChoices, setUserChoices] = useState({});
   const [completionStats, setCompletionStats] = useState({ vibePointsEarned: 0 });
   const [moodData, setMoodData] = useState(null);
-  const [currentStep, setCurrentStep] = useState('mood');
+  const [currentStep, setCurrentStep] = useState('mood'); // FIXED: Ensure defaults to 'mood'
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -49,11 +49,18 @@ const App = () => {
   // WebSocket reference
   const wsManager = useRef(null);
 
+  // FIXED: Add logging for debugging
+  useEffect(() => {
+    console.log('App state update:', { currentStep, isAuthenticated, loading, user: user?.name });
+  }, [currentStep, isAuthenticated, loading, user]);
+
   // Initialize WebSocket connection
   useEffect(() => {
     if (isAuthenticated && user) {
+      console.log('Initializing WebSocket for user:', user.id);
       wsManager.current = new WebSocketManager(user.id, {
         onAchievement: (achievement) => {
+          console.log('New achievement received:', achievement);
           setNewAchievements(prev => [...prev, achievement]);
           // Auto-hide after 5 seconds
           setTimeout(() => {
@@ -65,11 +72,16 @@ const App = () => {
           window.dispatchEvent(new CustomEvent('leaderboardUpdate'));
         },
         onNotification: (notification) => {
+          console.log('New notification:', notification);
           setNotifications(prev => [notification, ...prev]);
           setUnreadCount(prev => prev + 1);
         },
         onFriendUpdate: () => {
           fetchFriends();
+        },
+        onChallengeUpdate: (challenge) => {
+          console.log('Challenge update:', challenge);
+          setChallenges(prev => prev.map(c => c.id === challenge.id ? challenge : c));
         }
       });
 
@@ -83,6 +95,7 @@ const App = () => {
 
   // Enhanced user data update with event dispatching
   const updateUserData = async (updatedUser) => {
+    console.log('Updating user data:', updatedUser);
     setUser(updatedUser);
     localStorage.setItem('sparkvibe_user', JSON.stringify(updatedUser));
     
@@ -119,9 +132,10 @@ const App = () => {
     
     try {
       const response = await apiGet('/notifications');
+      console.log('Notifications response:', response);
       if (response.success) {
-        setNotifications(response.data);
-        setUnreadCount(response.unreadCount);
+        setNotifications(response.data || []);
+        setUnreadCount(response.unreadCount || 0);
       }
     } catch (error) {
       console.warn('Failed to fetch notifications:', error);
@@ -134,25 +148,33 @@ const App = () => {
     
     try {
       const response = await apiGet('/friends');
+      console.log('Friends response:', response);
       if (response.success) {
-        setFriends(response.data);
+        setFriends(response.data || []);
       }
     } catch (error) {
       console.warn('Failed to fetch friends:', error);
     }
   };
 
-  // Fetch challenges
+  // FIXED: Fetch challenges on mount (not just when expanded)
   const fetchChallenges = async () => {
     if (!isAuthenticated || !user || user.isGuest) return;
     
+    console.log('Fetching challenges for user:', user.id);
     try {
       const response = await apiGet('/challenges');
+      console.log('Challenges response:', response);
       if (response.success) {
-        setChallenges(response.data);
+        setChallenges(response.challenges || response.data || []);
+      } else if (response.challenges) {
+        setChallenges(response.challenges);
+      } else {
+        setChallenges([]); // Fallback to empty array
       }
     } catch (error) {
       console.warn('Failed to fetch challenges:', error);
+      setChallenges([]); // Ensure state is set even on error
     }
   };
 
@@ -180,53 +202,65 @@ const App = () => {
     }
   };
 
-  // Check authentication and load user data
+  // FIXED: Check authentication and load user data with better error handling
   useEffect(() => {
     const initializeApp = async () => {
+      console.log('Initializing app...');
       try {
         const isAuth = AuthService.isAuthenticated();
+        console.log('Authentication check:', isAuth);
         setIsAuthenticated(isAuth);
         
         if (isAuth) {
+          console.log('Fetching user data...');
           const currentUser = AuthService.getCurrentUser();
+          console.log('User data:', currentUser);
           
-          const userData = {
-            ...currentUser,
-            name: currentUser.name || currentUser.given_name || 'SparkVibe Explorer',
-            totalPoints: currentUser.totalPoints || currentUser.stats?.totalPoints || 0,
-            level: currentUser.level || currentUser.stats?.level || 1,
-            streak: currentUser.streak || currentUser.stats?.streak || 0,
-            cardsGenerated: currentUser.cardsGenerated || currentUser.stats?.cardsGenerated || 0,
-            cardsShared: currentUser.cardsShared || currentUser.stats?.cardsShared || 0,
-            stats: {
+          if (currentUser) {
+            const userData = {
+              ...currentUser,
+              name: currentUser.name || currentUser.given_name || 'SparkVibe Explorer',
               totalPoints: currentUser.totalPoints || currentUser.stats?.totalPoints || 0,
               level: currentUser.level || currentUser.stats?.level || 1,
               streak: currentUser.streak || currentUser.stats?.streak || 0,
               cardsGenerated: currentUser.cardsGenerated || currentUser.stats?.cardsGenerated || 0,
               cardsShared: currentUser.cardsShared || currentUser.stats?.cardsShared || 0,
-              lastActiveDate: currentUser.stats?.lastActiveDate || new Date().toISOString(),
-              bestStreak: currentUser.stats?.bestStreak || 0,
-              adventuresCompleted: currentUser.stats?.adventuresCompleted || 0,
-              moodHistory: currentUser.stats?.moodHistory || [],
-              choices: currentUser.stats?.choices || []
+              stats: {
+                totalPoints: currentUser.totalPoints || currentUser.stats?.totalPoints || 0,
+                level: currentUser.level || currentUser.stats?.level || 1,
+                streak: currentUser.streak || currentUser.stats?.streak || 0,
+                cardsGenerated: currentUser.cardsGenerated || currentUser.stats?.cardsGenerated || 0,
+                cardsShared: currentUser.cardsShared || currentUser.stats?.cardsShared || 0,
+                lastActiveDate: currentUser.stats?.lastActiveDate || new Date().toISOString(),
+                bestStreak: currentUser.stats?.bestStreak || 0,
+                adventuresCompleted: currentUser.stats?.adventuresCompleted || 0,
+                moodHistory: currentUser.stats?.moodHistory || [],
+                choices: currentUser.stats?.choices || []
+              }
+            };
+            
+            setUser(userData);
+            
+            // Fetch initial data for authenticated users
+            if (!userData.isGuest && !userData.provider?.includes('demo')) {
+              console.log('Fetching initial data...');
+              await Promise.all([
+                fetchNotifications(),
+                fetchFriends(),
+                fetchChallenges() // FIXED: Always fetch on login
+              ]);
             }
-          };
-          
-          setUser(userData);
-          
-          // Fetch initial data for authenticated users
-          if (!userData.isGuest && !userData.provider?.includes('demo')) {
-            await Promise.all([
-              fetchNotifications(),
-              fetchFriends(),
-              fetchChallenges()
-            ]);
+          } else {
+            console.warn('No user data found, treating as unauthenticated');
+            setIsAuthenticated(false);
           }
         }
         
         // Check server health
         try {
+          console.log('Checking server health...');
           const healthResponse = await apiGet('/health');
+          console.log('Health response:', healthResponse);
           setHealth(healthResponse.status || 'Online');
         } catch (error) {
           console.warn('Server health check failed:', error);
@@ -237,15 +271,29 @@ const App = () => {
         console.error('Failed to initialize app:', error);
         setHealth('Error initializing app');
       } finally {
+        console.log('Loading complete');
         setLoading(false);
       }
     };
 
     initializeApp();
-  }, []);
+  }, []); // FIXED: Empty dependency to run once on mount
+
+  // FIXED: Separate useEffect for data fetching after user is set
+  useEffect(() => {
+    if (isAuthenticated && user && !user.isGuest && !user.provider?.includes('demo')) {
+      console.log('Fetching data after authentication...');
+      Promise.all([
+        fetchNotifications(),
+        fetchFriends(),
+        fetchChallenges()
+      ]).catch(error => console.error('Data fetch error:', error));
+    }
+  }, [isAuthenticated, user]);
 
   // Handle mood analysis completion
   const handleMoodAnalysisComplete = (analysisData) => {
+    console.log('Mood analysis complete:', analysisData);
     setMoodData(analysisData);
     setCurrentStep('vibe-card');
     trackEvent('mood_analysis_completed', { 
@@ -256,6 +304,7 @@ const App = () => {
 
   // Handle vibe card generation
   const handleVibeCardGenerated = (cardData) => {
+    console.log('Vibe card generated:', cardData);
     setCapsuleData(cardData);
     setCurrentStep('summary');
     
@@ -282,6 +331,7 @@ const App = () => {
 
   // Handle experience completion
   const handleExperienceComplete = (stats) => {
+    console.log('Experience complete:', stats);
     setCompletionStats(stats);
     setCurrentStep('celebration');
     
@@ -307,6 +357,7 @@ const App = () => {
 
   // Reset experience
   const resetExperience = () => {
+    console.log('Resetting experience...');
     setCurrentStep('mood');
     setMoodData(null);
     setCapsuleData(null);
@@ -316,7 +367,8 @@ const App = () => {
 
   // Handle logout
   const handleLogout = () => {
-    AuthService.logout();
+    console.log('Logging out...');
+    AuthService.signOut(); // FIXED: Use signOut method if available
     if (wsManager.current) {
       wsManager.current.disconnect();
     }
@@ -350,14 +402,16 @@ const App = () => {
   // Login screen for unauthenticated users
   if (!isAuthenticated) {
     return <LoginScreen onLoginSuccess={(userData) => {
+      console.log('Login success from LoginScreen:', userData);
       setIsAuthenticated(true);
       setUser(userData);
       setLoading(false);
     }} />;
   }
 
+  // FIXED: Wrap main content in ErrorBoundary for debugging
   return (
-    <ErrorBoundary>
+    <ErrorBoundary fallback={<div className="text-red-400 text-center p-4">Something went wrong. Please refresh the page.</div>}>
       <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 relative overflow-hidden">
         {/* Background Effects */}
         <div className="absolute inset-0 opacity-20">
@@ -461,98 +515,101 @@ const App = () => {
           ))}
         </AnimatePresence>
 
-        {/* Main Content */}
+        {/* Main Content - FIXED: Wrap in ErrorBoundary and add logging */}
         <main className="relative z-10 container mx-auto px-4 py-8">
-          <AnimatePresence mode="wait">
-            {currentStep === 'mood' && (
-              <motion.div
-                key="mood"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-                transition={{ duration: 0.5 }}
-              >
-                <MoodAnalyzer 
-                  onComplete={handleMoodAnalysisComplete}
-                  user={user}
-                  updateUserData={updateUserData}
-                />
-              </motion.div>
-            )}
-
-            {currentStep === 'vibe-card' && (
-              <motion.div
-                key="vibe-card"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-                transition={{ duration: 0.5 }}
-              >
-                {isEnhancedMode ? (
-                  <EnhancedVibeCardGenerator
-                    moodData={moodData}
-                    userChoices={userChoices}
-                    setUserChoices={setUserChoices}
-                    onComplete={handleVibeCardGenerated}
+          <ErrorBoundary fallback={<div className="text-red-400 text-center p-4 bg-red-500/20 rounded-lg">Error in main content. Check console for details.</div>}>
+            <AnimatePresence mode="wait">
+              {console.log('Rendering currentStep:', currentStep) || true}
+              {currentStep === 'mood' && (
+                <motion.div
+                  key="mood"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  transition={{ duration: 0.5 }}
+                >
+                  <MoodAnalyzer 
+                    onComplete={handleMoodAnalysisComplete}
                     user={user}
                     updateUserData={updateUserData}
                   />
-                ) : (
-                  <VibeCardGenerator
-                    capsuleData={capsuleData}
-                    userChoices={userChoices}
+                </motion.div>
+              )}
+
+              {currentStep === 'vibe-card' && (
+                <motion.div
+                  key="vibe-card"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  transition={{ duration: 0.5 }}
+                >
+                  {isEnhancedMode ? (
+                    <EnhancedVibeCardGenerator
+                      moodData={moodData}
+                      userChoices={userChoices}
+                      setUserChoices={setUserChoices}
+                      onComplete={handleVibeCardGenerated}
+                      user={user}
+                      updateUserData={updateUserData}
+                    />
+                  ) : (
+                    <VibeCardGenerator
+                      capsuleData={capsuleData}
+                      userChoices={userChoices}
+                      completionStats={completionStats}
+                      user={user}
+                      moodData={moodData}
+                      onCardGenerated={handleVibeCardGenerated}
+                    />
+                  )}
+                </motion.div>
+              )}
+
+              {currentStep === 'summary' && (
+                <motion.div
+                  key="summary"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  transition={{ duration: 0.5 }}
+                >
+                  <MoodSummary moodData={moodData} />
+                  <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    <Leaderboard />
+                    <TrendingAdventures />
+                  </div>
+                </motion.div>
+              )}
+
+              {currentStep === 'celebration' && (
+                <motion.div
+                  key="celebration"
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.9 }}
+                  transition={{ duration: 0.5 }}
+                >
+                  <CompletionCelebration 
                     completionStats={completionStats}
-                    user={user}
                     moodData={moodData}
-                    onCardGenerated={handleVibeCardGenerated}
                   />
-                )}
-              </motion.div>
-            )}
-
-            {currentStep === 'summary' && (
-              <motion.div
-                key="summary"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-                transition={{ duration: 0.5 }}
-              >
-                <MoodSummary moodData={moodData} />
-                <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-8">
-                  <Leaderboard />
-                  <TrendingAdventures />
-                </div>
-              </motion.div>
-            )}
-
-            {currentStep === 'celebration' && (
-              <motion.div
-                key="celebration"
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.9 }}
-                transition={{ duration: 0.5 }}
-              >
-                <CompletionCelebration 
-                  completionStats={completionStats}
-                  moodData={moodData}
-                />
-                <div className="mt-8 text-center">
-                  <motion.button
-                    onClick={resetExperience}
-                    className="bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 
-                               px-8 py-4 rounded-2xl font-bold text-white 
-                               transition-all duration-300 transform hover:scale-105 shadow-lg"
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                  >
-                    Start New Adventure ✨
-                  </motion.button>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
+                  <div className="mt-8 text-center">
+                    <motion.button
+                      onClick={resetExperience}
+                      className="bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 
+                                 px-8 py-4 rounded-2xl font-bold text-white 
+                                 transition-all duration-300 transform hover:scale-105 shadow-lg"
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                    >
+                      Start New Adventure ✨
+                    </motion.button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </ErrorBoundary>
 
           {/* Sidebar Content */}
           <div className="fixed right-4 top-1/2 transform -translate-y-1/2 z-20 space-y-4">
