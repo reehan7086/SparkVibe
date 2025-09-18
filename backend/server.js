@@ -213,7 +213,6 @@ const NotificationSchema = new mongoose.Schema({
 
 // Create indexes
 AdventureSchema.index({ category: 1, completions: -1 });
-UserSchema.index({ referralCode: 1 });
 AnalyticsSchema.index({ eventType: 1, timestamp: -1 });
 VibeCardSchema.index({ userId: 1, createdAt: -1 });
 
@@ -624,7 +623,7 @@ const startServer = async () => {
           connections: wsConnections.size
         }
       };
-
+    
       if (mongoose.connection.readyState === 1) {
         try {
           health.mongodb.collections.users = await User.countDocuments();
@@ -635,10 +634,11 @@ const startServer = async () => {
           health.mongodb.error = error.message;
         }
       }
-
-      return reply.send(health);
+    
+      // Set explicit status code based on critical service health
+      const isHealthy = health.mongodb.connected && (!redisClient || health.services.redis === 'healthy');
+      reply.status(isHealthy ? 200 : 503).send(health);
     });
-
     // ===== AUTHENTICATION ROUTES =====
     
     fastify.post('/auth/signup', async (request, reply) => {
