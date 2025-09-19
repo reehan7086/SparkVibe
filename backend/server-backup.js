@@ -75,11 +75,31 @@ if (process.env.REDIS_URL) {
 
 // Enhanced MongoDB Schemas
 const UserSchema = new mongoose.Schema({
-  email: { type: String, required: true, unique: true, lowercase: true },
-  name: { type: String, required: true },
-  avatar: String,
-  googleId: String,
-  password: String,
+  email: { 
+    type: String, 
+    required: true, 
+    unique: true, 
+    lowercase: true,
+    match: [/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/, 'Please enter a valid email']
+  },
+  name: { 
+    type: String, 
+    required: true,
+    minlength: [2, 'Name must be at least 2 characters long'],
+    maxlength: [50, 'Name cannot exceed 50 characters']
+  },
+  avatar: { 
+    type: String,
+    maxlength: [200, 'Avatar URL cannot exceed 200 characters']
+  },
+  googleId: { 
+    type: String,
+    sparse: true // Allow multiple null values
+  },
+  password: { 
+    type: String,
+    minlength: [8, 'Password must be at least 8 characters long']
+  },
   emailVerified: { type: Boolean, default: false },
   authProvider: { type: String, enum: ['email', 'google'], default: 'email' },
   preferences: {
@@ -91,21 +111,76 @@ const UserSchema = new mongoose.Schema({
     adventureTypes: [String]
   },
   stats: {
-    totalPoints: { type: Number, default: 0 },
-    streak: { type: Number, default: 0 },
-    level: { type: Number, default: 1 },
-    cardsGenerated: { type: Number, default: 0 },
-    cardsShared: { type: Number, default: 0 },
+    totalPoints: { 
+      type: Number, 
+      default: 0,
+      min: [0, 'Points cannot be negative']
+    },
+    streak: { 
+      type: Number, 
+      default: 0,
+      min: [0, 'Streak cannot be negative']
+    },
+    level: { 
+      type: Number, 
+      default: 1,
+      min: [1, 'Level must be at least 1']
+    },
+    cardsGenerated: { 
+      type: Number, 
+      default: 0,
+      min: [0, 'Cards generated cannot be negative']
+    },
+    cardsShared: { 
+      type: Number, 
+      default: 0,
+      min: [0, 'Cards shared cannot be negative']
+    },
     lastActivity: { type: Date, default: Date.now },
-    bestStreak: { type: Number, default: 0 },
-    adventuresCompleted: { type: Number, default: 0 },
-    friendsCount: { type: Number, default: 0 },
-    challengesWon: { type: Number, default: 0 },
-    challengesLost: { type: Number, default: 0 },
-    referralsCount: { type: Number, default: 0 },
-    moodHistory: [{ mood: Object, timestamp: Date }],
-    choices: [{ choice: String, capsuleId: String, timestamp: Date }],
-    completions: [{ capsuleId: String, completedAt: Date, points: Number }]
+    bestStreak: { 
+      type: Number, 
+      default: 0,
+      min: [0, 'Best streak cannot be negative']
+    },
+    adventuresCompleted: { 
+      type: Number, 
+      default: 0,
+      min: [0, 'Adventures completed cannot be negative']
+    },
+    friendsCount: { 
+      type: Number, 
+      default: 0,
+      min: [0, 'Friends count cannot be negative']
+    },
+    challengesWon: { 
+      type: Number, 
+      default: 0,
+      min: [0, 'Challenges won cannot be negative']
+    },
+    challengesLost: { 
+      type: Number, 
+      default: 0,
+      min: [0, 'Challenges lost cannot be negative']
+    },
+    referralsCount: { 
+      type: Number, 
+      default: 0,
+      min: [0, 'Referrals count cannot be negative']
+    },
+    moodHistory: [{ 
+      mood: { type: Object, required: true }, 
+      timestamp: { type: Date, default: Date.now }
+    }],
+    choices: [{ 
+      choice: { type: String, required: true }, 
+      capsuleId: { type: String, required: true }, 
+      timestamp: { type: Date, default: Date.now }
+    }],
+    completions: [{ 
+      capsuleId: { type: String, required: true }, 
+      completedAt: { type: Date, default: Date.now }, 
+      points: { type: Number, required: true, min: 0 }
+    }]
   },
   achievements: [{ 
     id: String, 
@@ -250,7 +325,7 @@ const startServer = async () => {
   try {
     // MongoDB Connection
     console.log('🔌 Connecting to MongoDB...');
-    console.log('MongoDB URI (sanitized):', process.env.MONGODB_URI?.replace(/:([^:@]*)@/, ':***@'));
+    // MongoDB connection initiated
 
     mongoose.connection.on('connected', () => {
       console.log('✅ MongoDB connected:', mongoose.connection.host, mongoose.connection.name);
@@ -271,7 +346,7 @@ const startServer = async () => {
     while (!connected && connectionAttempts < maxAttempts) {
       try {
         connectionAttempts++;
-        console.log(`📡 MongoDB connection attempt ${connectionAttempts}/${maxAttempts}`);
+        // MongoDB connection attempt
         
         await mongoose.connect(process.env.MONGODB_URI, mongooseOptions);
         await mongoose.connection.db.admin().ping();
@@ -320,7 +395,7 @@ const startServer = async () => {
         ];
         
         if (process.env.NODE_ENV !== 'production') {
-          allowedOrigins.push(/^http:\/\/localhost:\d+$/);
+          allowedOrigins.push(/^http:\/\/localhost:(3000|5173|8080)$/);
           allowedOrigins.push(/^https:\/\/.*\.app\.github\.dev$/);
           allowedOrigins.push(/^https:\/\/.*\.gitpod\.io$/);
         }
@@ -350,17 +425,31 @@ const startServer = async () => {
 
     await fastify.register(fastifyJwt, {
       secret: process.env.JWT_SECRET,
-      sign: { expiresIn: '1h' }
+      sign: { expiresIn: '7d' },
+      verify: { maxAge: '7d' }
     });
 
     await fastify.register(fastifyMultipart);
     await fastify.register(fastifyWebsocket);
     await fastify.register(fastifyRateLimit, {
-      max: async (request) => (request.user ? 200 : 100),
+      max: async (request) => {
+        // Different limits for different endpoints
+        if (request.url.includes('/auth/')) {
+          return 5; // Strict limit for auth endpoints
+        }
+        if (request.url.includes('/generate-')) {
+          return 20; // Moderate limit for generation endpoints
+        }
+        return request.user ? 100 : 50; // General limits
+      },
       timeWindow: '1 minute',
+      keyGenerator: (request) => {
+        return request.ip + ':' + (request.user?.userId || 'anonymous');
+      },
       errorResponseBuilder: () => ({
         success: false,
-        message: 'Rate limit exceeded. Please try again later.'
+        message: 'Rate limit exceeded. Please try again later.',
+        retryAfter: 60
       })
     });
 
@@ -550,10 +639,13 @@ const startServer = async () => {
           }
         });
 
-        connection.socket.on('close', () => {
+        connection.socket.on('close', (code, reason) => {
           if (userId) {
             wsConnections.delete(userId);
-            console.log(`WebSocket disconnected: ${userId}`);
+            console.log(`WebSocket disconnected: ${userId}, Code: ${code}, Reason: ${reason || 'No reason'}`);
+          }
+          if (code === 1006) {
+            console.warn('Abnormal WebSocket closure (1006) - Check load balancer timeout');
           }
         });
       });
@@ -629,6 +721,15 @@ const startServer = async () => {
           return sendError(reply, 400, 'Name, email, and password are required');
         }
 
+        // Password validation
+        if (password.length < 8) {
+          return sendError(reply, 400, 'Password must be at least 8 characters long');
+        }
+        
+        if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(password)) {
+          return sendError(reply, 400, 'Password must contain at least one uppercase letter, one lowercase letter, and one number');
+        }
+
         if (mongoose.connection.readyState !== 1) {
           return sendError(reply, 503, 'Database connection unavailable');
         }
@@ -680,6 +781,59 @@ const startServer = async () => {
         });
       } catch (error) {
         return sendError(reply, 500, 'Account creation failed', error.message);
+      }
+    });
+
+    // Email/Password Login Route
+    fastify.post('/auth/signin', async (request, reply) => {
+      try {
+        const { email, password } = request.body;
+        
+        if (!email || !password) {
+          return sendError(reply, 400, 'Email and password are required');
+        }
+
+        if (mongoose.connection.readyState !== 1) {
+          return sendError(reply, 503, 'Database connection unavailable');
+        }
+
+        const sanitizedEmail = sanitize(email.toLowerCase());
+        const user = await User.findOne({ email: sanitizedEmail });
+        
+        if (!user || !user.password) {
+          return sendError(reply, 401, 'Invalid email or password');
+        }
+
+        const isValidPassword = await bcrypt.compare(password, user.password);
+        if (!isValidPassword) {
+          return sendError(reply, 401, 'Invalid email or password');
+        }
+
+        const jwtToken = fastify.jwt.sign({ userId: user._id }, { expiresIn: '7d' });
+        await trackEvent('user_login', user._id, { provider: 'email' });
+
+        // Update last activity
+        user.stats.lastActivity = new Date();
+        await user.save();
+
+        return reply.send({
+          success: true,
+          token: jwtToken,
+          message: 'Login successful!',
+          user: {
+            id: user._id,
+            name: user.name,
+            email: user.email,
+            avatar: user.avatar,
+            emailVerified: user.emailVerified,
+            stats: user.stats,
+            achievements: user.achievements,
+            preferences: user.preferences,
+            referralCode: user.referralCode
+          }
+        });
+      } catch (error) {
+        return sendError(reply, 500, 'Login failed', error.message);
       }
     });
 
@@ -747,6 +901,57 @@ const startServer = async () => {
         return sendError(reply, 500, 'Authentication failed', error.message);
       }
     });
+
+// User Profile Route
+fastify.get('/user/profile', { preHandler: [fastify.authenticate] }, async (request, reply) => {
+  try {
+    const userId = request.user.userId;
+
+    if (mongoose.connection.readyState !== 1) {
+      return reply.send({
+        success: true,
+        message: 'Profile retrieved from fallback (database unavailable)',
+        user: {
+          id: userId,
+          email: 'user@example.com',
+          name: 'Anonymous User',
+          avatar: '🌟',
+          preferences: { interests: ['wellness', 'creativity'], aiPersonality: 'encouraging' },
+          stats: { totalPoints: 0, level: 1, streak: 0, cardsGenerated: 0, cardsShared: 0 },
+          fallback: true
+        }
+      });
+    }
+
+    const user = await User.findById(userId).select(
+      'email name avatar preferences stats achievements referralCode emailVerified'
+    );
+    if (!user) {
+      return sendError(reply, 404, 'User not found');
+    }
+
+    await trackEvent('profile_view', userId, { timestamp: new Date().toISOString() });
+
+    return reply.send({
+      success: true,
+      user: {
+        id: user._id,
+        email: user.email,
+        name: user.name,
+        avatar: user.avatar,
+        preferences: user.preferences,
+        stats: user.stats,
+        achievements: user.achievements,
+        referralCode: user.referralCode,
+        emailVerified: user.emailVerified,
+        fallback: false
+      }
+    });
+  } catch (error) {
+    console.error('Profile fetch error:', error);
+    return sendError(reply, 500, 'Failed to fetch profile', error.message);
+  }
+});
 
     // Leaderboard Route
     fastify.get('/leaderboard', async (request, reply) => {
@@ -917,16 +1122,173 @@ const startServer = async () => {
       }
     });
 
+    // Mood Analysis Route
+    fastify.post('/analyze-mood', async (request, reply) => {
+      try {
+        const { textInput, userId } = request.body;
+        
+        if (!textInput || textInput.trim().length < 3) {
+          return sendError(reply, 400, 'Text input is required and must be at least 3 characters');
+        }
+
+        // Simple mood analysis (can be enhanced with AI later)
+        const text = textInput.toLowerCase();
+        let mood, confidence, emotions, recommendations, suggestedTemplate, energyLevel, socialMood;
+
+        if (text.includes('excited') || text.includes('happy') || text.includes('great') || text.includes('amazing')) {
+          mood = 'happy';
+          confidence = 0.92;
+          emotions = ['excited', 'joyful', 'optimistic'];
+          recommendations = [
+            'Channel your positive energy into a creative project',
+            'Share your enthusiasm with someone special',
+            'Try a high-energy adventure'
+          ];
+          suggestedTemplate = 'cosmic';
+          energyLevel = 'high';
+          socialMood = 'outgoing';
+        } else if (text.includes('nervous') || text.includes('anxious') || text.includes('worried') || text.includes('stressed')) {
+          mood = 'anxious';
+          confidence = 0.88;
+          emotions = ['nervous', 'concerned', 'thoughtful'];
+          recommendations = [
+            'Practice deep breathing exercises',
+            'Break tasks into smaller, manageable steps',
+            'Try a calming mindfulness exercise'
+          ];
+          suggestedTemplate = 'minimal';
+          energyLevel = 'medium-low';
+          socialMood = 'introspective';
+        } else if (text.includes('tired') || text.includes('exhausted') || text.includes('drained')) {
+          mood = 'calm';
+          confidence = 0.85;
+          emotions = ['tired', 'peaceful', 'relaxed'];
+          recommendations = [
+            'Focus on gentle, restorative activities',
+            'Practice gratitude for small moments',
+            'Try a short nature walk'
+          ];
+          suggestedTemplate = 'nature';
+          energyLevel = 'low';
+          socialMood = 'quiet';
+        } else {
+          mood = 'curious';
+          confidence = 0.65;
+          emotions = ['curious', 'open', 'exploratory'];
+          recommendations = [
+            'Try something new and unexpected today',
+            'Explore a topic that sparks your interest',
+            'Stay open to surprising opportunities'
+          ];
+          suggestedTemplate = 'cosmic';
+          energyLevel = 'medium';
+          socialMood = 'balanced';
+        }
+
+        // Track mood analysis
+        if (userId) {
+          await trackEvent('mood_analyzed', userId, { 
+            mood, 
+            confidence,
+            textLength: textInput.length 
+          });
+        }
+
+        return reply.send({
+          success: true,
+          mood,
+          confidence,
+          emotions,
+          recommendations,
+          suggestedTemplate,
+          energyLevel,
+          socialMood,
+          analyzedAt: new Date().toISOString(),
+          primaryMood: mood,
+          suggestedActivities: recommendations.slice(0, 2)
+        });
+      } catch (error) {
+        return sendError(reply, 500, 'Mood analysis failed', error.message);
+      }
+    });
+
+    // Simple Capsule Generation Route
+    fastify.post('/generate-capsule-simple', async (request, reply) => {
+      try {
+        const { mood, interests = ['general'], timeOfDay = 'afternoon', userId } = request.body;
+        
+        if (!mood) {
+          return sendError(reply, 400, 'Mood is required');
+        }
+
+        let adventure;
+        if (mood === 'happy') {
+          adventure = {
+            title: '✨ Spread Joy Challenge',
+            prompt: 'Send a heartfelt message to three people telling them why they matter to you.',
+            difficulty: 'easy',
+            estimatedTime: '10 minutes',
+            category: 'Social'
+          };
+        } else if (mood === 'anxious') {
+          adventure = {
+            title: '🧘 Grounding Ritual',
+            prompt: 'Practice the 5-4-3-2-1 technique: Notice 5 things you can see, 4 things you can touch, 3 things you can hear, 2 things you can smell, and 1 thing you can taste.',
+            difficulty: 'easy',
+            estimatedTime: '5 minutes',
+            category: 'Mindfulness'
+          };
+        } else if (mood === 'calm') {
+          adventure = {
+            title: '🌿 Gentle Gratitude Walk',
+            prompt: 'Take a slow, mindful walk and find three things in nature that bring you peace.',
+            difficulty: 'easy',
+            estimatedTime: '15 minutes',
+            category: 'Nature'
+          };
+        } else {
+          adventure = {
+            title: '🎨 Creative Discovery',
+            prompt: 'Set a timer for 10 minutes and create something with whatever materials you have nearby.',
+            difficulty: 'easy',
+            estimatedTime: '10 minutes',
+            category: 'Creativity'
+          };
+        }
+
+        // Track capsule generation
+        if (userId) {
+          await trackEvent('capsule_generated', userId, { 
+            mood, 
+            adventureType: adventure.category,
+            timeOfDay 
+          });
+        }
+
+        return reply.send({
+          success: true,
+          capsule: `Good ${timeOfDay}! Your ${mood} energy is perfect for growth today.`,
+          adventure,
+          moodBoost: `Your ${mood} mood is a superpower - use it to create positive change!`,
+          brainBite: {
+            question: 'Did you know?',
+            answer: 'Engaging in novel activities creates new neural pathways, enhancing cognitive flexibility and creativity.'
+          },
+          habitNudge: `Build on today's ${mood} energy by making this a daily practice!`,
+          viralPotential: 0.7,
+          id: `capsule_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+        });
+      } catch (error) {
+        return sendError(reply, 500, 'Capsule generation failed', error.message);
+      }
+    });
+
     // Existing routes (unchanged)
     fastify.post('/generate-enhanced-vibe-card', async (request, reply) => {
       try {
         const { moodData, choices, user } = request.body;
         
-        console.log('Enhanced vibe card generation requested:', { 
-          mood: moodData?.mood,
-          choicesCount: Object.keys(choices || {}).length,
-          userName: user?.name
-        });
+        // Enhanced vibe card generation requested
 
         const completedPhases = Object.keys(choices || {}).length;
         const basePoints = 25;
@@ -1561,6 +1923,131 @@ const startServer = async () => {
         return sendError(reply, 500, 'Failed to mark notifications as read', error.message);
       }
     });
+
+// Get User Challenges Route
+fastify.get('/challenges', { preHandler: [fastify.authenticate] }, async (request, reply) => {
+  try {
+    const userId = request.user.userId;
+
+    if (mongoose.connection.readyState !== 1) {
+      return reply.send({
+        success: true,
+        message: 'Challenges retrieved from fallback (database unavailable)',
+        challenges: [
+          {
+            id: 'offline-challenge-1',
+            title: 'Daily Wellness Challenge',
+            description: 'Complete a 10-minute meditation session',
+            category: 'Wellness',
+            points: 50,
+            status: 'available',
+            createdAt: new Date().toISOString(),
+            expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+          },
+          {
+            id: 'offline-challenge-2',
+            title: 'Creative Writing Challenge',
+            description: 'Write a 100-word story',
+            category: 'Creativity',
+            points: 75,
+            status: 'available',
+            createdAt: new Date().toISOString(),
+            expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+          }
+        ],
+        fallback: true
+      });
+    }
+
+    const user = await User.findById(userId).select('challenges').lean();
+    if (!user) {
+      return sendError(reply, 404, 'User not found');
+    }
+
+    // Transform challenges to match client-side expectations
+    const challenges = user.challenges.map(challenge => ({
+      id: challenge._id || `challenge_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      title: `${challenge.type.charAt(0).toUpperCase() + challenge.type.slice(1)} Challenge`,
+      description: `Complete a ${challenge.type} challenge with target ${challenge.target}`,
+      category: challenge.type === 'streak' ? 'Consistency' : 
+                challenge.type === 'points' ? 'Points' : 
+                challenge.type === 'adventure' ? 'Adventure' : 'Creativity',
+      points: challenge.target || 50,
+      status: challenge.status,
+      createdAt: challenge.createdAt.toISOString(),
+      expiresAt: challenge.deadline.toISOString(),
+      challengerId: challenge.challengerId,
+      challengedId: challenge.challengedId
+    }));
+
+    await trackEvent('challenges_view', userId, { challengeCount: challenges.length });
+
+    return reply.send({
+      success: true,
+      challenges,
+      metadata: {
+        totalChallenges: challenges.length,
+        timestamp: new Date().toISOString(),
+        fallback: false
+      }
+    });
+  } catch (error) {
+    console.error('Challenges fetch error:', error);
+    return sendError(reply, 500, 'Failed to fetch challenges', error.message);
+  }
+});
+
+// Add to server.js before startServer()
+fastify.get('/friends', { preHandler: [fastify.authenticate] }, async (request, reply) => {
+  try {
+    const userId = request.user.userId;
+
+    if (mongoose.connection.readyState !== 1) {
+      return reply.send({
+        success: true,
+        message: 'Friends retrieved from fallback (database unavailable)',
+        data: [
+          {
+            id: 'fallback-friend-1',
+            name: 'Vibe Explorer',
+            avatar: '🌟',
+            status: 'accepted',
+            connectedAt: new Date().toISOString()
+          }
+        ],
+        fallback: true
+      });
+    }
+
+    const user = await User.findById(userId).populate('friends.userId', 'name avatar').lean();
+    if (!user) {
+      return sendError(reply, 404, 'User not found');
+    }
+
+    const friendsData = user.friends.map(friend => ({
+      id: friend.userId._id,
+      name: friend.userId.name,
+      avatar: friend.userId.avatar || '👤',
+      status: friend.status,
+      connectedAt: friend.connectedAt.toISOString()
+    }));
+
+    await trackEvent('friends_view', userId, { friendCount: friendsData.length });
+
+    return reply.send({
+      success: true,
+      data: friendsData,
+      metadata: {
+        totalFriends: friendsData.length,
+        timestamp: new Date().toISOString(),
+        fallback: false
+      }
+    });
+  } catch (error) {
+    console.error('Friends fetch error:', error);
+    return sendError(reply, 500, 'Failed to fetch friends', error.message);
+  }
+});
 
     async function checkServiceHealth() {
       const services = {};
