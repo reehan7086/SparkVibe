@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useAutoAnimate } from '@formkit/auto-animate/react';
 import { apiGet } from '../utils/safeUtils';
 
@@ -10,16 +10,18 @@ const Leaderboard = () => {
 
   const [containerRef] = useAutoAnimate();
 
-  const getCurrentUser = () => {
+  // FIXED: Memoize getCurrentUser to prevent infinite loops
+  const getCurrentUser = useMemo(() => {
     try {
       const userData = localStorage.getItem('sparkvibe_user');
       return userData ? JSON.parse(userData) : null;
     } catch {
       return null;
     }
-  };
+  }, []);
 
-  const fetchLeaderboard = async (retries = 3, delay = 1000) => {
+  // FIXED: Use useCallback to prevent fetchLeaderboard from being recreated on every render
+  const fetchLeaderboard = useCallback(async (retries = 3, delay = 1000) => {
     try {
       setLoading(true);
       setError(null);
@@ -41,27 +43,27 @@ const Leaderboard = () => {
         data = [];
       }
 
-      const currentUser = getCurrentUser();
-      if (currentUser && !currentUser.isGuest && data.length > 0) {
+      // FIXED: Only add current user if they're not already in the leaderboard and have significant points
+      if (getCurrentUser && !getCurrentUser.isGuest && data.length > 0) {
         const userInLeaderboard = data.find(
           (player) =>
-            player.username === currentUser.name ||
-            player.id === currentUser.id ||
-            player.email === currentUser.email
+            player.username === getCurrentUser.name ||
+            player.id === getCurrentUser.id ||
+            player.email === getCurrentUser.email
         );
 
-        if (!userInLeaderboard && (currentUser.totalPoints > 0 || currentUser.stats?.totalPoints > 0)) {
+        if (!userInLeaderboard && (getCurrentUser.totalPoints > 0 || getCurrentUser.stats?.totalPoints > 0)) {
           const userEntry = {
-            id: currentUser.id,
-            username: currentUser.name,
-            score: currentUser.totalPoints || currentUser.stats?.totalPoints || 0,
-            totalPoints: currentUser.totalPoints || currentUser.stats?.totalPoints || 0,
+            id: getCurrentUser.id,
+            username: getCurrentUser.name,
+            score: getCurrentUser.totalPoints || getCurrentUser.stats?.totalPoints || 0,
+            totalPoints: getCurrentUser.totalPoints || getCurrentUser.stats?.totalPoints || 0,
             rank: data.length + 1,
-            streak: currentUser.streak || currentUser.stats?.streak || 0,
-            cardsGenerated: currentUser.cardsGenerated || currentUser.stats?.cardsGenerated || 0,
-            cardsShared: currentUser.cardsShared || currentUser.stats?.cardsShared || 0,
-            level: currentUser.level || currentUser.stats?.level || 1,
-            avatar: currentUser.avatar || '🌟',
+            streak: getCurrentUser.streak || getCurrentUser.stats?.streak || 0,
+            cardsGenerated: getCurrentUser.cardsGenerated || getCurrentUser.stats?.cardsGenerated || 0,
+            cardsShared: getCurrentUser.cardsShared || getCurrentUser.stats?.cardsShared || 0,
+            level: getCurrentUser.level || getCurrentUser.stats?.level || 1,
+            avatar: getCurrentUser.avatar || '🌟',
             isCurrentUser: true,
           };
           data.push(userEntry);
@@ -69,7 +71,7 @@ const Leaderboard = () => {
         } else if (userInLeaderboard) {
           userInLeaderboard.score = Math.max(
             userInLeaderboard.score || 0,
-            currentUser.totalPoints || currentUser.stats?.totalPoints || 0
+            getCurrentUser.totalPoints || getCurrentUser.stats?.totalPoints || 0
           );
           userInLeaderboard.totalPoints = userInLeaderboard.score;
           userInLeaderboard.isCurrentUser = true;
@@ -77,6 +79,7 @@ const Leaderboard = () => {
         }
       }
 
+      // Sort and update ranks
       data.sort((a, b) => (b.score || b.totalPoints || 0) - (a.score || a.totalPoints || 0));
       data.forEach((player, index) => {
         player.rank = index + 1;
@@ -89,20 +92,20 @@ const Leaderboard = () => {
         setTimeout(() => fetchLeaderboard(retries - 1, delay * 2), delay);
       } else {
         setError('Failed to load leaderboard');
-        const currentUser = getCurrentUser();
-        if (currentUser && (currentUser.totalPoints > 0 || currentUser.stats?.totalPoints > 0)) {
+        // FIXED: Only show current user if they have meaningful stats
+        if (getCurrentUser && (getCurrentUser.totalPoints > 0 || getCurrentUser.stats?.totalPoints > 0)) {
           setLeaderboardData([
             {
-              id: currentUser.id,
-              username: currentUser.name,
-              score: currentUser.totalPoints || currentUser.stats?.totalPoints || 0,
-              totalPoints: currentUser.totalPoints || currentUser.stats?.totalPoints || 0,
+              id: getCurrentUser.id,
+              username: getCurrentUser.name,
+              score: getCurrentUser.totalPoints || getCurrentUser.stats?.totalPoints || 0,
+              totalPoints: getCurrentUser.totalPoints || getCurrentUser.stats?.totalPoints || 0,
               rank: 1,
-              streak: currentUser.streak || currentUser.stats?.streak || 0,
-              cardsGenerated: currentUser.cardsGenerated || currentUser.stats?.cardsGenerated || 0,
-              cardsShared: currentUser.cardsShared || currentUser.stats?.cardsShared || 0,
-              level: currentUser.level || currentUser.stats?.level || 1,
-              avatar: currentUser.avatar || '🌟',
+              streak: getCurrentUser.streak || getCurrentUser.stats?.streak || 0,
+              cardsGenerated: getCurrentUser.cardsGenerated || getCurrentUser.stats?.cardsGenerated || 0,
+              cardsShared: getCurrentUser.cardsShared || getCurrentUser.stats?.cardsShared || 0,
+              level: getCurrentUser.level || getCurrentUser.stats?.level || 1,
+              avatar: getCurrentUser.avatar || '🌟',
               isCurrentUser: true,
             },
           ]);
@@ -114,27 +117,34 @@ const Leaderboard = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [getCurrentUser]); // Only depend on getCurrentUser memoized value
 
+  // FIXED: Initial fetch only runs once
   useEffect(() => {
     fetchLeaderboard();
-    const interval = setInterval(() => fetchLeaderboard(3, 1000), 30000); // Changed to 30 seconds
-    return () => clearInterval(interval);
-  }, []);
+  }, []); // Empty dependency array - run only once
 
+  // FIXED: Set up polling with proper cleanup
   useEffect(() => {
-    const handleStorageChange = (e) => {
-      if (e.key === 'sparkvibe_user') {
-        console.log('User data changed, refreshing leaderboard');
-        setTimeout(() => fetchLeaderboard(1, 500), 1000);
-      }
-    };
+    const interval = setInterval(() => fetchLeaderboard(3, 1000), 30000); // Poll every 30 seconds
+    return () => clearInterval(interval);
+  }, [fetchLeaderboard]);
 
-    const handleUserUpdate = () => {
-      console.log('User update detected, refreshing leaderboard');
+  // FIXED: Use useCallback for event handlers to prevent recreating functions
+  const handleUserUpdate = useCallback(() => {
+    console.log('User update detected, refreshing leaderboard');
+    setTimeout(() => fetchLeaderboard(1, 500), 1000);
+  }, [fetchLeaderboard]);
+
+  const handleStorageChange = useCallback((e) => {
+    if (e.key === 'sparkvibe_user') {
+      console.log('User data changed, refreshing leaderboard');
       setTimeout(() => fetchLeaderboard(1, 500), 1000);
-    };
+    }
+  }, [fetchLeaderboard]);
 
+  // FIXED: Event listeners with proper cleanup
+  useEffect(() => {
     window.addEventListener('storage', handleStorageChange);
     window.addEventListener('userDataUpdated', handleUserUpdate);
 
@@ -142,7 +152,7 @@ const Leaderboard = () => {
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('userDataUpdated', handleUserUpdate);
     };
-  }, []);
+  }, [handleStorageChange, handleUserUpdate]);
 
   if (loading && leaderboardData.length === 0) {
     return (
@@ -172,6 +182,7 @@ const Leaderboard = () => {
         </div>
       </div>
 
+      {/* Error Display */}
       {error && retryCount === 0 && (
         <div className="text-center text-yellow-400 text-sm mb-4 bg-yellow-500/10 rounded-lg p-2">
           {error}
@@ -183,12 +194,15 @@ const Leaderboard = () => {
           </button>
         </div>
       )}
+      
+      {/* Retry Status */}
       {error && retryCount > 0 && (
         <div className="text-center text-yellow-400 text-sm mb-4 bg-yellow-500/10 rounded-lg p-2">
           Retrying... ({retryCount} attempts left)
         </div>
       )}
 
+      {/* Leaderboard List */}
       <div className="space-y-3">
         {Array.isArray(leaderboardData) && leaderboardData.length > 0 ? (
           leaderboardData.map((player, index) => (
@@ -238,6 +252,7 @@ const Leaderboard = () => {
         )}
       </div>
 
+      {/* Footer */}
       <div className="mt-4 pt-4 border-t border-white/10">
         <p className="text-xs text-white/40 text-center">
           Updates every 30 seconds • Your progress syncs automatically

@@ -1,5 +1,5 @@
 // Fixed App.jsx - Main application component with proper flow and error handling
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { apiGet, apiPost, safeIncludes } from './utils/safeUtils';
 import MoodAnalyzer from './components/MoodAnalyzer';
@@ -51,9 +51,119 @@ const App = () => {
 
   console.log('App render - Current step:', currentStep, 'Auth:', isAuthenticated, 'Loading:', loading);
 
-  // Initialize WebSocket connection
+  // Enhanced user data update with event dispatching - FIXED: Use useCallback to prevent infinite loops
+  const updateUserData = useCallback(async (updatedUser) => {
+    console.log('Updating user data:', updatedUser);
+    setUser(updatedUser);
+    localStorage.setItem('sparkvibe_user', JSON.stringify(updatedUser));
+    
+    // Dispatch custom event for real-time updates
+    window.dispatchEvent(new CustomEvent('userDataUpdated', { 
+      detail: { user: updatedUser, timestamp: Date.now() } 
+    }));
+
+    // Sync with backend if not a guest user
+    if (!updatedUser.isGuest && !updatedUser.provider?.includes('demo')) {
+      try {
+        const syncResult = await apiPost('/user/sync-stats', {
+          userId: updatedUser.id,
+          stats: updatedUser.stats,
+          totalPoints: updatedUser.totalPoints,
+          level: updatedUser.level,
+          streak: updatedUser.streak,
+          cardsGenerated: updatedUser.cardsGenerated,
+          cardsShared: updatedUser.cardsShared
+        });
+        
+        if (syncResult.success) {
+          console.log('Points synced with backend successfully');
+        }
+      } catch (error) {
+        console.warn('Failed to sync points with backend:', error.message);
+      }
+    }
+  }, []); // Empty dependency array since this function doesn't depend on any state
+
+  // FIXED: Fetch functions with proper dependency arrays
+  const fetchNotifications = useCallback(async () => {
+    if (!isAuthenticated || !user || user.isGuest) return;
+    
+    try {
+      const response = await apiGet('/notifications');
+      console.log('Notifications response:', response);
+      if (response.success) {
+        setNotifications(response.data || []);
+        setUnreadCount(response.unreadCount || 0);
+      }
+    } catch (error) {
+      console.warn('Failed to fetch notifications:', error);
+    }
+  }, [isAuthenticated, user?.isGuest]); // Only depend on auth status and guest status
+
+  const fetchFriends = useCallback(async () => {
+    if (!isAuthenticated || !user || user.isGuest) return;
+    
+    try {
+      const response = await apiGet('/friends');
+      console.log('Friends response:', response);
+      if (response.success) {
+        setFriends(response.data || []);
+      } else {
+        setFriends([]);
+      }
+    } catch (error) {
+      console.warn('Failed to fetch friends:', error);
+      setFriends([]);
+    }
+  }, [isAuthenticated, user?.isGuest]);
+
+  const fetchChallenges = useCallback(async () => {
+    if (!isAuthenticated || !user || user.isGuest) return;
+    
+    console.log('Fetching challenges for user:', user.id);
+    try {
+      const response = await apiGet('/challenges');
+      console.log('Challenges response:', response);
+      if (response.success) {
+        setChallenges(response.challenges || response.data || []);
+      } else if (response.challenges) {
+        setChallenges(response.challenges);
+      } else {
+        setChallenges([]);
+      }
+    } catch (error) {
+      console.warn('Failed to fetch challenges:', error);
+      setChallenges([]);
+    }
+  }, [isAuthenticated, user?.isGuest, user?.id]);
+
+  // Mark notifications as read - FIXED: Use useCallback
+  const markNotificationsAsRead = useCallback(async (notificationIds = null) => {
+    if (!isAuthenticated || !user || user.isGuest) return;
+    
+    try {
+      await apiPost('/notifications/read', { notificationIds });
+      setUnreadCount(0);
+      setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+    } catch (error) {
+      console.warn('Failed to mark notifications as read:', error);
+    }
+  }, [isAuthenticated, user?.isGuest]);
+
+  // Track analytics event - FIXED: Use useCallback
+  const trackEvent = useCallback(async (eventType, metadata = {}) => {
+    if (!isAuthenticated || !user || user.isGuest) return;
+    
+    try {
+      await apiPost('/track-event', { eventType, metadata });
+    } catch (error) {
+      console.warn('Failed to track event:', error);
+    }
+  }, [isAuthenticated, user?.isGuest]);
+
+  // Initialize WebSocket connection - FIXED: Proper dependency management
   useEffect(() => {
-    if (isAuthenticated && user && !user.isGuest) {
+    if (isAuthenticated && user && !user.isGuest && user.id) {
       console.log('Initializing WebSocket for user:', user.id);
       wsManager.current = new WebSocketManager(user.id, {
         onAchievement: (achievement) => {
@@ -86,133 +196,28 @@ const App = () => {
         }
       };
     }
-  }, [isAuthenticated, user]);
+  }, [isAuthenticated, user?.isGuest, user?.id, fetchFriends]); // Only essential dependencies
 
-  // Enhanced user data update with event dispatching
-  const updateUserData = async (updatedUser) => {
-    console.log('Updating user data:', updatedUser);
-    setUser(updatedUser);
-    localStorage.setItem('sparkvibe_user', JSON.stringify(updatedUser));
-    
-    // Dispatch custom event for real-time updates
-    window.dispatchEvent(new CustomEvent('userDataUpdated', { 
-      detail: { user: updatedUser, timestamp: Date.now() } 
-    }));
-
-    // Sync with backend if not a guest user
-    if (!updatedUser.isGuest && !updatedUser.provider?.includes('demo')) {
-      try {
-        const syncResult = await apiPost('/user/sync-stats', {
-          userId: updatedUser.id,
-          stats: updatedUser.stats,
-          totalPoints: updatedUser.totalPoints,
-          level: updatedUser.level,
-          streak: updatedUser.streak,
-          cardsGenerated: updatedUser.cardsGenerated,
-          cardsShared: updatedUser.cardsShared
-        });
-        
-        if (syncResult.success) {
-          console.log('Points synced with backend successfully');
-        }
-      } catch (error) {
-        console.warn('Failed to sync points with backend:', error.message);
-      }
-    }
-  };
-
-  // Fetch notifications
-  const fetchNotifications = async () => {
-    if (!isAuthenticated || !user || user.isGuest) return;
-    
-    try {
-      const response = await apiGet('/notifications');
-      console.log('Notifications response:', response);
-      if (response.success) {
-        setNotifications(response.data || []);
-        setUnreadCount(response.unreadCount || 0);
-      }
-    } catch (error) {
-      console.warn('Failed to fetch notifications:', error);
-    }
-  };
-
-  const fetchFriends = async () => {
-    if (!isAuthenticated || !user || user.isGuest) return;
-    
-    try {
-      const response = await apiGet('/friends');
-      console.log('Friends response:', response);
-      if (response.success) {
-        setFriends(response.data || []);
-      } else {
-        setFriends([]);
-      }
-    } catch (error) {
-      console.warn('Failed to fetch friends:', error);
-      setFriends([]);
-    }
-  };
-
-  const fetchChallenges = async () => {
-    if (!isAuthenticated || !user || user.isGuest) return;
-    
-    console.log('Fetching challenges for user:', user.id);
-    try {
-      const response = await apiGet('/challenges');
-      console.log('Challenges response:', response);
-      if (response.success) {
-        setChallenges(response.challenges || response.data || []);
-      } else if (response.challenges) {
-        setChallenges(response.challenges);
-      } else {
-        setChallenges([]);
-      }
-    } catch (error) {
-      console.warn('Failed to fetch challenges:', error);
-      setChallenges([]);
-    }
-  };
-
-  // Mark notifications as read
-  const markNotificationsAsRead = async (notificationIds = null) => {
-    if (!isAuthenticated || !user || user.isGuest) return;
-    
-    try {
-      await apiPost('/notifications/read', { notificationIds });
-      setUnreadCount(0);
-      setNotifications(prev => prev.map(n => ({ ...n, read: true })));
-    } catch (error) {
-      console.warn('Failed to mark notifications as read:', error);
-    }
-  };
-
-  // Track analytics event
-  const trackEvent = async (eventType, metadata = {}) => {
-    if (!isAuthenticated || !user || user.isGuest) return;
-    
-    try {
-      await apiPost('/track-event', { eventType, metadata });
-    } catch (error) {
-      console.warn('Failed to track event:', error);
-    }
-  };
-
-  // Check authentication and load user data
+  // Check authentication and load user data - FIXED: Proper initialization
   useEffect(() => {
+    let mounted = true; // Prevent state updates on unmounted component
+    
     const initializeApp = async () => {
       console.log('Initializing app...');
       try {
         const isAuth = AuthService.isAuthenticated();
         console.log('Authentication check:', isAuth);
-        setIsAuthenticated(isAuth);
         
-        if (isAuth) {
+        if (mounted) {
+          setIsAuthenticated(isAuth);
+        }
+        
+        if (isAuth && mounted) {
           console.log('Fetching user data...');
           const currentUser = AuthService.getCurrentUser();
           console.log('User data:', currentUser);
           
-          if (currentUser) {
+          if (currentUser && mounted) {
             const userData = {
               ...currentUser,
               name: currentUser.name || currentUser.given_name || 'SparkVibe Explorer',
@@ -246,7 +251,7 @@ const App = () => {
                 fetchChallenges()
               ]);
             }
-          } else {
+          } else if (mounted) {
             console.warn('No user data found, treating as unauthenticated');
             setIsAuthenticated(false);
           }
@@ -257,26 +262,38 @@ const App = () => {
           console.log('Checking server health...');
           const healthResponse = await apiGet('/health');
           console.log('Health response:', healthResponse);
-          setHealth(healthResponse.status || 'Online');
+          if (mounted) {
+            setHealth(healthResponse.status || 'Online');
+          }
         } catch (error) {
           console.warn('Server health check failed:', error);
-          setHealth('Offline - Running in Demo Mode');
+          if (mounted) {
+            setHealth('Offline - Running in Demo Mode');
+          }
         }
         
       } catch (error) {
         console.error('Failed to initialize app:', error);
-        setHealth('Error initializing app');
+        if (mounted) {
+          setHealth('Error initializing app');
+        }
       } finally {
-        console.log('Loading complete');
-        setLoading(false);
+        if (mounted) {
+          console.log('Loading complete');
+          setLoading(false);
+        }
       }
     };
 
     initializeApp();
-  }, []);
+    
+    return () => {
+      mounted = false; // Cleanup flag
+    };
+  }, []); // Run only once on mount
 
-  // Handle mood analysis completion - FIXED: Update step properly
-  const handleMoodAnalysisComplete = (analysisData) => {
+  // Handle mood analysis completion - FIXED: Use useCallback to prevent infinite loops
+  const handleMoodAnalysisComplete = useCallback((analysisData) => {
     console.log('Mood analysis complete:', analysisData);
     setMoodData(analysisData);
     setCurrentStep('capsule');
@@ -284,20 +301,20 @@ const App = () => {
       mood: analysisData.primaryMood || analysisData.mood,
       confidence: analysisData.confidence 
     });
-  };
+  }, [trackEvent]);
 
-  // Handle capsule generation - FIXED: New step for capsule experience
-  const handleCapsuleGenerated = (capsuleData) => {
+  // Handle capsule generation - FIXED: Use useCallback
+  const handleCapsuleGenerated = useCallback((capsuleData) => {
     console.log('Capsule generated:', capsuleData);
     setCapsuleData(capsuleData);
     setCurrentStep('experience');
     trackEvent('capsule_generated', { 
       adventureType: capsuleData.adventure?.category 
     });
-  };
+  }, [trackEvent]);
 
-  // Handle experience completion - FIXED: Move to vibe card generation
-  const handleExperienceComplete = (stats) => {
+  // Handle experience completion - FIXED: Use useCallback
+  const handleExperienceComplete = useCallback(async (stats) => {
     console.log('Experience complete:', stats);
     setCompletionStats(stats);
     setCurrentStep('vibe-card');
@@ -316,14 +333,14 @@ const App = () => {
           lastActiveDate: new Date().toISOString()
         }
       };
-      updateUserData(updatedUser);
+      await updateUserData(updatedUser);
     }
     
     trackEvent('experience_completed', stats);
-  };
+  }, [user, updateUserData, trackEvent]);
 
-  // Handle vibe card generation
-  const handleVibeCardGenerated = (cardData) => {
+  // Handle vibe card generation - FIXED: Use useCallback
+  const handleVibeCardGenerated = useCallback(async (cardData) => {
     console.log('Vibe card generated:', cardData);
     setCapsuleData(cardData);
     setCurrentStep('summary');
@@ -340,27 +357,27 @@ const App = () => {
           totalPoints: (user.stats?.totalPoints || 0) + 25
         }
       };
-      updateUserData(updatedUser);
+      await updateUserData(updatedUser);
     }
     
     trackEvent('vibe_card_generated', { 
       cardType: cardData.type,
       mood: moodData?.primaryMood || moodData?.mood
     });
-  };
+  }, [user, updateUserData, trackEvent, moodData]);
 
-  // Reset experience
-  const resetExperience = () => {
+  // Reset experience - FIXED: Use useCallback
+  const resetExperience = useCallback(() => {
     console.log('Resetting experience...');
     setCurrentStep('mood');
     setMoodData(null);
     setCapsuleData(null);
     setUserChoices({});
     setCompletionStats({ vibePointsEarned: 0 });
-  };
+  }, []);
 
-  // Handle logout
-  const handleLogout = () => {
+  // Handle logout - FIXED: Use useCallback
+  const handleLogout = useCallback(() => {
     console.log('Logging out...');
     AuthService.signOut();
     if (wsManager.current) {
@@ -373,7 +390,7 @@ const App = () => {
     setChallenges([]);
     setAchievements([]);
     resetExperience();
-  };
+  }, [resetExperience]);
 
   // Loading screen
   if (loading) {
