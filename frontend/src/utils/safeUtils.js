@@ -1,25 +1,25 @@
-// src/utils/safeUtils.js - Improved error handling and connection stability
+import axios from 'axios';
 
 // API URL detection function
 const getApiUrl = () => {
-  // Production: always use the API subdomain
+  // Production: Use DigitalOcean App Platform URL
   if (import.meta.env.PROD) {
     return 'https://backend-sv-3n4v6.ondigitalocean.app';
   }
 
-  // Check environment variable
+  // Environment variable fallback
   if (import.meta.env.VITE_API_URL) {
     return import.meta.env.VITE_API_URL;
   }
 
-  // Construct from current hostname
+  // Construct from current hostname for development environments
   const hostname = window.location.hostname || '';
   if (hostname.includes('app.github.dev') || hostname.includes('gitpod.io')) {
     const baseUrl = hostname.replace('-5173', '-8080');
     return `https://${baseUrl}`;
   }
 
-  // Default localhost for development
+  // Default localhost for local development
   return 'http://localhost:8080';
 };
 
@@ -36,11 +36,13 @@ let connectionHealth = {
 
 // Token management utilities
 export const getAuthToken = () => {
-  return localStorage.getItem('sparkvibe_token');
+  return localStorage.getItem('sparkvibe_token') || '';
 };
 
 export const setAuthToken = (token) => {
-  localStorage.setItem('sparkvibe_token', token);
+  if (typeof token === 'string' && token) {
+    localStorage.setItem('sparkvibe_token', token);
+  }
 };
 
 export const removeAuthToken = () => {
@@ -51,6 +53,7 @@ export const removeAuthToken = () => {
 // Decode JWT to check expiration
 const isTokenExpired = (token) => {
   try {
+    if (!token) return true;
     const payload = JSON.parse(atob(token.split('.')[1]));
     return payload.exp * 1000 < Date.now();
   } catch (error) {
@@ -98,13 +101,10 @@ const getDynamicTimeout = (baseTimeout = 10000) => {
 
 // Enhanced API GET with improved connection handling
 export const apiGet = async (endpoint, options = {}) => {
-  const { retries = 3, timeout } = options;
+  const { retries = 3, timeout, headers = {} } = options;
   const dynamicTimeout = getDynamicTimeout(timeout);
 
   for (let attempt = 1; attempt <= retries; attempt++) {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), dynamicTimeout);
-
     try {
       const token = getAuthToken();
       if (token && isTokenExpired(token)) {
@@ -112,51 +112,23 @@ export const apiGet = async (endpoint, options = {}) => {
         throw new Error('Authentication expired. Please sign in again.');
       }
 
-      const headers = {
-        'Content-Type': 'application/json'
-      };
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-
-      // API GET attempt
-
-      const response = await fetch(`${API_BASE}${endpoint}`, {
-        method: 'GET',
-        headers,
-        signal: controller.signal,
-        keepalive: false,
-        mode: 'cors'
+      const response = await axios.get(`${API_BASE}${endpoint}`, {
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...headers
+        },
+        timeout: dynamicTimeout
       });
 
-      clearTimeout(timeoutId);
-
-      if (response.status === 401) {
-        removeAuthToken();
-        throw new Error('Session expired. Please sign in again.');
-      }
-
-      if (!response.ok) {
-        let errorText;
-        try {
-          const errorData = await response.json();
-          errorText = errorData.message || errorData.error;
-        } catch {
-          errorText = await response.text();
-        }
-        throw new Error(`HTTP ${response.status}: ${errorText || 'Request failed'}`);
-      }
-
-      const data = await response.json();
       console.log(`API GET success for ${endpoint}`);
       updateConnectionHealth(true);
-      return data;
+      return response.data;
     } catch (error) {
-      clearTimeout(timeoutId);
       console.error(`API GET attempt ${attempt}/${retries} failed for ${endpoint}:`, error.message);
       updateConnectionHealth(false);
 
-      if (error.name === 'AbortError') {
+      if (error.code === 'ECONNABORTED') {
         console.warn(`Request timeout after ${dynamicTimeout}ms`);
       }
 
@@ -168,7 +140,6 @@ export const apiGet = async (endpoint, options = {}) => {
       const baseDelay = attempt * 1000 * connectionHealth.backoffMultiplier;
       const jitter = Math.random() * 500;
       const delay = baseDelay + jitter;
-
       console.log(`Retrying in ${Math.round(delay)}ms...`);
       await new Promise(resolve => setTimeout(resolve, delay));
     }
@@ -177,13 +148,10 @@ export const apiGet = async (endpoint, options = {}) => {
 
 // Enhanced API POST with improved connection handling
 export const apiPost = async (endpoint, data, options = {}) => {
-  const { retries = 3, timeout, headers: customHeaders = {} } = options;
+  const { retries = 3, timeout, headers = {} } = options;
   const dynamicTimeout = getDynamicTimeout(timeout || 15000);
 
   for (let attempt = 1; attempt <= retries; attempt++) {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), dynamicTimeout);
-
     try {
       const token = getAuthToken();
       if (token && isTokenExpired(token)) {
@@ -191,53 +159,24 @@ export const apiPost = async (endpoint, data, options = {}) => {
         throw new Error('Authentication expired. Please sign in again.');
       }
 
-      const headers = {
-        'Content-Type': 'application/json',
-        ...customHeaders,
-      };
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-
-      // API POST attempt
-
-      const response = await fetch(`${API_BASE}${endpoint}`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(data),
-        signal: controller.signal,
-        keepalive: false,
-        mode: 'cors'
+      const response = await axios.post(`${API_BASE}${endpoint}`, data, {
+        headers: {
+          'Content-Type': headers['Content-Type'] || 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...headers
+        },
+        timeout: dynamicTimeout,
+        onUploadProgress: options.onUploadProgress
       });
 
-      clearTimeout(timeoutId);
-
-      if (response.status === 401) {
-        removeAuthToken();
-        throw new Error('Session expired. Please sign in again.');
-      }
-
-      if (!response.ok) {
-        let errorMessage = 'Request failed';
-        try {
-          const errorData = await response.json();
-          errorMessage = errorData.message || errorData.error || `HTTP ${response.status}`;
-        } catch {
-          errorMessage = await response.text() || `HTTP ${response.status}`;
-        }
-        throw new Error(errorMessage);
-      }
-
-      const result = await response.json();
       console.log(`API POST success for ${endpoint}`);
       updateConnectionHealth(true);
-      return result;
+      return response.data;
     } catch (error) {
-      clearTimeout(timeoutId);
       console.error(`API POST attempt ${attempt}/${retries} failed for ${endpoint}:`, error.message);
       updateConnectionHealth(false);
 
-      if (error.name === 'AbortError') {
+      if (error.code === 'ECONNABORTED') {
         console.warn(`Request timeout after ${dynamicTimeout}ms`);
       }
 
@@ -249,7 +188,6 @@ export const apiPost = async (endpoint, data, options = {}) => {
       const baseDelay = attempt * 1000 * connectionHealth.backoffMultiplier;
       const jitter = Math.random() * 500;
       const delay = baseDelay + jitter;
-
       console.log(`Retrying in ${Math.round(delay)}ms...`);
       await new Promise(resolve => setTimeout(resolve, delay));
     }
@@ -258,44 +196,95 @@ export const apiPost = async (endpoint, data, options = {}) => {
 
 // Additional HTTP methods
 export const apiPut = async (endpoint, data, options = {}) => {
-  return fetchWithConfig(endpoint, {
-    method: 'PUT',
-    body: JSON.stringify(data),
-    ...options
-  });
+  const { retries = 3, timeout, headers = {} } = options;
+  const dynamicTimeout = getDynamicTimeout(timeout || 15000);
+
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const token = getAuthToken();
+      if (token && isTokenExpired(token)) {
+        removeAuthToken();
+        throw new Error('Authentication expired. Please sign in again.');
+      }
+
+      const response = await axios.put(`${API_BASE}${endpoint}`, data, {
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...headers
+        },
+        timeout: dynamicTimeout
+      });
+
+      console.log(`API PUT success for ${endpoint}`);
+      updateConnectionHealth(true);
+      return response.data;
+    } catch (error) {
+      console.error(`API PUT attempt ${attempt}/${retries} failed for ${endpoint}:`, error.message);
+      updateConnectionHealth(false);
+
+      if (error.code === 'ECONNABORTED') {
+        console.warn(`Request timeout after ${dynamicTimeout}ms`);
+      }
+
+      if (attempt === retries) {
+        console.warn(`All ${retries} attempts failed for ${endpoint}, using fallback`);
+        return getPostFallbackData(endpoint, data);
+      }
+
+      const baseDelay = attempt * 1000 * connectionHealth.backoffMultiplier;
+      const jitter = Math.random() * 500;
+      const delay = baseDelay + jitter;
+      console.log(`Retrying in ${Math.round(delay)}ms...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
 };
 
 export const apiDelete = async (endpoint, options = {}) => {
-  return fetchWithConfig(endpoint, {
-    method: 'DELETE',
-    ...options
-  });
-};
+  const { retries = 3, timeout, headers = {} } = options;
+  const dynamicTimeout = getDynamicTimeout(timeout || 15000);
 
-// Fetch API wrapper with consistent configuration
-const fetchWithConfig = async (endpoint, options = {}) => {
-  const apiUrl = getApiUrl();
-  const url = endpoint.startsWith('http') ?
-    endpoint :
-    `${apiUrl}${endpoint.startsWith('/') ? endpoint : '/' + endpoint}`;
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const token = getAuthToken();
+      if (token && isTokenExpired(token)) {
+        removeAuthToken();
+        throw new Error('Authentication expired. Please sign in again.');
+      }
 
-  const config = {
-    headers: {
-      'Content-Type': 'application/json',
-      ...options.headers,
-    },
-    ...options,
-  };
+      const response = await axios.delete(`${API_BASE}${endpoint}`, {
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...headers
+        },
+        timeout: dynamicTimeout
+      });
 
-  console.log(`Making ${options.method || 'GET'} request to:`, url);
+      console.log(`API DELETE success for ${endpoint}`);
+      updateConnectionHealth(true);
+      return response.data;
+    } catch (error) {
+      console.error(`API DELETE attempt ${attempt}/${retries} failed for ${endpoint}:`, error.message);
+      updateConnectionHealth(false);
 
-  const response = await fetch(url, config);
+      if (error.code === 'ECONNABORTED') {
+        console.warn(`Request timeout after ${dynamicTimeout}ms`);
+      }
 
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      if (attempt === retries) {
+        console.warn(`All ${retries} attempts failed for ${endpoint}, using fallback`);
+        return getFallbackData(endpoint);
+      }
+
+      const baseDelay = attempt * 1000 * connectionHealth.backoffMultiplier;
+      const jitter = Math.random() * 500;
+      const delay = baseDelay + jitter;
+      console.log(`Retrying in ${Math.round(delay)}ms...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
   }
-
-  return response.json();
 };
 
 // Get connection health status
@@ -358,12 +347,12 @@ const getFallbackData = (endpoint) => {
           level: 1,
           streak: 0,
           cardsGenerated: 0,
-          cardsShared: 0,
+          cardsShared: 0
         },
         preferences: storedUser.preferences || {
           adventureTypes: ['general'],
           difficulty: 'easy'
-        },
+        }
       },
       fallback: true
     };
@@ -381,7 +370,7 @@ const getFallbackData = (endpoint) => {
           streak: 15,
           cardsShared: 12,
           cardsGenerated: 18,
-          level: 3,
+          level: 3
         },
         {
           username: 'Vibe Explorer',
@@ -391,7 +380,7 @@ const getFallbackData = (endpoint) => {
           streak: 8,
           cardsShared: 8,
           cardsGenerated: 15,
-          level: 2,
+          level: 2
         },
         {
           username: 'Mood Master',
@@ -401,8 +390,8 @@ const getFallbackData = (endpoint) => {
           streak: 6,
           cardsShared: 6,
           cardsGenerated: 12,
-          level: 2,
-        },
+          level: 2
+        }
       ],
       fallback: true
     };
@@ -423,7 +412,7 @@ const getFallbackData = (endpoint) => {
           template: 'cosmic',
           averageRating: 4.7,
           difficulty: 'easy',
-          estimatedTime: '5 minutes',
+          estimatedTime: '5 minutes'
         },
         {
           id: 'demo-2',
@@ -436,7 +425,7 @@ const getFallbackData = (endpoint) => {
           template: 'retro',
           averageRating: 4.9,
           difficulty: 'easy',
-          estimatedTime: '10 minutes',
+          estimatedTime: '10 minutes'
         },
         {
           id: 'demo-3',
@@ -449,8 +438,8 @@ const getFallbackData = (endpoint) => {
           template: 'nature',
           averageRating: 4.5,
           difficulty: 'medium',
-          estimatedTime: '15 minutes',
-        },
+          estimatedTime: '15 minutes'
+        }
       ],
       viralAdventure: {
         title: 'Random Act of Kindness',
@@ -459,13 +448,52 @@ const getFallbackData = (endpoint) => {
         shares: 92,
         viralPotential: 0.92,
         category: 'Social',
-        template: 'retro',
+        template: 'retro'
       },
       metadata: {
         totalAdventures: 3,
         generatedAt: new Date().toISOString(),
-        fallback: true,
+        fallback: true
       }
+    };
+  }
+
+  if (endpoint.includes('/analytics/dashboard')) {
+    return {
+      success: true,
+      data: {
+        overview: {
+          totalCards: 10,
+          totalPoints: 500,
+          level: 5,
+          streak: 3,
+          cardGrowth: 10,
+          streakGrowth: 5,
+          shares: 5,
+          shareGrowth: 15
+        },
+        cardActivity: {
+          labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+          data: [2, 3, 1, 4, 2]
+        },
+        pointHistory: {
+          labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+          data: [100, 150, 50, 200, 100]
+        },
+        moodDistribution: {
+          labels: ['Joy', 'Sadness', 'Anger'],
+          data: [40, 30, 20]
+        }
+      },
+      fallback: true
+    };
+  }
+
+  if (endpoint === '/notifications/subscribe') {
+    return {
+      success: true,
+      message: 'Subscribed to push notifications (demo mode)',
+      fallback: true
     };
   }
 
@@ -486,11 +514,11 @@ const getPostFallbackData = (endpoint, data) => {
       message: 'User stats synced (demo mode)',
       stats: data.stats,
       synced: {
-        totalPoints: data.totalPoints,
-        level: data.level,
-        streak: data.streak,
-        cardsGenerated: data.cardsGenerated,
-        cardsShared: data.cardsShared
+        totalPoints: data.totalPoints || 0,
+        level: data.level || 1,
+        streak: data.streak || 0,
+        cardsGenerated: data.cardsGenerated || 0,
+        cardsShared: data.cardsShared || 0
       },
       fallback: true
     };
@@ -509,14 +537,16 @@ const getPostFallbackData = (endpoint, data) => {
         level: 1,
         streak: 0,
         cardsGenerated: 0,
-        cardsShared: 0,
+        cardsShared: 0
       },
       preferences: {
         adventureTypes: ['general'],
-        difficulty: 'easy',
-      },
+        difficulty: 'easy'
+      }
     };
     const mockToken = `demo_google_token_${Date.now()}`;
+    setAuthToken(mockToken);
+    localStorage.setItem('sparkvibe_user', JSON.stringify(user));
     return {
       success: true,
       message: 'Google authentication successful (demo mode)',
@@ -542,14 +572,16 @@ const getPostFallbackData = (endpoint, data) => {
         level: 1,
         streak: 0,
         cardsGenerated: 0,
-        cardsShared: 0,
+        cardsShared: 0
       },
       preferences: {
         adventureTypes: ['general'],
-        difficulty: 'easy',
-      },
+        difficulty: 'easy'
+      }
     };
     const mockToken = `demo_email_token_${Date.now()}`;
+    setAuthToken(mockToken);
+    localStorage.setItem('sparkvibe_user', JSON.stringify(user));
     return {
       success: true,
       message: 'Sign-in successful (demo mode)',
@@ -578,14 +610,16 @@ const getPostFallbackData = (endpoint, data) => {
         level: 1,
         streak: 0,
         cardsGenerated: 0,
-        cardsShared: 0,
+        cardsShared: 0
       },
       preferences: {
         adventureTypes: ['general'],
-        difficulty: 'easy',
-      },
+        difficulty: 'easy'
+      }
     };
     const mockToken = `demo_signup_token_${Date.now()}`;
+    setAuthToken(mockToken);
+    localStorage.setItem('sparkvibe_user', JSON.stringify(user));
     return {
       success: true,
       message: 'Account created successfully (demo mode)',
@@ -650,6 +684,7 @@ const getPostFallbackData = (endpoint, data) => {
     }
 
     return {
+      success: true,
       mood,
       confidence,
       emotions,
@@ -852,7 +887,14 @@ const getPostFallbackData = (endpoint, data) => {
             `🌟 Three phases, infinite possibilities. I am becoming stronger every day.`,
             `⚡ Dedicate 10 minutes daily to growth. Starting today!`
           ],
-          hashtags: ['#SparkVibe', '#EnhancedJourney', '#MindfulAdventure', '#PersonalGrowth']
+          hashtags: ['#SparkVibe', '#EnhancedJourney', '#MindfulAdventure', '#PersonalGrowth'],
+          shareUrl: 'https://sparkvibe.app/share/demo',
+          socialLinks: {
+            twitter: `https://twitter.com/intent/tweet?text=${encodeURIComponent(`Just completed my Enhanced Vibe Journey and earned ${totalPoints} points!`)}&url=https://sparkvibe.app/share/demo`,
+            facebook: `https://www.facebook.com/sharer/sharer.php?u=https://sparkvibe.app/share/demo`,
+            whatsapp: `https://wa.me/?text=${encodeURIComponent(`Completed a 3-phase adventure and earned ${totalPoints} points! https://sparkvibe.app/share/demo`)}`,
+            linkedin: `https://www.linkedin.com/sharing/share-offsite/?url=https://sparkvibe.app/share/demo`
+          }
         },
         analytics: {
           viralScore: Math.random() * 0.3 + 0.7,
@@ -882,8 +924,37 @@ const getPostFallbackData = (endpoint, data) => {
       completion: {
         id: `demo_completion_${Date.now()}`,
         points,
-        completedAt: new Date().toISOString(),
+        completedAt: new Date().toISOString()
       },
+      fallback: true
+    };
+  }
+
+  if (endpoint === '/upload-media') {
+    return {
+      success: true,
+      message: 'Media uploaded successfully (demo mode)',
+      media: {
+        url: 'https://sparkvibe.app/uploads/demo-media.jpg',
+        type: data instanceof FormData ? data.get('media')?.type || 'image/jpeg' : 'image/jpeg'
+      },
+      fallback: true
+    };
+  }
+
+  if (endpoint === '/notifications/subscribe') {
+    return {
+      success: true,
+      message: 'Subscribed to push notifications (demo mode)',
+      fallback: true
+    };
+  }
+
+  if (endpoint === '/premium/create-checkout') {
+    return {
+      success: true,
+      message: 'Checkout session created (demo mode)',
+      checkoutUrl: 'https://sparkvibe.app/demo-checkout',
       fallback: true
     };
   }
@@ -896,14 +967,18 @@ const getPostFallbackData = (endpoint, data) => {
     localStorage.setItem(storageKey, JSON.stringify(history.slice(-20)));
     return {
       success: true,
-      message: `${dataType} saved locally`,
+      message: `${dataType} saved locally (demo mode)`,
       fallback: true
     };
   }
 
-  return { error: 'No fallback available for this endpoint', fallback: true };
+  return {
+    error: 'No fallback available for this endpoint',
+    fallback: true
+  };
 };
 
+// Utility function for template colors
 function getTemplateColors(template) {
   const colorSchemes = {
     cosmic: ['#533483', '#7209b7', '#a663cc', '#4cc9f0'],
