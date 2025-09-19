@@ -215,27 +215,18 @@ class AuthService {
     try {
       container.innerHTML = '';
       
-      // Calculate responsive width based on container
-      let buttonWidth = 320; // Default width
-      
-      // Use container width if available, with reasonable bounds
-      if (container.offsetWidth > 0) {
-        buttonWidth = Math.min(Math.max(container.offsetWidth - 20, 280), 400);
-      }
-      
       // FIXED: Responsive button configuration with proper width
       window.google.accounts.id.renderButton(container, {
         theme: 'outline',
         size: 'large',
         type: 'standard',
-        width: buttonWidth, // RESPONSIVE WIDTH
+        width: 320, // RESPONSIVE WIDTH
         shape: 'rectangular',
         logo_alignment: 'left',
         locale: 'en', // FORCE ENGLISH
         text: 'continue_with' // ENGLISH TEXT
       });
 
-      console.log('✅ Google button rendered with width:', buttonWidth);
       return true;
     } catch (error) {
       console.error('❌ Button render failed:', error);

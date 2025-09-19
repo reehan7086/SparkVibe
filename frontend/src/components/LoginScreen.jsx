@@ -1,9 +1,9 @@
-// Fixed LoginScreen.jsx - Google button alignment with input fields
+// Fixed LoginScreen.jsx - Proper callback handling and Google button alignment
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import AuthService from '../services/AuthService';
 
-const LoginScreen = ({ onAuthSuccess }) => {
+const LoginScreen = ({ onLoginSuccess }) => {
   const [isLogin, setIsLogin] = useState(true);
   const [formData, setFormData] = useState({
     email: '',
@@ -33,17 +33,18 @@ const LoginScreen = ({ onAuthSuccess }) => {
           return;
         }
 
-        // Set up callbacks FIRST
-        window.handleGoogleLoginSuccess = (userData) => {
-          console.log('✅ Login success callback:', userData);
+        // FIXED: Set up callback directly on AuthService
+        AuthService.setGoogleLoginSuccessCallback((userData) => {
+          console.log('✅ Google login success callback triggered:', userData);
           setLoading(false);
           setError('');
           setDebugInfo('Authentication successful!');
-          onAuthSuccess(userData);
-        };
+          onLoginSuccess(userData);
+        });
 
+        // Set up global error handler
         window.handleGoogleLoginError = (errorMessage) => {
-          console.error('❌ Login error callback:', errorMessage);
+          console.error('❌ Google login error callback:', errorMessage);
           setLoading(false);
           setError(errorMessage);
           setDebugInfo(`Error: ${errorMessage}`);
@@ -61,7 +62,7 @@ const LoginScreen = ({ onAuthSuccess }) => {
           setTimeout(() => {
             const container = document.getElementById('google-button-container');
             if (container) {
-              // FIXED: Set container width to match input fields
+              // Set container width to match input fields
               const inputField = document.querySelector('input[type="email"]');
               if (inputField) {
                 const inputWidth = inputField.offsetWidth;
@@ -91,10 +92,11 @@ const LoginScreen = ({ onAuthSuccess }) => {
     initializeAuth();
 
     return () => {
-      delete window.handleGoogleLoginSuccess;
+      // Clean up callbacks
       delete window.handleGoogleLoginError;
+      // Note: AuthService callback is cleaned up internally
     };
-  }, [onAuthSuccess]);
+  }, [onLoginSuccess]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -114,7 +116,7 @@ const LoginScreen = ({ onAuthSuccess }) => {
       }
 
       if (result.success) {
-        onAuthSuccess(result.user);
+        onLoginSuccess(result.user);
       }
     } catch (error) {
       setError(error.message);
@@ -149,12 +151,29 @@ const LoginScreen = ({ onAuthSuccess }) => {
       avatar: '👤',
       emailVerified: true,
       isGuest: true,
-      stats: { totalPoints: 0, level: 1, streak: 0, cardsGenerated: 0, cardsShared: 0 }
+      provider: 'guest',
+      totalPoints: 0,
+      level: 1,
+      streak: 0,
+      cardsGenerated: 0,
+      cardsShared: 0,
+      stats: { 
+        totalPoints: 0, 
+        level: 1, 
+        streak: 0, 
+        cardsGenerated: 0, 
+        cardsShared: 0,
+        lastActivity: new Date(),
+        bestStreak: 0,
+        adventuresCompleted: 0,
+        moodHistory: [],
+        choices: []
+      }
     };
     
     localStorage.setItem('sparkvibe_token', `guest_${Date.now()}`);
     localStorage.setItem('sparkvibe_user', JSON.stringify(guestUser));
-    onAuthSuccess(guestUser);
+    onLoginSuccess(guestUser);
   };
 
   return (
@@ -208,7 +227,7 @@ const LoginScreen = ({ onAuthSuccess }) => {
 
           {/* Google Sign-In Section */}
           <div className="mb-6">
-            {/* Custom Google Button (fallback) - FIXED: Full width */}
+            {/* Custom Google Button (fallback) */}
             <button
               type="button"
               onClick={handleCustomGoogleClick}
@@ -233,7 +252,7 @@ const LoginScreen = ({ onAuthSuccess }) => {
               )}
             </button>
 
-            {/* Official Google Button Container - FIXED: Full width and centered */}
+            {/* Official Google Button Container */}
             <div 
               id="google-button-container" 
               className="mt-2 w-full"
@@ -335,7 +354,8 @@ const LoginScreen = ({ onAuthSuccess }) => {
             <button
               type="button"
               onClick={handleGuestLogin}
-              className="w-full py-3 bg-white/10 hover:bg-white/20 border border-white/30 rounded-lg text-white font-medium transition-all flex items-center justify-center space-x-2"
+              disabled={loading}
+              className="w-full py-3 bg-white/10 hover:bg-white/20 border border-white/30 rounded-lg text-white font-medium transition-all flex items-center justify-center space-x-2 disabled:opacity-50"
             >
               <span>👤</span>
               <span>Continue as Guest</span>

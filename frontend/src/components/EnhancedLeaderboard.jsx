@@ -101,11 +101,11 @@ const EnhancedLeaderboard = () => {
       <motion.div
         initial={{ opacity: 0, x: 20 }}
         animate={{ opacity: 1, x: 0 }}
-        className="fixed right-4 top-20 z-20"
+        className="mb-4"
       >
         <motion.button
           onClick={() => setIsExpanded(true)}
-          className="bg-purple-600/90 hover:bg-purple-700/90 backdrop-blur-md border border-white/20 rounded-xl p-3 shadow-xl"
+          className="bg-purple-600/90 hover:bg-purple-700/90 backdrop-blur-md border border-white/20 rounded-xl p-3 shadow-xl w-full"
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
         >
@@ -124,7 +124,7 @@ const EnhancedLeaderboard = () => {
         initial={{ opacity: 0, x: 300 }}
         animate={{ opacity: 1, x: 0 }}
         exit={{ opacity: 0, x: 300 }}
-        className="fixed right-4 top-20 z-20 w-80"
+        className="w-80 mb-4"
       >
         <div className="bg-black/20 backdrop-blur-md border border-white/10 rounded-2xl p-4 shadow-2xl max-h-[70vh] overflow-y-auto">
           {/* Header */}

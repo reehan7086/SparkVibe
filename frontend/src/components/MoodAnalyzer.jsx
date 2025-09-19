@@ -8,50 +8,59 @@ const MoodAnalyzer = ({ onMoodAnalyzed, isActive }) => {
   const [moodData, setMoodData] = useState(null);
   const [step, setStep] = useState('input'); // input, analyzing, results
 
-const analyzeMood = async () => {
-  if (!moodInput.trim()) return;
+  const analyzeMood = async () => {
+    if (!moodInput.trim()) return;
 
-  setIsAnalyzing(true);
-  setStep('analyzing');
+    setIsAnalyzing(true);
+    setStep('analyzing');
 
-  try {
-    // Get additional context
-    const now = new Date();
-    const timeOfDay = getTimeOfDay(now);
-    
-    const analysisData = {
-      textInput: moodInput,
-      timeOfDay: timeOfDay,
-      recentActivities: [],
-      timestamp: now.toISOString()
-    };
+    try {
+      // Get additional context
+      const now = new Date();
+      const timeOfDay = getTimeOfDay(now);
+      
+      const analysisData = {
+        textInput: moodInput,
+        timeOfDay: timeOfDay,
+        recentActivities: [],
+        timestamp: now.toISOString()
+      };
 
-    const result = await apiPost('/analyze-mood', analysisData);
-    
-    setMoodData(result);
-    setStep('results');
-    onMoodAnalyzed(result);
-    
-  } catch (error) {
-    console.error('Mood analysis failed:', error);
-    // Fallback mood analysis
-    const fallbackMood = {
-      mood: 'curious',
-      confidence: 0.6,
-      emotions: ['curious', 'hopeful'],
-      recommendations: ['Try something new today', 'Embrace your curiosity'],
-      suggestedTemplate: 'cosmic',
-      energyLevel: 'medium',
-      socialMood: 'balanced',
-      analyzedAt: new Date().toISOString()
-    };
-    setMoodData(fallbackMood);
-    setStep('results');
-    onMoodAnalyzed(fallbackMood);
-  } finally {
-    setIsAnalyzing(false);
-  }
-};
+      const result = await apiPost('/analyze-mood', analysisData);
+      
+      setMoodData(result);
+      setStep('results');
+      
+      // Call the callback with the mood data
+      if (onMoodAnalyzed) {
+        onMoodAnalyzed(result);
+      }
+      
+    } catch (error) {
+      console.error('Mood analysis failed:', error);
+      // Fallback mood analysis
+      const fallbackMood = {
+        mood: 'curious',
+        confidence: 0.6,
+        emotions: ['curious', 'hopeful'],
+        recommendations: ['Try something new today', 'Embrace your curiosity'],
+        suggestedTemplate: 'cosmic',
+        energyLevel: 'medium',
+        socialMood: 'balanced',
+        analyzedAt: new Date().toISOString(),
+        primaryMood: 'curious',
+        fallback: true
+      };
+      setMoodData(fallbackMood);
+      setStep('results');
+      
+      if (onMoodAnalyzed) {
+        onMoodAnalyzed(fallbackMood);
+      }
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
 
   const reset = () => {
     setStep('input');
@@ -131,7 +140,7 @@ const analyzeMood = async () => {
                 disabled={!moodInput.trim() || isAnalyzing}
                 className="w-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 disabled:opacity-50 disabled:cursor-not-allowed px-6 py-3 rounded-xl font-semibold text-white transition-all duration-300 transform hover:scale-105"
               >
-                Analyze My Mood
+                Analyze My Mood ✨
               </button>
             </div>
           </motion.div>
@@ -147,7 +156,7 @@ const analyzeMood = async () => {
           >
             <div className="relative mb-4">
               <div className="w-16 h-16 mx-auto border-4 border-purple-400 border-t-transparent rounded-full animate-spin"></div>
-              <div className="absolute inset-0 w-12 h-12 mx-auto mt-2 border-2 border-pink-400 border-b-transparent rounded-full animate-spin animate-reverse"></div>
+              <div className="absolute inset-0 w-12 h-12 mx-auto mt-2 border-2 border-pink-400 border-b-transparent rounded-full animate-spin" style={{ animationDirection: 'reverse' }}></div>
             </div>
             <h3 className="text-xl font-bold text-white mb-2">Analyzing your vibe...</h3>
             <p className="text-purple-200 text-sm">Our AI is understanding your emotions and energy</p>
@@ -212,6 +221,14 @@ const analyzeMood = async () => {
               </p>
             </div>
 
+            {moodData.fallback && (
+              <div className="bg-yellow-500/20 border border-yellow-400/30 rounded-xl p-3">
+                <p className="text-yellow-200 text-sm">
+                  🔄 Analysis generated locally - Sign in for enhanced AI features
+                </p>
+              </div>
+            )}
+
             <div className="flex space-x-3">
               <button
                 onClick={reset}
@@ -220,10 +237,13 @@ const analyzeMood = async () => {
                 Analyze Again
               </button>
               <button
-                onClick={() => setStep('input')}
+                onClick={() => {
+                  // This will be handled by the parent component automatically
+                  // since we already called onMoodAnalyzed
+                }}
                 className="flex-1 bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 px-4 py-2 rounded-xl text-white font-medium transition-all duration-200"
               >
-                Continue
+                Continue Journey →
               </button>
             </div>
           </motion.div>
