@@ -1,65 +1,77 @@
-// Updated AuthService.js - Better user data persistence and retrieval
+// Fixed AuthService.js - Simplified Google Auth with better error handling
 import { apiPost } from '../utils/safeUtils.js';
 
 class AuthService {
   constructor() {
-    try {
-      this.token = localStorage.getItem('sparkvibe_token');
-      this.user = this.token ? JSON.parse(localStorage.getItem('sparkvibe_user') || '{}') : null;
-      this.googleInitialized = false;
-      // NEW: Store success callback for Google login
-      this.googleLoginSuccessCallback = null;
-    } catch (error) {
-      console.error('Failed to parse user from localStorage:', error);
-      this.token = null;
-      this.user = null;
-      localStorage.removeItem('sparkvibe_token');
-      localStorage.removeItem('sparkvibe_user');
-    }
+    this.token = localStorage.getItem('sparkvibe_token');
+    this.user = this.getStoredUser();
+    this.googleInitialized = false;
+    this.initPromise = null;
   }
 
-  // NEW: Method to register a success callback for Google login
-  setGoogleLoginSuccessCallback(callback) {
-    if (typeof callback === 'function') {
-      this.googleLoginSuccessCallback = callback;
-      console.log('✅ Google login success callback registered');
-    } else {
-      console.warn('⚠️ Invalid callback provided for Google login');
+  getStoredUser() {
+    try {
+      const userData = localStorage.getItem('sparkvibe_user');
+      return userData ? JSON.parse(userData) : null;
+    } catch (error) {
+      console.error('Failed to parse stored user:', error);
+      localStorage.removeItem('sparkvibe_user');
+      return null;
     }
   }
 
   async initializeGoogleAuth() {
+    // Return existing promise if already initializing
+    if (this.initPromise) {
+      return this.initPromise;
+    }
+
     if (this.googleInitialized) {
       return true;
     }
 
     const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
     if (!clientId) {
-      console.error('VITE_GOOGLE_CLIENT_ID is not set');
-      throw new Error('Google Sign-In not configured - missing VITE_GOOGLE_CLIENT_ID');
+      console.warn('Google Client ID not configured - Google Sign-In disabled');
+      return false;
     }
 
+    this.initPromise = this.loadGoogleAuth(clientId);
+    return this.initPromise;
+  }
+
+  async loadGoogleAuth(clientId) {
     try {
-      // Load Google script
-      await this.loadGoogleScript();
-      
-      // Initialize with callback - FIXED: Added hl parameter for English
-      window.google.accounts.id.initialize({
-        client_id: clientId,
-        callback: (response) => this.handleGoogleResponse(response),
-        auto_select: false,
-        cancel_on_tap_outside: true,
-        use_fedcm_for_prompt: false,
-        hl: 'en', // FORCE ENGLISH LANGUAGE
-        locale: 'en' // ADDITIONAL LOCALE SETTING
+      // Load Google script if not already loaded
+      if (!window.google?.accounts?.id) {
+        await this.loadGoogleScript();
+      }
+
+      // Initialize Google Auth
+      await new Promise((resolve, reject) => {
+        try {
+          window.google.accounts.id.initialize({
+            client_id: clientId,
+            callback: this.handleGoogleCallback.bind(this),
+            auto_select: false,
+            cancel_on_tap_outside: true,
+            use_fedcm_for_prompt: false
+          });
+          
+          this.googleInitialized = true;
+          console.log('✅ Google Auth initialized');
+          resolve(true);
+        } catch (error) {
+          console.error('Google Auth initialization failed:', error);
+          reject(error);
+        }
       });
 
-      this.googleInitialized = true;
-      console.log('✅ Google Auth initialized successfully');
       return true;
     } catch (error) {
-      console.error('❌ Google Auth initialization failed:', error);
-      throw error;
+      console.error('Failed to initialize Google Auth:', error);
+      this.googleInitialized = false;
+      return false;
     }
   }
 
@@ -71,13 +83,13 @@ class AuthService {
       }
 
       const script = document.createElement('script');
-      // FIXED: Add language parameter to script URL
-      script.src = 'https://accounts.google.com/gsi/client?hl=en';
+      script.src = 'https://accounts.google.com/gsi/client';
       script.async = true;
       script.defer = true;
       
       script.onload = () => {
         console.log('Google script loaded');
+        // Wait a bit for the API to be ready
         setTimeout(resolve, 100);
       };
       
@@ -89,120 +101,76 @@ class AuthService {
     });
   }
 
-  async handleGoogleResponse(response) {
+  async handleGoogleCallback(response) {
     try {
-      console.log('=== Google Response Debug ===');
-      console.log('Response received');
-      
       if (!response.credential) {
-        throw new Error('No credential in Google response');
+        throw new Error('No credential received from Google');
       }
 
-      const token = response.credential;
-      console.log('Token received, length:', token.length);
+      console.log('Processing Google authentication...');
       
-      // FIXED: Parse JWT to get user info immediately
-      const userInfo = this.parseJWT(token);
-      console.log('Parsed user info:', userInfo);
-
-      // Validate JWT format
-      const parts = token.split('.');
-      if (parts.length !== 3) {
-        throw new Error(`Invalid JWT: ${parts.length} parts instead of 3`);
-      }
-
-      console.log('Sending to backend...');
-
-      // Send to backend
-      const result = await apiPost('/auth/google', { token });
+      const result = await apiPost('/auth/google', { 
+        token: response.credential 
+      });
       
-      if (result.success) {
-        console.log('✅ Backend auth successful');
-        
-        // FIXED: Ensure user data includes parsed info with proper structure
-        const userData = {
-          ...result.user,
-          name: result.user.name || userInfo.name || 'Google User',
-          email: result.user.email || userInfo.email || '',
-          avatar: result.user.avatar || userInfo.picture || '👤',
-          provider: 'google',
-          // FIXED: Ensure totalPoints is at top level for easy access
-          totalPoints: result.user.stats?.totalPoints || 0,
-          level: result.user.stats?.level || 1,
-          streak: result.user.stats?.streak || 0,
-          cardsGenerated: result.user.stats?.cardsGenerated || 0,
-          cardsShared: result.user.stats?.cardsShared || 0,
-          // Also keep stats object for compatibility
-          stats: {
-            totalPoints: result.user.stats?.totalPoints || 0,
-            level: result.user.stats?.level || 1,
-            streak: result.user.stats?.streak || 0,
-            cardsGenerated: result.user.stats?.cardsGenerated || 0,
-            cardsShared: result.user.stats?.cardsShared || 0,
-            lastActivity: new Date(),
-            bestStreak: result.user.stats?.bestStreak || 0,
-            adventuresCompleted: result.user.stats?.adventuresCompleted || 0,
-            moodHistory: result.user.stats?.moodHistory || [],
-            choices: result.user.stats?.choices || [],
-            ...result.user.stats
-          }
-        };
-        
+      if (result.success && result.user) {
+        const userData = this.normalizeUserData(result.user, 'google');
         this.setAuthData(result.token, userData);
         
-        // FIXED: Use internal callback if set, otherwise check window handler
-        if (this.googleLoginSuccessCallback) {
-          console.log('✅ Calling registered Google login success callback');
-          this.googleLoginSuccessCallback(userData);
-        } else if (window.handleGoogleLoginSuccess && typeof window.handleGoogleLoginSuccess === 'function') {
-          console.log('✅ Calling window.handleGoogleLoginSuccess');
-          window.handleGoogleLoginSuccess(userData);
-        } else {
-          console.warn('⚠️ No Google login success callback defined, skipping');
-          // Default behavior: Log success and store data
-          console.log('✅ Login success callback:', userData);
-        }
+        // Trigger success event
+        window.dispatchEvent(new CustomEvent('googleLoginSuccess', {
+          detail: { user: userData, token: result.token }
+        }));
+        
+        console.log('✅ Google login successful');
       } else {
-        throw new Error(result.message || 'Backend auth failed');
+        throw new Error(result.message || 'Google authentication failed');
       }
     } catch (error) {
-      console.error('❌ Google auth error:', error);
+      console.error('Google authentication error:', error);
       
-      // Call global error handler
-      if (window.handleGoogleLoginError && typeof window.handleGoogleLoginError === 'function') {
-        window.handleGoogleLoginError(error.message);
-      } else {
-        console.warn('⚠️ No Google login error callback defined, logging error:', error.message);
-      }
+      // Trigger error event
+      window.dispatchEvent(new CustomEvent('googleLoginError', {
+        detail: { error: error.message }
+      }));
     }
   }
 
-  // FIXED: Added JWT parser to extract user info
-  parseJWT(token) {
-    try {
-      const base64Url = token.split('.')[1];
-      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-      const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
-        return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-      }).join(''));
-      
-      const payload = JSON.parse(jsonPayload);
-      return {
-        name: payload.name,
-        email: payload.email,
-        picture: payload.picture,
-        given_name: payload.given_name,
-        family_name: payload.family_name
-      };
-    } catch (error) {
-      console.error('Failed to parse JWT:', error);
-      return {};
-    }
+  normalizeUserData(userData, provider = 'email') {
+    return {
+      id: userData.id,
+      name: userData.name || userData.given_name || 'User',
+      email: userData.email,
+      avatar: userData.avatar || userData.picture || '👤',
+      provider,
+      emailVerified: userData.emailVerified || true,
+      totalPoints: userData.stats?.totalPoints || 0,
+      level: userData.stats?.level || 1,
+      streak: userData.stats?.streak || 0,
+      cardsGenerated: userData.stats?.cardsGenerated || 0,
+      cardsShared: userData.stats?.cardsShared || 0,
+      stats: {
+        totalPoints: userData.stats?.totalPoints || 0,
+        level: userData.stats?.level || 1,
+        streak: userData.stats?.streak || 0,
+        cardsGenerated: userData.stats?.cardsGenerated || 0,
+        cardsShared: userData.stats?.cardsShared || 0,
+        lastActivity: new Date(),
+        ...userData.stats
+      },
+      preferences: userData.preferences || {
+        interests: ['wellness', 'creativity'],
+        aiPersonality: 'encouraging',
+        adventureTypes: ['general'],
+        difficulty: 'easy'
+      },
+      ...userData
+    };
   }
 
-  renderGoogleButton(containerId) {
+  async renderGoogleButton(containerId, options = {}) {
     if (!this.googleInitialized) {
-      console.error('Google not initialized');
+      console.warn('Google Auth not initialized');
       return false;
     }
 
@@ -215,71 +183,46 @@ class AuthService {
     try {
       container.innerHTML = '';
       
-      // FIXED: Responsive button configuration with proper width
       window.google.accounts.id.renderButton(container, {
         theme: 'outline',
         size: 'large',
         type: 'standard',
-        width: 320, // RESPONSIVE WIDTH
         shape: 'rectangular',
-        logo_alignment: 'left',
-        locale: 'en', // FORCE ENGLISH
-        text: 'continue_with' // ENGLISH TEXT
+        width: container.offsetWidth || 300,
+        ...options
       });
 
       return true;
     } catch (error) {
-      console.error('❌ Button render failed:', error);
+      console.error('Failed to render Google button:', error);
       return false;
     }
   }
 
-  signInWithGoogle() {
+  async signInWithGoogle() {
     if (!this.googleInitialized) {
-      throw new Error('Google Auth not ready');
+      throw new Error('Google Auth not initialized');
     }
 
     try {
-      console.log('Triggering Google prompt...');
       window.google.accounts.id.prompt();
     } catch (error) {
-      console.error('Failed to show Google prompt:', error);
+      console.error('Failed to show Google sign-in prompt:', error);
       throw error;
     }
   }
 
-  // Email auth methods
+  // Email authentication methods
   async register(email, password, name) {
     try {
       const result = await apiPost('/auth/signup', {
         name: name.trim(),
         email: email.toLowerCase().trim(),
-        password: password
+        password
       });
 
-      if (result.success) {
-        // FIXED: Structure user data properly for consistency
-        const userData = {
-          ...result.user,
-          totalPoints: result.user.stats?.totalPoints || 0,
-          level: result.user.stats?.level || 1,
-          streak: result.user.stats?.streak || 0,
-          cardsGenerated: result.user.stats?.cardsGenerated || 0,
-          cardsShared: result.user.stats?.cardsShared || 0,
-          stats: {
-            totalPoints: result.user.stats?.totalPoints || 0,
-            level: result.user.stats?.level || 1,
-            streak: result.user.stats?.streak || 0,
-            cardsGenerated: result.user.stats?.cardsGenerated || 0,
-            cardsShared: result.user.stats?.cardsShared || 0,
-            lastActivity: new Date(),
-            bestStreak: result.user.stats?.bestStreak || 0,
-            adventuresCompleted: result.user.stats?.adventuresCompleted || 0,
-            moodHistory: result.user.stats?.moodHistory || [],
-            choices: result.user.stats?.choices || [],
-            ...result.user.stats
-          }
-        };
+      if (result.success && result.user) {
+        const userData = this.normalizeUserData(result.user, 'email');
         this.setAuthData(result.token, userData);
         return { ...result, user: userData };
       } else {
@@ -295,32 +238,11 @@ class AuthService {
     try {
       const result = await apiPost('/auth/signin', {
         email: email.toLowerCase().trim(),
-        password: password
+        password
       });
 
-      if (result.success) {
-        // FIXED: Structure user data properly for consistency
-        const userData = {
-          ...result.user,
-          totalPoints: result.user.stats?.totalPoints || 0,
-          level: result.user.stats?.level || 1,
-          streak: result.user.stats?.streak || 0,
-          cardsGenerated: result.user.stats?.cardsGenerated || 0,
-          cardsShared: result.user.stats?.cardsShared || 0,
-          stats: {
-            totalPoints: result.user.stats?.totalPoints || 0,
-            level: result.user.stats?.level || 1,
-            streak: result.user.stats?.streak || 0,
-            cardsGenerated: result.user.stats?.cardsGenerated || 0,
-            cardsShared: result.user.stats?.cardsShared || 0,
-            lastActivity: new Date(),
-            bestStreak: result.user.stats?.bestStreak || 0,
-            adventuresCompleted: result.user.stats?.adventuresCompleted || 0,
-            moodHistory: result.user.stats?.moodHistory || [],
-            choices: result.user.stats?.choices || [],
-            ...result.user.stats
-          }
-        };
+      if (result.success && result.user) {
+        const userData = this.normalizeUserData(result.user, 'email');
         this.setAuthData(result.token, userData);
         return { ...result, user: userData };
       } else {
@@ -337,39 +259,14 @@ class AuthService {
     this.user = user;
     localStorage.setItem('sparkvibe_token', token);
     localStorage.setItem('sparkvibe_user', JSON.stringify(user));
-    console.log('✅ Auth data saved with points:', user.totalPoints, user);
+    console.log('✅ Auth data saved');
   }
 
-  // FIXED: Helper method to update user data and keep localStorage in sync
   updateUser(updates) {
     if (!this.user) return null;
     
-    this.user = {
-      ...this.user,
-      ...updates,
-      stats: {
-        ...this.user.stats,
-        ...updates.stats,
-        lastActivity: new Date()
-      }
-    };
-    
-    // Ensure top-level properties are in sync with stats
-    if (updates.totalPoints !== undefined) {
-      this.user.totalPoints = updates.totalPoints;
-      this.user.stats.totalPoints = updates.totalPoints;
-    }
-    if (updates.level !== undefined) {
-      this.user.level = updates.level;
-      this.user.stats.level = updates.level;
-    }
-    if (updates.streak !== undefined) {
-      this.user.streak = updates.streak;
-      this.user.stats.streak = updates.streak;
-    }
-    
+    this.user = { ...this.user, ...updates };
     localStorage.setItem('sparkvibe_user', JSON.stringify(this.user));
-    console.log('✅ User data updated with points:', this.user.totalPoints);
     return this.user;
   }
 
@@ -391,14 +288,8 @@ class AuthService {
   }
 
   getCurrentUser() {
-    // FIXED: Always return the most recent user data from localStorage
-    try {
-      const storedUser = localStorage.getItem('sparkvibe_user');
-      if (storedUser) {
-        this.user = JSON.parse(storedUser);
-      }
-    } catch (error) {
-      console.error('Failed to parse stored user:', error);
+    if (!this.user) {
+      this.user = this.getStoredUser();
     }
     return this.user;
   }
