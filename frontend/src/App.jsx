@@ -274,7 +274,7 @@ useEffect(() => {
   }, [trackEvent]);
 
   // Handle experience completion
-  const handleExperienceComplete = useCallback(async (stats) => {
+  const handleExperienceComplete = useCallback(async (stats = {}) => {
     setCompletionStats(stats);
     setCurrentStep('vibe-card');
     
@@ -322,7 +322,7 @@ useEffect(() => {
     });
   }, [user, updateUserData, trackEvent, moodData]);
 
-  const handleCardGenerated = useCallback(async (generatedCardData) => {
+  const handleCardGenerated = useCallback(async (generatedCardData = {}) => {
     console.log('Card generated callback:', generatedCardData); // Debug log
     setCardData(generatedCardData);
     setCurrentStep('summary');
@@ -709,23 +709,25 @@ useEffect(() => {
   >
     {isEnhancedMode ? (
       <EnhancedVibeCardGenerator 
-  moodData={moodData || {}}
-  userChoices={userChoices || {}}
-  setUserChoices={setUserChoices}      
-  onComplete={handleCardGenerated}     // ✅ CORRECT - you fixed this
-  user={user || {}}                          
-  updateUserData={updateUserData}     
-  isActive={true}
-/>
+        moodData={moodData || {}}
+        userChoices={userChoices || {}}
+        setUserChoices={setUserChoices}      
+        onComplete={handleCardGenerated}
+        user={user || {}}                          
+        updateUserData={updateUserData}
+        capsuleData={capsuleData || {}}        // ADD THIS - backend needs capsule info
+        completionStats={completionStats || {}} // ADD THIS - backend expects this
+        isActive={true}
+      />
     ) : (
-<VibeCardGenerator 
-  moodData={moodData || {}}                  
-  capsuleData={capsuleData || {}}           
-  completionStats={completionStats || {}}   
-  user={user || {}}                         
-  onCardGenerated={handleCardGenerated}  // Keep this as is
-  isActive={true}
-/>
+      <VibeCardGenerator 
+        moodData={moodData || {}}                  
+        capsuleData={capsuleData || {}}           
+        completionStats={completionStats || {}}   
+        user={user || {}}                         
+        onCardGenerated={handleCardGenerated}
+        isActive={true}
+      />
     )}
   </motion.div>
 )}

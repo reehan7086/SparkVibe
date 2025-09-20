@@ -8,7 +8,9 @@ const EnhancedVibeCardGenerator = ({
   setUserChoices, 
   onComplete, 
   user, 
-  updateUserData 
+  updateUserData,
+  capsuleData,        // ADD THIS - needed for capsuleId
+  completionStats     // ADD THIS - backend expects this
 }) => {
   const [currentPhase, setCurrentPhase] = useState('adventure');
   const [isGenerating, setIsGenerating] = useState(false);
@@ -53,13 +55,20 @@ const EnhancedVibeCardGenerator = ({
   const generateVibeCard = async (choices) => {
     setIsGenerating(true);
     try {
+      // Extract capsuleId from capsuleData
+      const capsuleId = capsuleData?.id || `capsule_${Date.now()}`;
+      
       const cardData = await apiPostWithFallback('/generate-enhanced-vibe-card', {
+        capsuleId,          // ADD THIS - required by backend
+        template: 'cosmic', // ADD THIS - backend expects this
         moodData: mockMoodData,
-        choices,
-        user: mockUser
+        completionStats: completionStats || { vibePointsEarned: 45 }, // ADD THIS
+        userChoices: choices // FIX: backend expects 'userChoices', not 'choices'
+        // REMOVE: user: mockUser (backend doesn't expect this)
       });
-      setGeneratedCard(cardData.card);
-      onComplete?.(cardData.card);
+      
+      setGeneratedCard(cardData.card || cardData.data); // Handle different response formats
+      onComplete?.(cardData.card || cardData.data);
     } catch (error) {
       console.error('Failed to generate enhanced vibe card:', error);
       // Fallback card generation
