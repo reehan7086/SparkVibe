@@ -2544,43 +2544,46 @@ const uploadResult = await new Promise((resolve, reject) => {
       try {
         const userId = req.query.userId || `anonymous_${Date.now()}`;
         
-        wsConnections.set(userId.toString(), connection.socket);
+        // Fix: Use connection directly, not connection.socket
+        wsConnections.set(userId.toString(), connection);
         console.log(`🔗 WebSocket connected for user: ${userId}`);
-
-        connection.socket.on('message', async (message) => {
+    
+        connection.on('message', async (message) => {
           try {
-            const data = JSON.parse(message);
+            const data = JSON.parse(message.toString()); // Convert buffer to string
             console.log(`📩 WebSocket message received from ${userId}:`, data);
-
+    
             if (data.type === 'ping') {
-              connection.socket.send(JSON.stringify({ type: 'pong', data: { message: 'Pong!' } }));
+              connection.send(JSON.stringify({ type: 'pong', data: { message: 'Pong!' } }));
             }
           } catch (error) {
             console.error('WebSocket message error:', error);
-            connection.socket.send(JSON.stringify({
+            connection.send(JSON.stringify({
               type: 'error',
               data: { message: 'Invalid message format' }
             }));
           }
         });
-
-        connection.socket.on('close', () => {
+    
+        connection.on('close', () => {
           wsConnections.delete(userId.toString());
           console.log(`🔌 WebSocket disconnected for user: ${userId}`);
         });
-
-        connection.socket.on('error', (error) => {
+    
+        connection.on('error', (error) => {
           console.error(`WebSocket error for user ${userId}:`, error);
           wsConnections.delete(userId.toString());
         });
-
-        connection.socket.send(JSON.stringify({
+    
+        connection.send(JSON.stringify({
           type: 'connection',
           data: { message: 'WebSocket connection established' }
         }));
       } catch (error) {
         console.error('WebSocket setup error:', error);
-        connection.socket.close();
+        if (connection && typeof connection.close === 'function') {
+          connection.close();
+        }
       }
     });
   });
