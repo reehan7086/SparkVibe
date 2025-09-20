@@ -140,7 +140,7 @@ const registerPlugins = async () => {
   await fastify.register(fastifyHelmet, {
     contentSecurityPolicy: false,
     crossOriginEmbedderPolicy: false,
-    crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
+    crossOriginOpenerPolicy: false,
     crossOriginResourcePolicy: { policy: 'cross-origin' }
   });
 
@@ -337,7 +337,6 @@ const MediaSchema = new mongoose.Schema({
 });
 
 // Create indexes
-UserSchema.index({ email: 1 });
 AdventureSchema.index({ category: 1, completions: -1 });
 AnalyticsSchema.index({ eventType: 1, timestamp: -1 });
 VibeCardSchema.index({ userId: 1, createdAt: -1 });
