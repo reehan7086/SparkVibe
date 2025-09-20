@@ -1,34 +1,33 @@
-/* Mobile Responsive Fixes for SparkVibe - Add to frontend/src/index.css */
+/* Add to frontend/src/index.css - CRITICAL MOBILE FIXES */
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* Critical Mobile Viewport Fix */
+/* CRITICAL: Mobile Viewport Fix */
+:root {
+  --vh: 100vh;
+}
+
 html {
-  /* Prevent horizontal scroll on mobile */
   overflow-x: hidden;
-  /* Prevent zoom on input focus (iOS) */
   -webkit-text-size-adjust: 100%;
   -ms-text-size-adjust: 100%;
-  /* Dynamic viewport height support */
   height: 100%;
   height: 100dvh;
 }
 
 body {
-  /* Prevent horizontal scroll */
   overflow-x: hidden;
   width: 100%;
   max-width: 100vw;
-  /* Dynamic viewport height */
   min-height: 100vh;
   min-height: 100dvh;
   margin: 0;
   padding: 0;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
-/* Root container fixes */
 #root {
   width: 100%;
   max-width: 100vw;
@@ -37,137 +36,51 @@ body {
   min-height: 100dvh;
 }
 
-/* Container component fixes */
-.container {
+/* CRITICAL: Form inputs mobile fix - Prevents zoom on iOS */
+input, textarea, select {
+  font-size: 16px !important;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+/* CRITICAL: Button touch targets */
+button, .btn, .btn-mobile {
+  min-height: 44px;
+  min-width: 44px;
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* CRITICAL: Container classes */
+.mobile-container {
   width: 100%;
   max-width: 100vw;
+  padding: 1rem;
   margin: 0 auto;
-  padding-left: 1rem;
-  padding-right: 1rem;
   overflow-x: hidden;
 }
 
-/* Mobile-first responsive grid */
-.grid {
-  display: grid;
+.card-mobile {
   width: 100%;
-  gap: 1rem;
-}
-
-/* Single column on mobile, responsive on larger screens */
-@media (min-width: 768px) {
-  .grid-cols-1.md\:grid-cols-2 {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  
-  .grid-cols-1.lg\:grid-cols-2 {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  
-  .grid-cols-1.lg\:grid-cols-3 {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-}
-
-/* Form input fixes for mobile */
-input, textarea, select {
-  /* Prevent zoom on focus (iOS) */
-  font-size: 16px !important;
-  /* Ensure inputs don't overflow */
-  max-width: 100%;
-  box-sizing: border-box;
-}
-
-/* Button touch targets */
-button, .btn {
-  /* Minimum touch target size */
-  min-height: 44px;
-  min-width: 44px;
-  /* Prevent text from breaking */
-  white-space: nowrap;
-  /* Ensure buttons don't overflow */
-  max-width: 100%;
-  box-sizing: border-box;
-}
-
-/* Card component mobile fixes */
-.card, .bg-gradient-to-br {
-  /* Prevent cards from overflowing */
   max-width: 100%;
   box-sizing: border-box;
   word-wrap: break-word;
   overflow-wrap: break-word;
 }
 
-/* Modal and popup fixes */
-.modal, .fixed {
-  /* Ensure modals work on mobile */
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  /* Use dynamic viewport height */
+/* CRITICAL: Dynamic viewport height */
+.min-h-screen-dynamic {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+.h-screen-dynamic {
   height: 100vh;
   height: 100dvh;
 }
 
-/* Flexbox mobile fixes */
-.flex {
-  /* Prevent flex items from overflowing */
-  min-width: 0;
-}
-
-.flex-col {
-  /* Ensure column flex works on mobile */
-  flex-direction: column;
-}
-
-/* Text truncation for mobile */
-.truncate-mobile {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* Responsive spacing */
-.space-y-4 > * + * {
-  margin-top: 1rem;
-}
-
-@media (max-width: 768px) {
-  .space-y-4 > * + * {
-    margin-top: 0.75rem;
-  }
-}
-
-/* Navigation fixes for mobile */
-.nav-tabs {
-  overflow-x: auto;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-  white-space: nowrap;
-}
-
-.nav-tabs::-webkit-scrollbar {
-  display: none;
-}
-
-.nav-tab {
-  flex-shrink: 0;
-  min-width: max-content;
-}
-
-/* Prevent text selection on mobile interactions */
-.touch-manipulation {
-  touch-action: manipulation;
-  -webkit-user-select: none;
-  -moz-user-select: none;
-  -ms-user-select: none;
-  user-select: none;
-}
-
-/* Safe area insets for notched devices */
+/* CRITICAL: Safe area insets for notched devices */
 .safe-area-inset {
   padding-top: env(safe-area-inset-top);
   padding-bottom: env(safe-area-inset-bottom);
@@ -175,7 +88,74 @@ button, .btn {
   padding-right: env(safe-area-inset-right);
 }
 
-/* Animation performance on mobile */
+/* CRITICAL: No horizontal scroll */
+.no-scroll-x {
+  overflow-x: hidden;
+  max-width: 100vw;
+}
+
+/* CRITICAL: Input mobile styling */
+.input-mobile {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  font-size: 16px !important; /* Prevents zoom on iOS */
+  border-radius: 0.5rem;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  background-color: rgba(255, 255, 255, 0.1);
+  color: white;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.input-mobile::placeholder {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.input-mobile:focus {
+  outline: none;
+  border-color: #ec4899;
+  box-shadow: 0 0 0 3px rgba(236, 72, 153, 0.2);
+}
+
+/* CRITICAL: Button mobile styling */
+.btn-mobile {
+  padding: 0.75rem 1.5rem;
+  border-radius: 0.5rem;
+  font-weight: 600;
+  font-size: 1rem;
+  min-height: 44px;
+  touch-action: manipulation;
+  user-select: none;
+  transition: all 0.2s ease-in-out;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+/* CRITICAL: Touch target sizing */
+.touch-target {
+  min-height: 44px;
+  min-width: 44px;
+  touch-action: manipulation;
+}
+
+/* CRITICAL: Flexbox mobile fixes */
+.flex {
+  min-width: 0;
+}
+
+.flex-mobile-col {
+  display: flex;
+  flex-direction: column;
+}
+
+@media (min-width: 640px) {
+  .flex-mobile-col {
+    flex-direction: row;
+  }
+}
+
+/* CRITICAL: Animation performance on mobile */
 .animate-spin,
 .animate-pulse,
 .motion-reduce {
@@ -183,7 +163,7 @@ button, .btn {
   transform: translateZ(0);
 }
 
-/* Reduce motion for accessibility */
+/* CRITICAL: Reduce motion for accessibility */
 @media (prefers-reduced-motion: reduce) {
   .animate-spin,
   .animate-pulse,
@@ -195,7 +175,38 @@ button, .btn {
   }
 }
 
-/* Responsive typography */
+/* CRITICAL: Text truncation for mobile */
+.truncate-mobile {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 200px;
+}
+
+@media (min-width: 640px) {
+  .truncate-mobile {
+    max-width: 300px;
+  }
+}
+
+@media (min-width: 768px) {
+  .truncate-mobile {
+    max-width: none;
+  }
+}
+
+/* CRITICAL: Modal mobile fixes */
+.modal, .fixed {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 100vh;
+  height: 100dvh;
+}
+
+/* CRITICAL: Responsive typography */
 @media (max-width: 640px) {
   .text-4xl {
     font-size: 2.25rem;
@@ -218,107 +229,20 @@ button, .btn {
   }
 }
 
-/* Leaderboard mobile fixes */
-.leaderboard-container {
-  width: 100%;
-  max-width: 100vw;
-  overflow-x: hidden;
-}
-
-.leaderboard-item {
-  padding: 0.75rem;
-  margin-bottom: 0.5rem;
-}
-
-/* Mood analyzer mobile fixes */
-.mood-analyzer {
-  width: 100%;
-  padding: 1rem;
-}
-
-.mood-input {
-  width: 100%;
-  min-height: 120px;
-  resize: vertical;
-}
-
-/* Vibe card generator mobile fixes */
-.vibe-card-container {
-  width: 100%;
+/* CRITICAL: Canvas mobile fixes */
+canvas {
   max-width: 100%;
-  overflow: hidden;
-}
-
-.vibe-card-canvas {
-  width: 100%;
   height: auto;
-  max-width: 100%;
+  touch-action: manipulation;
 }
 
-/* Adventure components mobile fixes */
-.adventure-card {
-  padding: 1rem;
-  margin-bottom: 1rem;
+/* CRITICAL: Hardware acceleration */
+.hardware-accelerated {
+  will-change: transform;
+  transform: translateZ(0);
 }
 
-.adventure-content {
-  word-wrap: break-word;
-  overflow-wrap: break-word;
-}
-
-/* Header mobile fixes */
-.header-container {
-  padding: 1rem;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
-.header-nav {
-  overflow-x: auto;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
-
-.header-nav::-webkit-scrollbar {
-  display: none;
-}
-
-/* Footer mobile fixes */
-.footer-container {
-  padding: 1rem;
-  text-align: center;
-}
-
-/* Utility classes for mobile responsiveness */
-.mobile-container {
-  width: 100%;
-  max-width: 100vw;
-  padding: 1rem;
-  margin: 0 auto;
-  overflow-x: hidden;
-}
-
-.mobile-full-width {
-  width: 100%;
-  max-width: 100vw;
-}
-
-.mobile-padding {
-  padding-left: 1rem;
-  padding-right: 1rem;
-}
-
-.mobile-text-sm {
-  font-size: 0.875rem;
-  line-height: 1.25rem;
-}
-
-.mobile-touch-target {
-  min-height: 44px;
-  min-width: 44px;
-}
-
-/* Loading states mobile optimization */
+/* CRITICAL: Loading states */
 .loading-container {
   display: flex;
   justify-content: center;
@@ -336,108 +260,24 @@ button, .btn {
   animation: spin 1s linear infinite;
 }
 
-/* Error state mobile fixes */
+/* CRITICAL: Error states */
 .error-container {
   padding: 1rem;
   text-align: center;
   word-wrap: break-word;
 }
 
-/* Social sharing mobile fixes */
-.social-sharing-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-  gap: 0.75rem;
-  padding: 1rem;
-}
-
-.social-share-button {
-  padding: 0.75rem;
-  text-align: center;
-  border-radius: 0.5rem;
-  min-height: 44px;
-}
-
-/* Challenge system mobile fixes */
-.challenge-container {
-  width: 100%;
-  max-width: 100vw;
-  padding: 1rem;
-}
-
-.challenge-card {
-  margin-bottom: 1rem;
-  padding: 1rem;
-  border-radius: 0.75rem;
-}
-
-/* Friend system mobile fixes */
-.friend-list {
-  padding: 1rem;
-}
-
-.friend-item {
-  padding: 0.75rem;
-  margin-bottom: 0.5rem;
-  border-radius: 0.5rem;
-}
-
-/* Notification center mobile fixes */
-.notification-container {
-  width: 100%;
-  max-width: 100vw;
-  max-height: 100vh;
-  max-height: 100dvh;
-  overflow-y: auto;
-}
-
-.notification-item {
-  padding: 1rem;
-  margin-bottom: 0.5rem;
-  word-wrap: break-word;
-}
-
-/* Achievement display mobile fixes */
-.achievement-popup {
-  position: fixed;
-  top: 1rem;
-  left: 50%;
-  transform: translateX(-50%);
-  width: calc(100% - 2rem);
-  max-width: 320px;
-  z-index: 9999;
-}
-
-/* Canvas animation mobile fixes */
-canvas {
-  max-width: 100%;
-  height: auto;
-  touch-action: manipulation;
-}
-
-/* Dark mode mobile support */
-@media (prefers-color-scheme: dark) {
-  .dark-mode-mobile {
-    background-color: #1a1a1a;
-    color: #ffffff;
-  }
-}
-
-/* High contrast mode support */
+/* CRITICAL: High contrast mode support */
 @media (prefers-contrast: high) {
   .high-contrast {
     border: 2px solid currentColor;
   }
 }
 
-/* Print styles */
-@media print {
-  .no-print {
-    display: none !important;
-  }
-  
-  .print-full-width {
-    width: 100% !important;
-    max-width: none !important;
+/* CRITICAL: Dark mode mobile support */
+@media (prefers-color-scheme: dark) {
+  .dark-mode-mobile {
+    background-color: #1a1a1a;
+    color: #ffffff;
   }
 }

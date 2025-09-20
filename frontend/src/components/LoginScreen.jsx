@@ -1,3 +1,4 @@
+// frontend/src/components/LoginScreen.jsx - FIXED VERSION
 import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import AuthService from '../services/AuthService';
@@ -18,46 +19,40 @@ const LoginScreen = ({ onLoginSuccess }) => {
   useEffect(() => {
     const initializeAuth = async () => {
       try {
+        console.log('🔄 Initializing Google Auth...');
         const ready = await AuthService.initializeGoogleAuth();
         setGoogleReady(ready);
 
         if (ready && googleButtonRef.current) {
-          AuthService.renderGoogleButton(googleButtonRef.current, {
-            theme: 'outline',
-            size: 'large',
-            type: 'standard',
-            width: Math.min(window.innerWidth - 64, 320),
-            onSuccess: (response) => {
-              setLoading(true);
-              setError('');
-              AuthService.handleGoogleResponse(response)
-                .then(user => onLoginSuccess(user))
-                .catch(err => {
-                  console.error('Google auth failed:', err);
-                  setError('Google Sign-In failed. Please try again.');
-                })
-                .finally(() => setLoading(false));
-            },
-            onError: (error) => {
-              console.error('Google button error:', error);
-              setError('Google Sign-In unavailable. Please try again.');
-              setLoading(false);
-            }
-          });
+          console.log('✅ Rendering Google button...');
+          const success = await AuthService.renderGoogleButton(googleButtonRef.current);
+          console.log('Google button render result:', success);
         }
       } catch (error) {
         console.error('Auth initialization failed:', error);
-        setError('Google Sign-In unavailable. Please try again.');
+        setError('Google Sign-In unavailable. Please try email authentication.');
       }
     };
 
-    initializeAuth();
+    // Add a small delay to ensure DOM is ready
+    setTimeout(initializeAuth, 100);
+
+    // Listen for Google auth events
+    const handleGoogleSuccess = (event) => {
+      onLoginSuccess(event.detail.user);
+    };
+
+    const handleGoogleError = (event) => {
+      setError(event.detail.error || 'Google authentication failed');
+      setLoading(false);
+    };
+
+    window.addEventListener('googleLoginSuccess', handleGoogleSuccess);
+    window.addEventListener('googleLoginError', handleGoogleError);
 
     return () => {
-      // Cleanup if needed, e.g., remove Google button instance
-      if (googleButtonRef.current) {
-        googleButtonRef.current.innerHTML = ''; // Clear Google button
-      }
+      window.removeEventListener('googleLoginSuccess', handleGoogleSuccess);
+      window.removeEventListener('googleLoginError', handleGoogleError);
     };
   }, [onLoginSuccess]);
 
@@ -122,14 +117,14 @@ const LoginScreen = ({ onLoginSuccess }) => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 relative overflow-hidden">
+    <div className="min-h-screen min-h-screen-dynamic bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 relative overflow-hidden">
       <div className="absolute inset-0">
         <div className="absolute top-0 left-0 w-64 h-64 bg-purple-500/30 rounded-full blur-3xl"></div>
         <div className="absolute bottom-0 right-0 w-64 h-64 bg-pink-500/30 rounded-full blur-3xl"></div>
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-blue-500/20 rounded-full blur-3xl"></div>
       </div>
 
-      <div className="relative z-10 min-h-screen flex flex-col items-center justify-center p-4">
+      <div className="relative z-10 min-h-screen min-h-screen-dynamic flex flex-col items-center justify-center p-4 safe-area-inset">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -160,22 +155,38 @@ const LoginScreen = ({ onLoginSuccess }) => {
               </div>
             )}
 
+            {/* Google Sign-In Button */}
             <div className="space-y-3">
               <div 
                 ref={googleButtonRef}
                 className="w-full flex justify-center"
-                style={{ minHeight: '40px' }}
+                style={{ minHeight: '44px' }}
               />
+              
+              {/* Fallback if Google button doesn't render */}
               {!googleReady && (
                 <button
                   type="button"
+                  onClick={async () => {
+                    setLoading(true);
+                    try {
+                      await AuthService.initializeGoogleAuth();
+                      if (googleButtonRef.current) {
+                        await AuthService.renderGoogleButton(googleButtonRef.current);
+                      }
+                    } catch (error) {
+                      setError('Google Sign-In failed to initialize');
+                    } finally {
+                      setLoading(false);
+                    }
+                  }}
                   disabled={loading}
                   className="w-full py-3 bg-white hover:bg-gray-50 disabled:opacity-50 rounded-lg text-gray-900 font-semibold transition-all flex items-center justify-center space-x-2"
                 >
                   {loading ? (
                     <>
-                      <div className="w-5 h-5 border-2 border-gray-600 border-t-transparent rounded-full animate-spin mr-2"></div>
-                      <span>Signing in...</span>
+                      <div className="w-5 h-5 border-2 border-gray-600 border-t-transparent rounded-full animate-spin"></div>
+                      <span>Loading...</span>
                     </>
                   ) : (
                     <>
@@ -204,10 +215,10 @@ const LoginScreen = ({ onLoginSuccess }) => {
                   type="text"
                   name="name"
                   placeholder="Full Name"
-                  autocomplete="name"
+                  autoComplete="name"
                   value={formData.name}
                   onChange={(e) => setFormData({...formData, name: e.target.value})}
-                  className="w-full px-4 py-3 bg-white/20 border border-white/30 rounded-lg text-white placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+                  className="input-mobile w-full px-4 py-3 bg-white/20 border border-white/30 rounded-lg text-white placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
                   required={!isLogin}
                 />
               )}
@@ -216,10 +227,10 @@ const LoginScreen = ({ onLoginSuccess }) => {
                 type="email"
                 name="email"
                 placeholder="Email"
-                autocomplete="email" 
+                autoComplete="email" 
                 value={formData.email}
                 onChange={(e) => setFormData({...formData, email: e.target.value})}
-                className="w-full px-4 py-3 bg-white/20 border border-white/30 rounded-lg text-white placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+                className="input-mobile w-full px-4 py-3 bg-white/20 border border-white/30 rounded-lg text-white placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
                 required
               />
 
@@ -227,10 +238,10 @@ const LoginScreen = ({ onLoginSuccess }) => {
                 type="password"
                 name="password"
                 placeholder="Password"
-                autocomplete="current-password" 
+                autoComplete="current-password" 
                 value={formData.password}
                 onChange={(e) => setFormData({...formData, password: e.target.value})}
-                className="w-full px-4 py-3 bg-white/20 border border-white/30 rounded-lg text-white placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+                className="input-mobile w-full px-4 py-3 bg-white/20 border border-white/30 rounded-lg text-white placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
                 required
                 minLength={6}
               />
@@ -242,7 +253,7 @@ const LoginScreen = ({ onLoginSuccess }) => {
                   placeholder="Confirm Password"
                   value={formData.confirmPassword}
                   onChange={(e) => setFormData({...formData, confirmPassword: e.target.value})}
-                  className="w-full px-4 py-3 bg-white/20 border border-white/30 rounded-lg text-white placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+                  className="input-mobile w-full px-4 py-3 bg-white/20 border border-white/30 rounded-lg text-white placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
                   required={!isLogin}
                   minLength={6}
                 />
@@ -251,7 +262,7 @@ const LoginScreen = ({ onLoginSuccess }) => {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full py-3 bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 disabled:opacity-50 rounded-lg text-white font-semibold transition-all flex items-center justify-center"
+                className="btn-mobile w-full py-3 bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 disabled:opacity-50 rounded-lg text-white font-semibold transition-all flex items-center justify-center"
               >
                 {loading ? (
                   <>
@@ -283,7 +294,7 @@ const LoginScreen = ({ onLoginSuccess }) => {
                 type="button"
                 onClick={handleGuestLogin}
                 disabled={loading}
-                className="w-full py-3 bg-white/10 hover:bg-white/20 border border-white/30 rounded-lg text-white font-medium transition-all flex items-center justify-center space-x-2 disabled:opacity-50"
+                className="btn-mobile w-full py-3 bg-white/10 hover:bg-white/20 border border-white/30 rounded-lg text-white font-medium transition-all flex items-center justify-center space-x-2 disabled:opacity-50"
               >
                 <span>👤</span>
                 <span>Continue as Guest</span>

@@ -1,3 +1,4 @@
+// frontend/src/services/AuthService.js - FIXED VERSION
 import { apiPost } from '../utils/safeUtils.js';
 
 class AuthService {
@@ -31,7 +32,7 @@ class AuthService {
     const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
     console.log('🔍 Google Auth Debug:', {
       clientIdExists: !!clientId,
-      clientIdFormat: clientId ? 'valid' : 'missing',
+      clientIdLength: clientId?.length,
       domain: window.location.hostname
     });
 
@@ -127,17 +128,49 @@ class AuthService {
       }
     } catch (error) {
       console.error('Google authentication error:', error);
-      this.fallbackGoogleAuth();
+      window.dispatchEvent(new CustomEvent('googleLoginError', {
+        detail: { error: error.message }
+      }));
     }
   }
 
-  async renderGoogleButton(containerId, options = {}) {
-    const container = document.getElementById(containerId);
+  // FIXED: Simplified Google button rendering
+  async renderGoogleButton(container, options = {}) {
     if (!container) {
-      console.error('Container not found:', containerId);
+      console.error('Container not found');
       return false;
     }
 
+    try {
+      if (!this.googleInitialized) {
+        await this.initializeGoogleAuth();
+      }
+
+      if (this.googleInitialized && window.google?.accounts?.id) {
+        // Use Google's built-in button
+        window.google.accounts.id.renderButton(container, {
+          theme: 'outline',
+          size: 'large',
+          type: 'standard',
+          width: Math.min(window.innerWidth - 64, 320),
+          text: 'continue_with',
+          shape: 'rectangular',
+          logo_alignment: 'left'
+        });
+        return true;
+      } else {
+        // Fallback manual button
+        this.renderManualButton(container);
+        return true;
+      }
+    } catch (error) {
+      console.error('Failed to render Google button:', error);
+      this.renderManualButton(container);
+      return false;
+    }
+  }
+
+  renderManualButton(container) {
     container.innerHTML = `
       <button id="manual-google-signin" style="
         display: flex;
@@ -176,84 +209,15 @@ class AuthService {
           await this.initializeGoogleAuth();
         }
         
-        window.google.accounts.id.prompt((notification) => {
-          if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
-            console.log('One Tap not available, using fallback...');
-            this.fallbackGoogleAuth();
-          }
-        });
+        if (window.google?.accounts?.id) {
+          window.google.accounts.id.prompt();
+        } else {
+          console.error('Google Identity Services not available');
+        }
       } catch (error) {
         console.error('Manual Google sign-in failed:', error);
-        this.fallbackGoogleAuth();
       }
     });
-
-    return true;
-  }
-
-  fallbackGoogleAuth() {
-    const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-    const redirectUri = 'https://sparkvibe.app/auth/google/callback';
-    const scope = 'openid email profile';
-    const responseType = 'code';
-    const state = Math.random().toString(36).substring(2);
-
-    // Store state server-side via API (assuming backend supports it)
-    apiPost('/auth/google/state', { state }).catch(err => console.error('Failed to store state:', err));
-
-    const googleAuthUrl = `https://accounts.google.com/oauth/v2/auth?` +
-      `client_id=${encodeURIComponent(clientId)}&` +
-      `redirect_uri=${encodeURIComponent(redirectUri)}&` +
-      `scope=${encodeURIComponent(scope)}&` +
-      `response_type=${encodeURIComponent(responseType)}&` +
-      `state=${encodeURIComponent(state)}`;
-
-    window.location.href = googleAuthUrl;
-  }
-
-  async handleCallback() {
-    const urlParams = new URLSearchParams(window.location.search);
-    const token = urlParams.get('token');
-    const userStr = urlParams.get('user');
-
-    if (token && userStr) {
-      try {
-        const userData = JSON.parse(decodeURIComponent(userStr));
-        this.setAuthData(token, this.normalizeUserData(userData, 'google'));
-        window.dispatchEvent(new CustomEvent('googleLoginSuccess', {
-          detail: { user: this.user }
-        }));
-        // Redirect to clean URL
-        window.history.pushState({}, document.title, window.location.pathname);
-      } catch (error) {
-        console.error('Callback processing error:', error);
-        window.dispatchEvent(new CustomEvent('googleLoginError', {
-          detail: { error: error.message }
-        }));
-      }
-    } else if (urlParams.get('error')) {
-      window.dispatchEvent(new CustomEvent('googleLoginError', {
-        detail: { error: 'Authentication failed' }
-      }));
-    }
-  }
-
-  async signInWithGoogle() {
-    if (!this.googleInitialized) {
-      await this.initializeGoogleAuth();
-    }
-
-    try {
-      window.google.accounts.id.prompt((notification) => {
-        if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
-          console.log('Using fallback Google auth...');
-          this.fallbackGoogleAuth();
-        }
-      });
-    } catch (error) {
-      console.error('Failed to show Google sign-in prompt:', error);
-      this.fallbackGoogleAuth();
-    }
   }
 
   normalizeUserData(userData, provider = 'email') {
@@ -339,7 +303,6 @@ class AuthService {
 
   updateUser(updates) {
     if (!this.user) return null;
-
     this.user = { ...this.user, ...updates };
     localStorage.setItem('sparkvibe_user', JSON.stringify(this.user));
     return this.user;
@@ -358,7 +321,6 @@ class AuthService {
         console.warn('Google sign-out warning:', error);
       }
     }
-
     console.log('✅ Signed out');
   }
 
@@ -377,11 +339,5 @@ class AuthService {
     return this.token;
   }
 }
-
-// Initialize callback handling on page load
-window.addEventListener('load', () => {
-  const authService = new AuthService();
-  authService.handleCallback();
-});
 
 export default new AuthService();

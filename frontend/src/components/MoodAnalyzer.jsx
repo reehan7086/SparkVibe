@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+// frontend/src/components/MoodAnalyzer.jsx - FIXED VERSION
+import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { apiPost } from '../utils/safeUtils';
 
@@ -9,8 +10,12 @@ const MoodAnalyzer = ({ onMoodAnalyzed, isActive }) => {
   const [step, setStep] = useState('input'); // input, analyzing, results
 
   const analyzeMood = async () => {
-    if (!moodInput.trim()) return;
+    if (!moodInput.trim()) {
+      alert('Please enter how you\'re feeling');
+      return;
+    }
 
+    console.log('🎭 Starting mood analysis...', moodInput);
     setIsAnalyzing(true);
     setStep('analyzing');
 
@@ -26,8 +31,10 @@ const MoodAnalyzer = ({ onMoodAnalyzed, isActive }) => {
         timestamp: now.toISOString()
       };
 
+      console.log('📡 Sending mood analysis request:', analysisData);
       const result = await apiPost('/analyze-mood', analysisData);
       
+      console.log('✅ Mood analysis result:', result);
       setMoodData(result);
       setStep('results');
       
@@ -37,7 +44,7 @@ const MoodAnalyzer = ({ onMoodAnalyzed, isActive }) => {
       }
       
     } catch (error) {
-      console.error('Mood analysis failed:', error);
+      console.error('❌ Mood analysis failed:', error);
       // Fallback mood analysis
       const fallbackMood = {
         mood: 'curious',
@@ -51,6 +58,8 @@ const MoodAnalyzer = ({ onMoodAnalyzed, isActive }) => {
         primaryMood: 'curious',
         fallback: true
       };
+      
+      console.log('🔄 Using fallback mood data:', fallbackMood);
       setMoodData(fallbackMood);
       setStep('results');
       
@@ -63,9 +72,16 @@ const MoodAnalyzer = ({ onMoodAnalyzed, isActive }) => {
   };
 
   const reset = () => {
+    console.log('🔄 Resetting mood analyzer');
     setStep('input');
     setMoodInput('');
     setMoodData(null);
+  };
+
+  const handleContinue = () => {
+    console.log('➡️ Continuing from mood analysis to next step');
+    // The parent component will handle the step transition
+    // since we already called onMoodAnalyzed
   };
 
   const getTimeOfDay = (date) => {
@@ -105,7 +121,7 @@ const MoodAnalyzer = ({ onMoodAnalyzed, isActive }) => {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -20 }}
-      className="bg-gradient-to-br from-indigo-900/40 via-purple-900/40 to-pink-900/40 backdrop-blur-md border border-white/10 rounded-2xl p-6 mb-6"
+      className="bg-gradient-to-br from-indigo-900/40 via-purple-900/40 to-pink-900/40 backdrop-blur-md border border-white/10 rounded-2xl p-4 md:p-6 mb-6 mobile-container"
     >
       <AnimatePresence mode="wait">
         {step === 'input' && (
@@ -117,7 +133,7 @@ const MoodAnalyzer = ({ onMoodAnalyzed, isActive }) => {
             className="space-y-4"
           >
             <div className="text-center">
-              <h3 className="text-2xl font-bold text-white mb-2">How are you feeling?</h3>
+              <h3 className="text-xl md:text-2xl font-bold text-white mb-2">How are you feeling?</h3>
               <p className="text-blue-200 text-sm">Let AI understand your vibe and personalize your experience</p>
             </div>
 
@@ -126,7 +142,7 @@ const MoodAnalyzer = ({ onMoodAnalyzed, isActive }) => {
                 value={moodInput}
                 onChange={(e) => setMoodInput(e.target.value)}
                 placeholder="Describe how you're feeling right now... (e.g., 'I'm excited about today but a bit nervous about my presentation')"
-                className="w-full h-24 bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent resize-none"
+                className="input-mobile w-full h-24 bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent resize-none"
                 maxLength={280}
               />
               
@@ -138,9 +154,16 @@ const MoodAnalyzer = ({ onMoodAnalyzed, isActive }) => {
               <button
                 onClick={analyzeMood}
                 disabled={!moodInput.trim() || isAnalyzing}
-                className="w-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 disabled:opacity-50 disabled:cursor-not-allowed px-6 py-3 rounded-xl font-semibold text-white transition-all duration-300 transform hover:scale-105"
+                className="btn-mobile w-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 disabled:opacity-50 disabled:cursor-not-allowed px-6 py-3 rounded-xl font-semibold text-white transition-all duration-300 transform hover:scale-105"
               >
-                Analyze My Mood ✨
+                {isAnalyzing ? (
+                  <div className="flex items-center justify-center">
+                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
+                    Analyzing...
+                  </div>
+                ) : (
+                  'Analyze My Mood ✨'
+                )}
               </button>
             </div>
           </motion.div>
@@ -178,7 +201,7 @@ const MoodAnalyzer = ({ onMoodAnalyzed, isActive }) => {
               </div>
             </div>
 
-            <div className="grid md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="bg-white/5 rounded-xl p-4">
                 <h4 className="font-semibold text-white mb-2">Your Energy</h4>
                 <div className="flex items-center space-x-2">
@@ -229,19 +252,16 @@ const MoodAnalyzer = ({ onMoodAnalyzed, isActive }) => {
               </div>
             )}
 
-            <div className="flex space-x-3">
+            <div className="flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-3">
               <button
                 onClick={reset}
-                className="flex-1 bg-white/10 hover:bg-white/20 border border-white/20 px-4 py-2 rounded-xl text-white font-medium transition-all duration-200"
+                className="btn-mobile flex-1 bg-white/10 hover:bg-white/20 border border-white/20 px-4 py-2 rounded-xl text-white font-medium transition-all duration-200"
               >
                 Analyze Again
               </button>
               <button
-                onClick={() => {
-                  // This will be handled by the parent component automatically
-                  // since we already called onMoodAnalyzed
-                }}
-                className="flex-1 bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 px-4 py-2 rounded-xl text-white font-medium transition-all duration-200"
+                onClick={handleContinue}
+                className="btn-mobile flex-1 bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 px-4 py-2 rounded-xl text-white font-medium transition-all duration-200"
               >
                 Continue Journey →
               </button>
