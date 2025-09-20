@@ -138,7 +138,6 @@ const registerPlugins = async () => {
         'http://localhost:8080',
         'https://backend-sv-3n4v6.ondigitalocean.app',
         'https://frontend-sv-3n4v6.ondigitalocean.app',
-        // Add Google domains for OAuth
         'https://accounts.google.com',
         'https://www.google.com'
       ];
@@ -926,227 +925,121 @@ const defineRoutes = () => {
     }
   });
 
-  fastify.post('/auth/google', async (request, reply) => {
-    try {
-      console.log('🔍 Google auth attempt:', {
-        hasToken: !!request.body?.token,
-        hasGoogleClient: !!googleClient,
-        clientId: process.env.GOOGLE_CLIENT_ID ? 'configured' : 'missing'
-      });
-  
-      const { token } = request.body;
-      if (!token) {
-        return sendError(reply, 400, 'No token provided');
-      }
-      if (!googleClient) {
-        return sendError(reply, 500, 'Google OAuth not configured');
-      }
-      
-      // Verify the Google Identity Services JWT token
-      const ticket = await googleClient.verifyIdToken({
-        idToken: token,
-        audience: process.env.GOOGLE_CLIENT_ID,
-      });
-      
-      const payload = ticket.getPayload();
-      console.log('Google Identity Services payload:', payload);
-      
-      // Extract user information from the new token format
-      const googleUser = {
-        googleId: payload.sub,
-        email: payload.email,
-        name: payload.name,
-        given_name: payload.given_name,
-        family_name: payload.family_name,
-        picture: payload.picture,
-        email_verified: payload.email_verified,
-        locale: payload.locale
-      };
-      
-      let user;
-      if (User) {
-        // Check if user exists by Google ID or email
-        user = await User.findOne({ 
-          $or: [
-            { googleId: googleUser.googleId },
-            { email: googleUser.email }
-          ]
-        });
-        
-        if (!user) {
-          // Create new user with Google Identity Services data
-          user = new User({
-            googleId: googleUser.googleId,
-            email: sanitize(googleUser.email),
-            name: sanitize(googleUser.name || googleUser.given_name),
-            avatar: googleUser.picture,
-            emailVerified: googleUser.email_verified,
-            authProvider: 'google',
-            referralCode: generateReferralCode(),
-            preferences: { 
-              interests: ['wellness', 'creativity'], 
-              aiPersonality: 'encouraging', 
-              adventureTypes: ['general'], 
-              difficulty: 'easy' 
-            },
-            stats: {
-              totalPoints: 0,
-              level: 1,
-              streak: 0,
-              cardsGenerated: 0,
-              cardsShared: 0,
-              mediaUploads: 0,
-              lastActivity: new Date(),
-              bestStreak: 0,
-              adventuresCompleted: 0,
-              friendsCount: 0,
-              challengesWon: 0,
-              challengesLost: 0,
-              referralsCount: 0,
-              moodHistory: [],
-              choices: [],
-              completions: []
-            },
-            premiumStatus: { active: false, plan: 'basic' }
-          });
-          await user.save();
-          console.log('✅ New Google user created:', user.email);
-        } else {
-          // Update existing user with latest Google data
-          user.name = sanitize(googleUser.name || googleUser.given_name);
-          user.avatar = googleUser.picture;
-          user.emailVerified = googleUser.email_verified;
-          user.stats.lastActivity = new Date();
-          
-          // FIX: Clean corrupted moodHistory data
-          if (user.stats.moodHistory && Array.isArray(user.stats.moodHistory)) {
-            const originalLength = user.stats.moodHistory.length;
-            user.stats.moodHistory = user.stats.moodHistory.filter(entry => 
-              entry && entry.mood !== undefined && entry.mood !== null
-            );
-            console.log(`🧹 Cleaned moodHistory: ${originalLength} -> ${user.stats.moodHistory.length} valid entries`);
-          }
-          
-          // FIX: Clean other potential corrupted arrays
-          if (user.stats.choices && Array.isArray(user.stats.choices)) {
-            user.stats.choices = user.stats.choices.filter(entry => 
-              entry && entry.choice !== undefined && entry.capsuleId !== undefined
-            );
-          }
-          
-          if (user.stats.completions && Array.isArray(user.stats.completions)) {
-            user.stats.completions = user.stats.completions.filter(entry => 
-              entry && entry.capsuleId !== undefined && entry.points !== undefined
-            );
-          }
-          
-          // Use validateBeforeSave: false to bypass validation issues
-          await user.save({ validateBeforeSave: false });
-          console.log('✅ Existing Google user updated and cleaned:', user.email);
-        }
-      } else {
-        // Demo mode fallback
-        user = {
-          _id: `google_demo_${Date.now()}`,
-          googleId: googleUser.googleId,
-          email: googleUser.email,
-          name: googleUser.name || googleUser.given_name,
-          avatar: googleUser.picture,
-          emailVerified: googleUser.email_verified,
-          authProvider: 'google',
-          stats: {
-            totalPoints: 0,
-            level: 1,
-            streak: 0,
-            cardsGenerated: 0,
-            cardsShared: 0,
-            mediaUploads: 0,
-            lastActivity: new Date(),
-            bestStreak: 0,
-            adventuresCompleted: 0,
-            friendsCount: 0,
-            challengesWon: 0,
-            challengesLost: 0,
-            referralsCount: 0,
-            moodHistory: [],
-            choices: [],
-            completions: []
-          },
-          achievements: [],
-          preferences: { 
-            interests: ['wellness', 'creativity'], 
-            aiPersonality: 'encouraging', 
-            adventureTypes: ['general'], 
-            difficulty: 'easy' 
-          },
-          referralCode: generateReferralCode(),
-          premiumStatus: { active: false, plan: 'basic' }
-        };
-        console.log('✅ Demo Google user created');
-      }
-      
-      const jwtToken = fastify.jwt.sign({ userId: user._id }, { expiresIn: '7d' });
-      await trackEvent('user_login', user._id, { provider: 'google_identity_services' });
-  
-      const wsConnection = wsConnections.get(user._id.toString());
-      if (wsConnection) {
-        wsConnection.send(JSON.stringify({
-          type: 'google_signin',
-          data: { message: 'Successfully signed in with Google Identity Services!' }
-        }));
-      }
-      
-      return reply.send({
-        success: true,
-        data: {
-          token: jwtToken,
-          user: {
-            id: user._id,
-            email: user.email,
-            name: user.name,
-            avatar: user.avatar,
-            emailVerified: user.emailVerified,
-            stats: user.stats,
-            achievements: user.achievements || [],
-            preferences: user.preferences,
-            referralCode: user.referralCode,
-            premiumStatus: user.premiumStatus,
-            authProvider: 'google'
-          }
-        },
-        message: 'Google Identity Services login successful!',
-        metadata: { 
-          timestamp: new Date().toISOString(), 
-          fallback: !User,
-          gis_version: '2024'
-        }
-      });
-    } catch (error) {
-      console.error('❌ Google auth error details:', {
-        message: error.message,
-        stack: error.stack,
-        token: request.body?.token ? 'present' : 'missing'
-      });
-      console.error('Google Identity Services auth error:', error);
-      
-      // Enhanced error handling for different token issues
-      if (error.message.includes('Wrong number of segments')) {
-        return sendError(reply, 400, 'Invalid token format - please try signing in again');
-      }
-      if (error.message.includes('Token used too late')) {
-        return sendError(reply, 400, 'Token expired - please try signing in again');
-      }
-      if (error.message.includes('Invalid token signature')) {
-        return sendError(reply, 400, 'Invalid token signature - please try signing in again');
-      }
-      if (error.message.includes('Invalid audience')) {
-        return sendError(reply, 500, 'Authentication configuration error');
-      }
-      
-      return sendError(reply, 500, 'Google authentication failed', error.message);
-    }
-  }); 
+// Add this route to handle Google OAuth code exchange
+fastify.post('/auth/google', async (request, reply) => {
+  const { id_token } = request.body;
+  if (!id_token) return reply.status(400).send({ success: false, error: 'Missing ID token' });
 
+  try {
+    const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+    const ticket = await client.verifyIdToken({
+      idToken: id_token,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+    const payload = ticket.getPayload();
+
+    const userData = {
+      id: payload.sub,
+      name: payload.name,
+      email: payload.email,
+      avatar: payload.picture,
+      emailVerified: payload.email_verified,
+      stats: { totalPoints: 0, level: 1, streak: 0, cardsGenerated: 0, cardsShared: 0 },
+      totalPoints: 0,
+      level: 1,
+      streak: 0,
+      cardsGenerated: 0,
+      cardsShared: 0,
+    };
+
+    let user;
+    if (User) {
+      user = await User.findOneAndUpdate(
+        { email: payload.email },
+        { $setOnInsert: userData, $set: { googleId: payload.sub, authProvider: 'google' } },
+        { upsert: true, new: true }
+      );
+    } else {
+      user = { _id: `demo_${payload.sub}`, ...userData };
+    }
+
+    const jwtToken = fastify.jwt.sign({ userId: user._id }, { expiresIn: '7d' });
+    return reply.send({
+      success: true,
+      data: { token: jwtToken, user: userData },
+      message: 'Google authentication successful'
+    });
+  } catch (error) {
+    console.error('Google auth error:', error);
+    return sendError(reply, 500, 'Failed to authenticate with Google', error.message);
+  }
+});
+
+// Add this route to handle the OAuth redirect (optional, if frontend doesn't handle it)
+const googleOauthStates = new Map();
+
+fastify.get('/auth/google/callback', async (request, reply) => {
+  const { code, state } = request.query;
+  if (!code || !state || !googleOauthStates.has(state)) {
+    return sendError(reply, 400, 'Invalid authentication request');
+  }
+  googleOauthStates.delete(state);
+
+  try {
+    const tokenResponse = await axios.post('https://oauth2.googleapis.com/token', {
+      code,
+      client_id: process.env.GOOGLE_CLIENT_ID,
+      client_secret: process.env.GOOGLE_CLIENT_SECRET,
+      redirect_uri: 'https://sparkvibe.app/auth/google/callback',
+      grant_type: 'authorization_code',
+    });
+    const { id_token } = tokenResponse.data;
+
+    const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+    const ticket = await client.verifyIdToken({
+      idToken: id_token,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+    const payload = ticket.getPayload();
+
+    const userData = {
+      id: payload.sub,
+      name: payload.name,
+      email: payload.email,
+      avatar: payload.picture,
+      emailVerified: payload.email_verified,
+      stats: { totalPoints: 0, level: 1, streak: 0, cardsGenerated: 0, cardsShared: 0 },
+      totalPoints: 0,
+      level: 1,
+      streak: 0,
+      cardsGenerated: 0,
+      cardsShared: 0,
+    };
+
+    let user;
+    if (User) {
+      user = await User.findOneAndUpdate(
+        { email: payload.email },
+        { $setOnInsert: userData, $set: { googleId: payload.sub, authProvider: 'google' } },
+        { upsert: true, new: true }
+      );
+    } else {
+      user = { _id: `demo_${payload.sub}`, ...userData };
+    }
+
+    const jwtToken = fastify.jwt.sign({ userId: user._id }, { expiresIn: '7d' });
+    reply.redirect(`/dashboard?token=${encodeURIComponent(jwtToken)}&user=${encodeURIComponent(JSON.stringify(user))}`);
+  } catch (error) {
+    console.error('Google callback error:', error);
+    return reply.redirect('/login?error=auth_failed');
+  }
+});
+// Ensure CORS and COOP/COEP headers are set
+fastify.addHook('onSend', (request, reply, payload, next) => {
+  reply.header('Cross-Origin-Opener-Policy', 'same-origin');
+  reply.header('Cross-Origin-Embedder-Policy', 'require-corp');
+  next();
+});
 
   // Log Google configuration on startup
 console.log('🔑 Google Auth Configuration:');

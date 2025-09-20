@@ -34,7 +34,7 @@ const App = () => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [cardData, setCardData] = useState(null);
-  
+  const [error, setError] = useState('');
   // Enhanced features state
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -75,37 +75,40 @@ const App = () => {
 
 // Add this useEffect after the viewport height fix
 useEffect(() => {
-  // Handle Google OAuth redirect
-  const urlParams = new URLSearchParams(window.location.search);
-  const code = urlParams.get('code');
-  const state = urlParams.get('state');
-  
-  if (code && state) {
-    const storedState = sessionStorage.getItem('google_oauth_state');
-    if (state === storedState) {
-      // Handle OAuth code exchange
-      apiPost('/auth/google', { code })
-        .then(result => {
-          if (result.success && result.data) {
-            AuthService.setAuthData(result.data.token, result.data.user);
-            setIsAuthenticated(true);
-            setUser(result.data.user);
-            // Clean up URL
+  const handleOAuthRedirect = () => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const code = urlParams.get('code');
+    const state = urlParams.get('state');
+    if (code && state) {
+      const storedState = sessionStorage.getItem('google_oauth_state');
+      console.log('Stored State:', storedState, 'Received State:', state); // Debug
+      if (state === storedState) {
+        apiPost('/auth/google', { code })
+          .then(result => {
+            if (result.success && result.data) {
+              AuthService.setAuthData(result.data.token, result.data.user);
+              setIsAuthenticated(true);
+              setUser(result.data.user);
+              window.history.replaceState({}, document.title, window.location.pathname);
+              setError(''); // Clear error on success
+            }
+          })
+          .catch(error => {
+            console.error('OAuth code exchange failed:', error);
+            setError('Authentication failed. Please try again.');
             window.history.replaceState({}, document.title, window.location.pathname);
-          }
-        })
-        .catch(error => {
-          console.error('OAuth code exchange failed:', error);
-          // Clean up URL even on error
-          window.history.replaceState({}, document.title, window.location.pathname);
-        });
+          });
+      } else {
+        setError('Invalid authentication state');
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+      sessionStorage.removeItem('google_oauth_state');
     }
-    
-    // Clean up stored state
-    sessionStorage.removeItem('google_oauth_state');
-  }
+  };
+  handleOAuthRedirect();
+  window.addEventListener('popstate', handleOAuthRedirect);
+  return () => window.removeEventListener('popstate', handleOAuthRedirect);
 }, []);
-
   // Enhanced user data update with event dispatching
   const updateUserData = useCallback(async (updatedUser) => {
     console.log('Updating user data:', updatedUser);

@@ -1,4 +1,3 @@
-// Fixed AuthService.js - COOP Compatible Version
 import { apiPost } from '../utils/safeUtils.js';
 
 class AuthService {
@@ -24,23 +23,23 @@ class AuthService {
     if (this.initPromise) {
       return this.initPromise;
     }
-  
+
     if (this.googleInitialized) {
       return true;
     }
-  
+
     const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
     console.log('🔍 Google Auth Debug:', {
       clientIdExists: !!clientId,
       clientIdFormat: clientId ? 'valid' : 'missing',
       domain: window.location.hostname
     });
-  
+
     if (!clientId) {
       console.error('❌ VITE_GOOGLE_CLIENT_ID not configured');
       return false;
     }
-  
+
     this.initPromise = this.loadGoogleIdentityServices(clientId);
     return this.initPromise;
   }
@@ -48,13 +47,13 @@ class AuthService {
   async loadGoogleIdentityServices(clientId) {
     try {
       console.log('🔄 Loading Google Identity Services...');
-      
+
       if (!window.google?.accounts?.id) {
         await this.loadGoogleScript();
       }
-  
+
       console.log('🔄 Initializing Google Identity Services...');
-      
+
       await new Promise((resolve, reject) => {
         try {
           window.google.accounts.id.initialize({
@@ -62,14 +61,12 @@ class AuthService {
             callback: this.handleGoogleCallback.bind(this),
             auto_select: false,
             cancel_on_tap_outside: true,
-            // CRITICAL: These settings prevent COOP issues
             use_fedcm_for_prompt: false,
             ux_mode: 'popup',
             context: 'signin',
-            // Add itp_support to prevent iframe issues
             itp_support: true
           });
-          
+
           this.googleInitialized = true;
           console.log('✅ Google Identity Services initialized successfully');
           resolve(true);
@@ -78,7 +75,7 @@ class AuthService {
           reject(error);
         }
       });
-  
+
       return true;
     } catch (error) {
       console.error('❌ Failed to initialize Google Identity Services:', error);
@@ -98,16 +95,16 @@ class AuthService {
       script.src = 'https://accounts.google.com/gsi/client';
       script.async = true;
       script.defer = true;
-      
+
       script.onload = () => {
         console.log('Google Identity Services script loaded');
         setTimeout(resolve, 100);
       };
-      
+
       script.onerror = () => {
         reject(new Error('Failed to load Google Identity Services script'));
       };
-      
+
       document.head.appendChild(script);
     });
   }
@@ -117,41 +114,23 @@ class AuthService {
       if (!response.credential) {
         throw new Error('No credential received from Google');
       }
-
-      console.log('Processing Google authentication...');
-      
-      const result = await apiPost('/auth/google', { 
-        token: response.credential 
-      });
-      
+      console.log('Processing Google authentication with ID token...');
+      const result = await apiPost('/auth/google', { id_token: response.credential });
       if (result.success && result.data) {
         const userData = this.normalizeUserData(result.data.user, 'google');
         this.setAuthData(result.data.token, userData);
-        
-        // Trigger success event
         window.dispatchEvent(new CustomEvent('googleLoginSuccess', {
-          detail: { user: userData, token: result.data.token }
+          detail: { user: userData }
         }));
-        
-        console.log('✅ Google login successful');
-        
-        // Redirect or reload to complete login
-        window.location.reload();
-        
       } else {
-        throw new Error(result.message || 'Google authentication failed');
+        throw new Error(result.message || 'Authentication failed');
       }
     } catch (error) {
       console.error('Google authentication error:', error);
-      
-      // Trigger error event
-      window.dispatchEvent(new CustomEvent('googleLoginError', {
-        detail: { error: error.message }
-      }));
+      this.fallbackGoogleAuth();
     }
   }
 
-  // ALTERNATIVE: Manual button that bypasses COOP issues completely
   async renderGoogleButton(containerId, options = {}) {
     const container = document.getElementById(containerId);
     if (!container) {
@@ -159,7 +138,6 @@ class AuthService {
       return false;
     }
 
-    // Create manual Google button that bypasses COOP
     container.innerHTML = `
       <button id="manual-google-signin" style="
         display: flex;
@@ -191,7 +169,6 @@ class AuthService {
       </button>
     `;
 
-    // Add click handler that triggers Google auth
     document.getElementById('manual-google-signin').addEventListener('click', async (e) => {
       e.preventDefault();
       try {
@@ -199,11 +176,9 @@ class AuthService {
           await this.initializeGoogleAuth();
         }
         
-        // Use prompt method which is more reliable
         window.google.accounts.id.prompt((notification) => {
           if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
-            console.log('One Tap not available, trying alternative flow...');
-            // If One Tap fails, redirect to Google OAuth directly
+            console.log('One Tap not available, using fallback...');
             this.fallbackGoogleAuth();
           }
         });
@@ -216,26 +191,51 @@ class AuthService {
     return true;
   }
 
-  // Fallback: Direct OAuth flow that bypasses COOP entirely
   fallbackGoogleAuth() {
     const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-    const redirectUri = window.location.origin;
+    const redirectUri = 'https://sparkvibe.app/auth/google/callback';
     const scope = 'openid email profile';
     const responseType = 'code';
     const state = Math.random().toString(36).substring(2);
-    
-    // Store state for verification
-    sessionStorage.setItem('google_oauth_state', state);
-    
+
+    // Store state server-side via API (assuming backend supports it)
+    apiPost('/auth/google/state', { state }).catch(err => console.error('Failed to store state:', err));
+
     const googleAuthUrl = `https://accounts.google.com/oauth/v2/auth?` +
       `client_id=${encodeURIComponent(clientId)}&` +
       `redirect_uri=${encodeURIComponent(redirectUri)}&` +
       `scope=${encodeURIComponent(scope)}&` +
       `response_type=${encodeURIComponent(responseType)}&` +
       `state=${encodeURIComponent(state)}`;
-    
-    // Redirect to Google OAuth (bypasses COOP completely)
+
     window.location.href = googleAuthUrl;
+  }
+
+  async handleCallback() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const token = urlParams.get('token');
+    const userStr = urlParams.get('user');
+
+    if (token && userStr) {
+      try {
+        const userData = JSON.parse(decodeURIComponent(userStr));
+        this.setAuthData(token, this.normalizeUserData(userData, 'google'));
+        window.dispatchEvent(new CustomEvent('googleLoginSuccess', {
+          detail: { user: this.user }
+        }));
+        // Redirect to clean URL
+        window.history.pushState({}, document.title, window.location.pathname);
+      } catch (error) {
+        console.error('Callback processing error:', error);
+        window.dispatchEvent(new CustomEvent('googleLoginError', {
+          detail: { error: error.message }
+        }));
+      }
+    } else if (urlParams.get('error')) {
+      window.dispatchEvent(new CustomEvent('googleLoginError', {
+        detail: { error: 'Authentication failed' }
+      }));
+    }
   }
 
   async signInWithGoogle() {
@@ -339,7 +339,7 @@ class AuthService {
 
   updateUser(updates) {
     if (!this.user) return null;
-    
+
     this.user = { ...this.user, ...updates };
     localStorage.setItem('sparkvibe_user', JSON.stringify(this.user));
     return this.user;
@@ -350,7 +350,7 @@ class AuthService {
     this.user = null;
     localStorage.removeItem('sparkvibe_token');
     localStorage.removeItem('sparkvibe_user');
-    
+
     if (window.google?.accounts?.id) {
       try {
         window.google.accounts.id.disableAutoSelect();
@@ -358,7 +358,7 @@ class AuthService {
         console.warn('Google sign-out warning:', error);
       }
     }
-    
+
     console.log('✅ Signed out');
   }
 
@@ -377,5 +377,11 @@ class AuthService {
     return this.token;
   }
 }
+
+// Initialize callback handling on page load
+window.addEventListener('load', () => {
+  const authService = new AuthService();
+  authService.handleCallback();
+});
 
 export default new AuthService();

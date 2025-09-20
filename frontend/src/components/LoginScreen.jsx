@@ -1,5 +1,4 @@
-// Fixed LoginScreen.jsx - Updated for Google Identity Services
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import AuthService from '../services/AuthService';
 
@@ -14,51 +13,51 @@ const LoginScreen = ({ onLoginSuccess }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [googleReady, setGoogleReady] = useState(false);
-  const [googleError, setGoogleError] = useState('');
+  const googleButtonRef = useRef(null);
 
   useEffect(() => {
     const initializeAuth = async () => {
       try {
         const ready = await AuthService.initializeGoogleAuth();
         setGoogleReady(ready);
-        
-        if (ready) {
-          // Render Google button after a short delay
-          setTimeout(() => {
-            AuthService.renderGoogleButton('google-signin-button', {
-              width: Math.min(window.innerWidth - 64, 320),
-              theme: 'outline',
-              size: 'large',
-              text: 'signin_with'
-            });
-          }, 500);
+
+        if (ready && googleButtonRef.current) {
+          AuthService.renderGoogleButton(googleButtonRef.current, {
+            theme: 'outline',
+            size: 'large',
+            type: 'standard',
+            width: Math.min(window.innerWidth - 64, 320),
+            onSuccess: (response) => {
+              setLoading(true);
+              setError('');
+              AuthService.handleGoogleResponse(response)
+                .then(user => onLoginSuccess(user))
+                .catch(err => {
+                  console.error('Google auth failed:', err);
+                  setError('Google Sign-In failed. Please try again.');
+                })
+                .finally(() => setLoading(false));
+            },
+            onError: (error) => {
+              console.error('Google button error:', error);
+              setError('Google Sign-In unavailable. Please try again.');
+              setLoading(false);
+            }
+          });
         }
       } catch (error) {
         console.error('Auth initialization failed:', error);
-        setGoogleError('Google Sign-In unavailable');
+        setError('Google Sign-In unavailable. Please try again.');
       }
     };
-
-    // Listen for Google auth events
-    const handleGoogleSuccess = (event) => {
-      setLoading(false);
-      setError('');
-      onLoginSuccess(event.detail.user);
-    };
-
-    const handleGoogleError = (event) => {
-      setLoading(false);
-      setError(event.detail.error);
-    };
-
-    window.addEventListener('googleLoginSuccess', handleGoogleSuccess);
-    window.addEventListener('googleLoginError', handleGoogleError);
 
     initializeAuth();
 
     return () => {
-      window.removeEventListener('googleLoginSuccess', handleGoogleSuccess);
-      window.removeEventListener('googleLoginError', handleGoogleError);
+      // Cleanup if needed, e.g., remove Google button instance
+      if (googleButtonRef.current) {
+        googleButtonRef.current.innerHTML = ''; // Clear Google button
+      }
     };
   }, [onLoginSuccess]);
 
@@ -86,22 +85,6 @@ const LoginScreen = ({ onLoginSuccess }) => {
       setError(error.message);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleGoogleClick = async () => {
-    if (!googleReady) {
-      setError('Google Sign-In not ready yet');
-      return;
-    }
-
-    try {
-      setLoading(true);
-      setError('');
-      await AuthService.signInWithGoogle();
-    } catch (error) {
-      setLoading(false);
-      setError(error.message);
     }
   };
 
@@ -140,21 +123,18 @@ const LoginScreen = ({ onLoginSuccess }) => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 relative overflow-hidden">
-      {/* Mobile-optimized background */}
       <div className="absolute inset-0">
         <div className="absolute top-0 left-0 w-64 h-64 bg-purple-500/30 rounded-full blur-3xl"></div>
         <div className="absolute bottom-0 right-0 w-64 h-64 bg-pink-500/30 rounded-full blur-3xl"></div>
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-blue-500/20 rounded-full blur-3xl"></div>
       </div>
 
-      {/* Main container */}
       <div className="relative z-10 min-h-screen flex flex-col items-center justify-center p-4">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           className="w-full max-w-sm mx-auto"
         >
-          {/* Header */}
           <div className="text-center mb-8">
             <motion.div
               initial={{ scale: 0 }}
@@ -168,40 +148,33 @@ const LoginScreen = ({ onLoginSuccess }) => {
             <p className="text-blue-200 text-sm">{isLogin ? 'Welcome back!' : 'Start your journey'}</p>
           </div>
 
-          {/* Form */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.3 }}
             className="bg-white/10 backdrop-blur-sm rounded-xl p-6 space-y-6"
           >
-            {/* Error */}
             {error && (
               <div className="p-3 bg-red-500/20 border border-red-500/30 rounded-lg text-red-200 text-sm">
                 {error}
               </div>
             )}
 
-            {/* Google Sign-In */}
             <div className="space-y-3">
-              {/* Google Button Container */}
               <div 
-                id="google-signin-button" 
+                ref={googleButtonRef}
                 className="w-full flex justify-center"
                 style={{ minHeight: '40px' }}
               />
-              
-              {/* Fallback Google Button */}
               {!googleReady && (
                 <button
                   type="button"
-                  onClick={handleGoogleClick}
                   disabled={loading}
                   className="w-full py-3 bg-white hover:bg-gray-50 disabled:opacity-50 rounded-lg text-gray-900 font-semibold transition-all flex items-center justify-center space-x-2"
                 >
                   {loading ? (
                     <>
-                      <div className="w-5 h-5 border-2 border-gray-600 border-t-transparent rounded-full animate-spin"></div>
+                      <div className="w-5 h-5 border-2 border-gray-600 border-t-transparent rounded-full animate-spin mr-2"></div>
                       <span>Signing in...</span>
                     </>
                   ) : (
@@ -217,20 +190,14 @@ const LoginScreen = ({ onLoginSuccess }) => {
                   )}
                 </button>
               )}
-
-              {googleError && (
-                <p className="text-yellow-400 text-xs text-center">{googleError}</p>
-              )}
             </div>
 
-            {/* Divider */}
             <div className="flex items-center">
               <div className="flex-1 border-t border-white/30"></div>
               <span className="px-4 text-white/60 text-sm">or</span>
               <div className="flex-1 border-t border-white/30"></div>
             </div>
 
-            {/* Email Form */}
             <form onSubmit={handleSubmit} className="space-y-4">
               {!isLogin && (
                 <input
@@ -311,7 +278,6 @@ const LoginScreen = ({ onLoginSuccess }) => {
               </div>
             </form>
 
-            {/* Guest Option */}
             <div className="pt-4 border-t border-white/20">
               <button
                 type="button"
@@ -328,7 +294,6 @@ const LoginScreen = ({ onLoginSuccess }) => {
             </div>
           </motion.div>
 
-          {/* Footer */}
           <div className="text-center mt-6">
             <p className="text-xs text-white/40">
               By continuing, you agree to our Terms & Privacy Policy
