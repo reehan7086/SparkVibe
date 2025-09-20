@@ -46,8 +46,8 @@ class AuthService {
       if (!window.google?.accounts?.id) {
         await this.loadGoogleScript();
       }
-
-      // Initialize Google Identity Services with the new API
+  
+      // Initialize Google Identity Services with proper COOP handling
       await new Promise((resolve, reject) => {
         try {
           window.google.accounts.id.initialize({
@@ -55,9 +55,12 @@ class AuthService {
             callback: this.handleGoogleCallback.bind(this),
             auto_select: false,
             cancel_on_tap_outside: true,
-            // FedCM support for enhanced privacy
-            use_fedcm_for_prompt: true,
-            use_fedcm_for_button: true
+            // Updated for COOP compatibility
+            use_fedcm_for_prompt: false, // Disable FedCM to avoid COOP issues
+            ux_mode: 'popup', // Force popup mode
+            // Add proper context
+            context: 'signin',
+            state_cookie_domain: window.location.hostname === 'localhost' ? 'localhost' : '.sparkvibe.app'
           });
           
           this.googleInitialized = true;
@@ -68,7 +71,7 @@ class AuthService {
           reject(error);
         }
       });
-
+  
       return true;
     } catch (error) {
       console.error('Failed to initialize Google Identity Services:', error);
@@ -176,28 +179,31 @@ class AuthService {
       console.warn('Google Identity Services not initialized');
       return false;
     }
-
+  
     const container = document.getElementById(containerId);
     if (!container) {
       console.error('Container not found:', containerId);
       return false;
     }
-
+  
     try {
       container.innerHTML = '';
       
-      // Updated to use Google Identity Services button API
+      // Updated button configuration for COOP compatibility
       window.google.accounts.id.renderButton(container, {
         theme: 'outline',
         size: 'large',
         type: 'standard',
         shape: 'rectangular',
         width: Math.min(container.offsetWidth || 300, 400),
-        text: 'signin_with', // Options: signin_with, signup_with, continue_with, signin
+        text: 'signin_with',
         logo_alignment: 'left',
+        // Force specific context
+        context: 'signin',
+        ux_mode: 'popup',
         ...options
       });
-
+  
       return true;
     } catch (error) {
       console.error('Failed to render Google button:', error);

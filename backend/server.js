@@ -154,15 +154,43 @@ const registerPlugins = async () => {
   await fastify.register(fastifyHelmet, {
     contentSecurityPolicy: false,
     crossOriginEmbedderPolicy: false,
-    crossOriginOpenerPolicy: false,
-    crossOriginResourcePolicy: { policy: 'cross-origin' }
+    crossOriginOpenerPolicy: false, // This was already correct
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+    // Add these specific headers for Google OAuth
+    hsts: false, // Disable in development
+    frameguard: { action: 'sameorigin' } // Allow same-origin frames
   });
 
-  // CRITICAL: Register JWT plugin FIRST
-  await fastify.register(fastifyJwt, {
-    secret: JWT_SECRET,
-    sign: { expiresIn: '7d' },
-    verify: { maxAge: '7d' }
+  await fastify.register(fastifyCors, {
+    origin: (origin, cb) => {
+      const allowedOrigins = [
+        'https://sparkvibe.app',
+        'https://www.sparkvibe.app',
+        'http://localhost:5173',
+        'http://localhost:3000',
+        'http://localhost:8080',
+        'https://backend-sv-3n4v6.ondigitalocean.app',
+        'https://frontend-sv-3n4v6.ondigitalocean.app',
+        // Add Google domains for OAuth
+        'https://accounts.google.com',
+        'https://accounts.google.com/',
+        'https://www.google.com'
+      ];
+      if (process.env.NODE_ENV !== 'production') {
+        allowedOrigins.push(/^http:\/\/localhost:(3000|5173|8080)$/);
+        allowedOrigins.push(/^https:\/\/.*\.app\.github\.dev$/);
+        allowedOrigins.push(/^https:\/\/.*\.gitpod\.io$/);
+      }
+      const allowed = !origin || allowedOrigins.some(o => typeof o === 'string' ? o === origin : o.test(origin));
+      cb(null, allowed);
+    },
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Cache-Control', 'Pragma', 'Expires'],
+    credentials: true,
+    maxAge: 86400,
+    // Add these for Google OAuth
+    exposedHeaders: ['Set-Cookie'],
+    optionsSuccessStatus: 200
   });
 
   await fastify.register(fastifyMultipart, {
@@ -920,6 +948,12 @@ const defineRoutes = () => {
 
   fastify.post('/auth/google', async (request, reply) => {
     try {
+      console.log('🔍 Google auth attempt:', {
+        hasToken: !!request.body?.token,
+        hasGoogleClient: !!googleClient,
+        clientId: process.env.GOOGLE_CLIENT_ID ? 'configured' : 'missing'
+      });
+
       const { token } = request.body;
       if (!token) {
         return sendError(reply, 400, 'No token provided');
@@ -1084,6 +1118,11 @@ const defineRoutes = () => {
         }
       });
     } catch (error) {
+      console.error('❌ Google auth error details:', {
+        message: error.message,
+        stack: error.stack,
+        token: request.body?.token ? 'present' : 'missing'
+      });
       console.error('Google Identity Services auth error:', error);
       
       // Enhanced error handling for different token issues
