@@ -12,6 +12,10 @@ const EnhancedVibeCardGenerator = ({
   capsuleData,        // ADD THIS - needed for capsuleId
   completionStats     // ADD THIS - backend expects this
 }) => {
+  console.log('CapsuleData received:', capsuleData);
+  console.log('Available keys:', Object.keys(capsuleData || {}));
+  console.log('CapsuleData ID field:', capsuleData?.id);
+  console.log('CapsuleData capsuleId field:', capsuleData?.capsuleId);
   const [currentPhase, setCurrentPhase] = useState('adventure');
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedCard, setGeneratedCard] = useState(null);
@@ -56,8 +60,8 @@ const EnhancedVibeCardGenerator = ({
     setIsGenerating(true);
     try {
       // Extract capsuleId from capsuleData
-      const capsuleId = capsuleData?.id || `capsule_${Date.now()}`;
-      
+      const capsuleId = capsuleData?.capsuleId || capsuleData?.id || `capsule_${Date.now()}`;
+      console.log('Sending API request with capsuleId:', capsuleId); // Debug log
       const cardData = await apiPostWithFallback('/generate-enhanced-vibe-card', {
         capsuleId,          // ADD THIS - required by backend
         template: 'cosmic', // ADD THIS - backend expects this
