@@ -21,33 +21,40 @@ class AuthService {
   }
 
   async initializeGoogleAuth() {
-    // Return existing promise if already initializing
     if (this.initPromise) {
       return this.initPromise;
     }
-
+  
     if (this.googleInitialized) {
       return true;
     }
-
+  
     const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+    console.log('🔍 Google Auth Debug:', {
+      clientIdExists: !!clientId,
+      clientIdFormat: clientId ? 'valid' : 'missing',
+      domain: window.location.hostname
+    });
+  
     if (!clientId) {
-      console.warn('Google Client ID not configured - Google Sign-In disabled');
+      console.error('❌ VITE_GOOGLE_CLIENT_ID not configured');
       return false;
     }
-
+  
     this.initPromise = this.loadGoogleIdentityServices(clientId);
     return this.initPromise;
   }
 
   async loadGoogleIdentityServices(clientId) {
     try {
-      // Load Google Identity Services script if not already loaded
+      console.log('🔄 Loading Google Identity Services...');
+      
       if (!window.google?.accounts?.id) {
         await this.loadGoogleScript();
       }
   
-      // Initialize Google Identity Services with proper COOP handling
+      console.log('🔄 Initializing Google Identity Services...');
+      
       await new Promise((resolve, reject) => {
         try {
           window.google.accounts.id.initialize({
@@ -55,26 +62,21 @@ class AuthService {
             callback: this.handleGoogleCallback.bind(this),
             auto_select: false,
             cancel_on_tap_outside: true,
-            // Updated for COOP compatibility
-            use_fedcm_for_prompt: false, // Disable FedCM to avoid COOP issues
-            ux_mode: 'popup', // Force popup mode
-            // Add proper context
-            context: 'signin',
-            state_cookie_domain: window.location.hostname === 'localhost' ? 'localhost' : '.sparkvibe.app'
+            ux_mode: 'popup'
           });
           
           this.googleInitialized = true;
-          console.log('✅ Google Identity Services initialized');
+          console.log('✅ Google Identity Services initialized successfully');
           resolve(true);
         } catch (error) {
-          console.error('Google Identity Services initialization failed:', error);
+          console.error('❌ Google Identity Services initialization failed:', error);
           reject(error);
         }
       });
   
       return true;
     } catch (error) {
-      console.error('Failed to initialize Google Identity Services:', error);
+      console.error('❌ Failed to initialize Google Identity Services:', error);
       this.googleInitialized = false;
       return false;
     }

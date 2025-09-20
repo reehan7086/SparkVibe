@@ -5,51 +5,40 @@ const OFFLINE_URL = '/offline.html';
 // Files to cache for offline functionality
 const urlsToCache = [
   '/',
-  '/index.css',
-  '/icon-192x192.png',
-  '/icon-512x512.png',
-  '/badge-72x72.png',
-  '/default-avatar.png',
   '/offline.html',
+  '/icon-192x192.png',
+  // Remove these lines that are causing 404s:
+  // '/index.css',
+  // '/icon-512x512.png', 
+  // '/badge-72x72.png',
+  // '/default-avatar.png'
 ];
-
 // Install event - cache resources with detailed error handling
 self.addEventListener('install', (event) => {
+  console.log('SparkVibe Service Worker v2.1.2 installing...');
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then(async (cache) => {
+      .then((cache) => {
         console.log('SparkVibe cache opened');
-        const failedResources = [];
-        for (const url of urlsToCache) {
-          try {
-            const response = await fetch(url, { 
-              cache: 'no-cache',
-              headers: {
-                'Cache-Control': 'no-cache'
-              }
-            });
-            if (!response.ok || response.status === 404 || response.redirected) {
-              throw new Error(`Invalid response for ${url}: status ${response.status}`);
-            }
-            await cache.put(url, response.clone());
-            console.log(`Cached: ${url}`);
-          } catch (error) {
-            console.error(`Failed to cache ${url}:`, error.message);
-            failedResources.push({ url, error: error.message });
-          }
-        }
-        // ... offline.html caching ...
-        if (failedResources.length > 0) {
-          console.warn('Cache installation completed with errors:', failedResources);
-        }
+        return Promise.allSettled(
+          urlsToCache.map(url => 
+            cache.add(url).then(() => {
+              console.log('Cached:', url);
+            }).catch(error => {
+              console.warn(`Failed to cache ${url}:`, error.message);
+            })
+          )
+        );
       })
-      .catch((error) => {
+      .then(() => {
+        console.log('Cache installation completed');
+        return self.skipWaiting();
+      })
+      .catch(error => {
         console.error('Cache installation failed:', error);
       })
   );
-  self.skipWaiting();
 });
-
 // Activate event - clean up old caches
 self.addEventListener('activate', (event) => {
   event.waitUntil(

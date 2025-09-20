@@ -237,6 +237,7 @@ const LoginScreen = ({ onLoginSuccess }) => {
                   type="text"
                   name="name"
                   placeholder="Full Name"
+                  autocomplete="name"
                   value={formData.name}
                   onChange={(e) => setFormData({...formData, name: e.target.value})}
                   className="w-full px-4 py-3 bg-white/20 border border-white/30 rounded-lg text-white placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
@@ -248,6 +249,7 @@ const LoginScreen = ({ onLoginSuccess }) => {
                 type="email"
                 name="email"
                 placeholder="Email"
+                autocomplete="email" 
                 value={formData.email}
                 onChange={(e) => setFormData({...formData, email: e.target.value})}
                 className="w-full px-4 py-3 bg-white/20 border border-white/30 rounded-lg text-white placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
@@ -258,6 +260,7 @@ const LoginScreen = ({ onLoginSuccess }) => {
                 type="password"
                 name="password"
                 placeholder="Password"
+                autocomplete="current-password" 
                 value={formData.password}
                 onChange={(e) => setFormData({...formData, password: e.target.value})}
                 className="w-full px-4 py-3 bg-white/20 border border-white/30 rounded-lg text-white placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
