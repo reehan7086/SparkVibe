@@ -149,11 +149,12 @@ export const apiGet = async (endpoint, options = {}) => {
       updateConnectionHealth(false);
 
       // Immediate fallback for certain error types
-      if (error.code === 'ERR_NETWORK' || 
-          error.code === 'ECONNABORTED' || 
+      if (error.response?.status === 404 || 
           error.response?.status >= 500 ||
+          error.code === 'ERR_NETWORK' || 
+          error.code === 'ECONNABORTED' || 
           !connectionHealth.isOnline) {
-        console.log(`Network error detected, using fallback for ${endpoint}`);
+        console.log(`Using fallback due to ${error.response?.status || error.code}`);
         return getFallbackData(endpoint);
       }
 
@@ -209,11 +210,12 @@ export const apiPost = async (endpoint, data, options = {}) => {
       updateConnectionHealth(false);
 
       // Immediate fallback for certain error types
-      if (error.code === 'ERR_NETWORK' || 
-          error.code === 'ECONNABORTED' || 
+      if (error.response?.status === 404 || 
           error.response?.status >= 500 ||
+          error.code === 'ERR_NETWORK' || 
+          error.code === 'ECONNABORTED' || 
           !connectionHealth.isOnline) {
-        console.log(`Network error detected, using fallback for ${endpoint}`);
+        console.log(`Using fallback due to ${error.response?.status || error.code}`);
         return getPostFallbackData(endpoint, data);
       }
 
