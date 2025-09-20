@@ -50,6 +50,15 @@ if (process.env.JWT_SECRET && process.env.JWT_SECRET.length < 32) {
 
 console.log('✅ JWT_SECRET configured');
 
+  // Additional helper: Validate Google Client ID format
+  const validateGoogleClientId = (clientId) => {
+    if (!clientId) return false;
+    
+    // Google Client IDs should end with .apps.googleusercontent.com
+    const pattern = /^[0-9]+-[a-zA-Z0-9_]+\.apps\.googleusercontent\.com$/;
+    return pattern.test(clientId);
+  };
+
 // Optional service initialization
 let googleClient, redisClient, cloudinary;
 
@@ -1095,14 +1104,7 @@ const defineRoutes = () => {
     }
   });
   
-  // Additional helper: Validate Google Client ID format
-  const validateGoogleClientId = (clientId) => {
-    if (!clientId) return false;
-    
-    // Google Client IDs should end with .apps.googleusercontent.com
-    const pattern = /^[0-9]+-[a-zA-Z0-9_]+\.apps\.googleusercontent\.com$/;
-    return pattern.test(clientId);
-  };
+
 
   // Log Google configuration on startup
 console.log('🔑 Google Auth Configuration:');
