@@ -1,4 +1,4 @@
-// Fixed AuthService.js - Simplified Google Auth with better error handling
+// Fixed AuthService.js - Updated to Google Identity Services (GIS)
 import { apiPost } from '../utils/safeUtils.js';
 
 class AuthService {
@@ -36,18 +36,18 @@ class AuthService {
       return false;
     }
 
-    this.initPromise = this.loadGoogleAuth(clientId);
+    this.initPromise = this.loadGoogleIdentityServices(clientId);
     return this.initPromise;
   }
 
-  async loadGoogleAuth(clientId) {
+  async loadGoogleIdentityServices(clientId) {
     try {
-      // Load Google script if not already loaded
+      // Load Google Identity Services script if not already loaded
       if (!window.google?.accounts?.id) {
         await this.loadGoogleScript();
       }
 
-      // Initialize Google Auth
+      // Initialize Google Identity Services with the new API
       await new Promise((resolve, reject) => {
         try {
           window.google.accounts.id.initialize({
@@ -55,21 +55,23 @@ class AuthService {
             callback: this.handleGoogleCallback.bind(this),
             auto_select: false,
             cancel_on_tap_outside: true,
-            use_fedcm_for_prompt: false
+            // FedCM support for enhanced privacy
+            use_fedcm_for_prompt: true,
+            use_fedcm_for_button: true
           });
           
           this.googleInitialized = true;
-          console.log('✅ Google Auth initialized');
+          console.log('✅ Google Identity Services initialized');
           resolve(true);
         } catch (error) {
-          console.error('Google Auth initialization failed:', error);
+          console.error('Google Identity Services initialization failed:', error);
           reject(error);
         }
       });
 
       return true;
     } catch (error) {
-      console.error('Failed to initialize Google Auth:', error);
+      console.error('Failed to initialize Google Identity Services:', error);
       this.googleInitialized = false;
       return false;
     }
@@ -83,18 +85,19 @@ class AuthService {
       }
 
       const script = document.createElement('script');
+      // Updated to Google Identity Services endpoint
       script.src = 'https://accounts.google.com/gsi/client';
       script.async = true;
       script.defer = true;
       
       script.onload = () => {
-        console.log('Google script loaded');
+        console.log('Google Identity Services script loaded');
         // Wait a bit for the API to be ready
         setTimeout(resolve, 100);
       };
       
       script.onerror = () => {
-        reject(new Error('Failed to load Google script'));
+        reject(new Error('Failed to load Google Identity Services script'));
       };
       
       document.head.appendChild(script);
@@ -170,7 +173,7 @@ class AuthService {
 
   async renderGoogleButton(containerId, options = {}) {
     if (!this.googleInitialized) {
-      console.warn('Google Auth not initialized');
+      console.warn('Google Identity Services not initialized');
       return false;
     }
 
@@ -183,12 +186,15 @@ class AuthService {
     try {
       container.innerHTML = '';
       
+      // Updated to use Google Identity Services button API
       window.google.accounts.id.renderButton(container, {
         theme: 'outline',
         size: 'large',
         type: 'standard',
         shape: 'rectangular',
-        width: container.offsetWidth || 300,
+        width: Math.min(container.offsetWidth || 300, 400),
+        text: 'signin_with', // Options: signin_with, signup_with, continue_with, signin
+        logo_alignment: 'left',
         ...options
       });
 
@@ -201,18 +207,54 @@ class AuthService {
 
   async signInWithGoogle() {
     if (!this.googleInitialized) {
-      throw new Error('Google Auth not initialized');
+      throw new Error('Google Identity Services not initialized');
     }
 
     try {
-      window.google.accounts.id.prompt();
+      // Updated to use Google Identity Services prompt
+      window.google.accounts.id.prompt((notification) => {
+        if (notification.isNotDisplayed()) {
+          console.log('One Tap not displayed:', notification.getNotDisplayedReason());
+          // Fallback: show the sign-in dialog
+          this.showGoogleSignInDialog();
+        } else if (notification.isSkippedMoment()) {
+          console.log('One Tap skipped:', notification.getSkippedReason());
+          // Fallback: show the sign-in dialog
+          this.showGoogleSignInDialog();
+        }
+      });
     } catch (error) {
       console.error('Failed to show Google sign-in prompt:', error);
       throw error;
     }
   }
 
-  // Email authentication methods
+  showGoogleSignInDialog() {
+    // Create a temporary button element to trigger the sign-in flow
+    const tempDiv = document.createElement('div');
+    tempDiv.style.display = 'none';
+    document.body.appendChild(tempDiv);
+    
+    window.google.accounts.id.renderButton(tempDiv, {
+      theme: 'outline',
+      size: 'large',
+      click_listener: () => {
+        document.body.removeChild(tempDiv);
+      }
+    });
+    
+    // Programmatically click the button
+    setTimeout(() => {
+      const button = tempDiv.querySelector('[role="button"]');
+      if (button) {
+        button.click();
+      } else {
+        document.body.removeChild(tempDiv);
+      }
+    }, 100);
+  }
+
+  // Email authentication methods remain the same
   async register(email, password, name) {
     try {
       const result = await apiPost('/auth/signup', {
@@ -276,8 +318,15 @@ class AuthService {
     localStorage.removeItem('sparkvibe_token');
     localStorage.removeItem('sparkvibe_user');
     
+    // Updated to use Google Identity Services sign out
     if (window.google?.accounts?.id) {
-      window.google.accounts.id.disableAutoSelect();
+      try {
+        window.google.accounts.id.disableAutoSelect();
+        // Note: Google Identity Services doesn't have a direct signOut method
+        // User sessions are managed independently
+      } catch (error) {
+        console.warn('Google sign-out warning:', error);
+      }
     }
     
     console.log('✅ Signed out');

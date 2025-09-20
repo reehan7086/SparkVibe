@@ -1,4 +1,4 @@
-// Fixed LoginScreen.jsx - Mobile-first responsive design
+// Fixed LoginScreen.jsx - Updated for Google Identity Services
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import AuthService from '../services/AuthService';
@@ -26,9 +26,10 @@ const LoginScreen = ({ onLoginSuccess }) => {
           // Render Google button after a short delay
           setTimeout(() => {
             AuthService.renderGoogleButton('google-signin-button', {
-              width: Math.min(window.innerWidth - 64, 320), // Responsive width
+              width: Math.min(window.innerWidth - 64, 320),
               theme: 'outline',
-              size: 'large'
+              size: 'large',
+              text: 'signin_with'
             });
           }, 500);
         }

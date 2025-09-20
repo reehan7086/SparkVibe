@@ -53,14 +53,19 @@ console.log('✅ JWT_SECRET configured');
 // Optional service initialization
 let googleClient, redisClient, cloudinary;
 
-// Google OAuth initialization
-try {
-  if (process.env.GOOGLE_CLIENT_ID) {
-    googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
-    console.log('✅ Google OAuth initialized');
+if (process.env.GOOGLE_CLIENT_ID) {
+  if (validateGoogleClientId(process.env.GOOGLE_CLIENT_ID)) {
+    try {
+      googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+      console.log('✅ Google OAuth2 client initialized successfully');
+    } catch (error) {
+      console.error('❌ Google OAuth2 client initialization failed:', error.message);
+    }
+  } else {
+    console.error('❌ Invalid Google Client ID format. Expected: xxxxxxx-xxxxxx.apps.googleusercontent.com');
   }
-} catch (error) {
-  console.warn('⚠️ Google OAuth initialization failed:', error.message);
+} else {
+  console.warn('⚠️ GOOGLE_CLIENT_ID not configured - Google Sign-In will be disabled');
 }
 
 // Cloudinary initialization for media uploads
@@ -914,25 +919,53 @@ const defineRoutes = () => {
         return sendError(reply, 500, 'Google OAuth not configured');
       }
       
+      // Verify the Google Identity Services JWT token
       const ticket = await googleClient.verifyIdToken({
         idToken: token,
         audience: process.env.GOOGLE_CLIENT_ID,
       });
+      
       const payload = ticket.getPayload();
+      console.log('Google Identity Services payload:', payload);
+      
+      // Extract user information from the new token format
+      const googleUser = {
+        googleId: payload.sub,
+        email: payload.email,
+        name: payload.name,
+        given_name: payload.given_name,
+        family_name: payload.family_name,
+        picture: payload.picture,
+        email_verified: payload.email_verified,
+        locale: payload.locale
+      };
       
       let user;
       if (User) {
-        user = await User.findOne({ googleId: payload.sub });
+        // Check if user exists by Google ID or email
+        user = await User.findOne({ 
+          $or: [
+            { googleId: googleUser.googleId },
+            { email: googleUser.email }
+          ]
+        });
+        
         if (!user) {
+          // Create new user with Google Identity Services data
           user = new User({
-            googleId: payload.sub,
-            email: sanitize(payload.email),
-            name: sanitize(payload.name),
-            avatar: payload.picture,
-            emailVerified: payload.email_verified,
+            googleId: googleUser.googleId,
+            email: sanitize(googleUser.email),
+            name: sanitize(googleUser.name || googleUser.given_name),
+            avatar: googleUser.picture,
+            emailVerified: googleUser.email_verified,
             authProvider: 'google',
             referralCode: generateReferralCode(),
-            preferences: { interests: ['wellness', 'creativity'], aiPersonality: 'encouraging', adventureTypes: ['general'], difficulty: 'easy' },
+            preferences: { 
+              interests: ['wellness', 'creativity'], 
+              aiPersonality: 'encouraging', 
+              adventureTypes: ['general'], 
+              difficulty: 'easy' 
+            },
             stats: {
               totalPoints: 0,
               level: 1,
@@ -954,15 +987,25 @@ const defineRoutes = () => {
             premiumStatus: { active: false, plan: 'basic' }
           });
           await user.save();
+          console.log('✅ New Google user created:', user.email);
+        } else {
+          // Update existing user with latest Google data
+          user.name = sanitize(googleUser.name || googleUser.given_name);
+          user.avatar = googleUser.picture;
+          user.emailVerified = googleUser.email_verified;
+          user.stats.lastActivity = new Date();
+          await user.save();
+          console.log('✅ Existing Google user updated:', user.email);
         }
       } else {
+        // Demo mode fallback
         user = {
-          _id: `demo_google_${Date.now()}`,
-          googleId: payload.sub,
-          email: payload.email,
-          name: payload.name,
-          avatar: payload.picture,
-          emailVerified: payload.email_verified,
+          _id: `google_demo_${Date.now()}`,
+          googleId: googleUser.googleId,
+          email: googleUser.email,
+          name: googleUser.name || googleUser.given_name,
+          avatar: googleUser.picture,
+          emailVerified: googleUser.email_verified,
           authProvider: 'google',
           stats: {
             totalPoints: 0,
@@ -983,20 +1026,26 @@ const defineRoutes = () => {
             completions: []
           },
           achievements: [],
-          preferences: { interests: ['wellness', 'creativity'], aiPersonality: 'encouraging', adventureTypes: ['general'], difficulty: 'easy' },
+          preferences: { 
+            interests: ['wellness', 'creativity'], 
+            aiPersonality: 'encouraging', 
+            adventureTypes: ['general'], 
+            difficulty: 'easy' 
+          },
           referralCode: generateReferralCode(),
           premiumStatus: { active: false, plan: 'basic' }
         };
+        console.log('✅ Demo Google user created');
       }
       
       const jwtToken = fastify.jwt.sign({ userId: user._id }, { expiresIn: '7d' });
-      await trackEvent('user_login', user._id, { provider: 'google' });
-
+      await trackEvent('user_login', user._id, { provider: 'google_identity_services' });
+  
       const wsConnection = wsConnections.get(user._id.toString());
       if (wsConnection) {
         wsConnection.send(JSON.stringify({
           type: 'google_signin',
-          data: { message: 'Successfully signed in with Google!' }
+          data: { message: 'Successfully signed in with Google Identity Services!' }
         }));
       }
       
@@ -1014,17 +1063,52 @@ const defineRoutes = () => {
             achievements: user.achievements || [],
             preferences: user.preferences,
             referralCode: user.referralCode,
-            premiumStatus: user.premiumStatus
+            premiumStatus: user.premiumStatus,
+            authProvider: 'google'
           }
         },
-        message: 'Google login successful!',
-        metadata: { timestamp: new Date().toISOString(), fallback: !User }
+        message: 'Google Identity Services login successful!',
+        metadata: { 
+          timestamp: new Date().toISOString(), 
+          fallback: !User,
+          gis_version: '2024'
+        }
       });
     } catch (error) {
-      console.error('Google auth error:', error);
-      return sendError(reply, 500, 'Authentication failed', error.message);
+      console.error('Google Identity Services auth error:', error);
+      
+      // Enhanced error handling for different token issues
+      if (error.message.includes('Wrong number of segments')) {
+        return sendError(reply, 400, 'Invalid token format - please try signing in again');
+      }
+      if (error.message.includes('Token used too late')) {
+        return sendError(reply, 400, 'Token expired - please try signing in again');
+      }
+      if (error.message.includes('Invalid token signature')) {
+        return sendError(reply, 400, 'Invalid token signature - please try signing in again');
+      }
+      if (error.message.includes('Invalid audience')) {
+        return sendError(reply, 500, 'Authentication configuration error');
+      }
+      
+      return sendError(reply, 500, 'Google authentication failed', error.message);
     }
   });
+  
+  // Additional helper: Validate Google Client ID format
+  const validateGoogleClientId = (clientId) => {
+    if (!clientId) return false;
+    
+    // Google Client IDs should end with .apps.googleusercontent.com
+    const pattern = /^[0-9]+-[a-zA-Z0-9_]+\.apps\.googleusercontent\.com$/;
+    return pattern.test(clientId);
+  };
+
+  // Log Google configuration on startup
+console.log('🔑 Google Auth Configuration:');
+console.log('- Client ID configured:', !!process.env.GOOGLE_CLIENT_ID);
+console.log('- Client ID format valid:', validateGoogleClientId(process.env.GOOGLE_CLIENT_ID));
+console.log('- Google client initialized:', !!googleClient);
   
   // Server.js Part 4 - Core Functionality Routes
 
