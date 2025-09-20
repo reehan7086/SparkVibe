@@ -109,6 +109,18 @@ useEffect(() => {
   window.addEventListener('popstate', handleOAuthRedirect);
   return () => window.removeEventListener('popstate', handleOAuthRedirect);
 }, []);
+
+// Add this useEffect after your viewport height fix and OAuth redirect handler
+useEffect(() => {
+  console.log('App state:', {
+    currentStep,
+    moodData: !!moodData,
+    capsuleData: !!capsuleData,
+    cardData: !!cardData,
+    user: !!user,
+    isAuthenticated
+  });
+}, [currentStep, moodData, capsuleData, cardData, user, isAuthenticated]);
   // Enhanced user data update with event dispatching
   const updateUserData = useCallback(async (updatedUser) => {
     console.log('Updating user data:', updatedUser);
@@ -311,6 +323,7 @@ useEffect(() => {
   }, [user, updateUserData, trackEvent, moodData]);
 
   const handleCardGenerated = useCallback(async (generatedCardData) => {
+    console.log('Card generated callback:', generatedCardData); // Debug log
     setCardData(generatedCardData);
     setCurrentStep('summary');
     
@@ -333,7 +346,7 @@ useEffect(() => {
       mood: moodData?.primaryMood || moodData?.mood
     });
   }, [user, updateUserData, trackEvent, moodData]);
-
+ 
   const resetFlow = useCallback(() => {
     setCurrentStep('mood');
     setMoodData(null);
@@ -610,7 +623,8 @@ useEffect(() => {
         {/* Main Content - SINGLE AnimatePresence */}
         <main className="relative z-10 mobile-container py-4 md:py-8">
           <div className="max-w-4xl mx-auto">
-            <AnimatePresence mode="wait">
+          <ErrorBoundary fallback={<div className="text-red-400 text-center p-4">Something went wrong. Please refresh the page.</div>}>
+          <AnimatePresence mode="wait">
               {currentStep === 'mood' && (
                 <motion.div 
                   key="mood" 
@@ -667,52 +681,54 @@ useEffect(() => {
                   </div>
                 </motion.div>
               )}
+{currentStep === 'experience' && (
+  <motion.div 
+    key="experience" 
+    initial={{ opacity: 0, y: 20 }} 
+    animate={{ opacity: 1, y: 0 }} 
+    exit={{ opacity: 0, y: -20 }}   
+    transition={{ duration: 0.5 }}
+  >
+    <CapsuleExperience 
+      capsuleData={capsuleData || {}}
+      moodData={moodData || {}}
+      onComplete={handleExperienceComplete}
+      onUserChoice={setUserChoices}  // FIXED: Changed from onChoicesMade
+      isActive={true}
+    />
+  </motion.div>
+)}
 
-              {currentStep === 'experience' && (
-                                  <motion.div 
-                  key="experience" 
-                  initial={{ opacity: 0, y: 20 }} 
-                  animate={{ opacity: 1, y: 0 }} 
-                  exit={{ opacity: 0, y: -20 }} 
-                  transition={{ duration: 0.5 }}
-                >
-                  <CapsuleExperience 
-                    capsuleData={capsuleData}
-                    moodData={moodData}
-                    onComplete={handleExperienceComplete}
-                    onChoicesMade={setUserChoices}
-                    isActive={true}
-                  />
-                </motion.div>
-              )}
-
-              {currentStep === 'vibe-card' && (
-                <motion.div 
-                  key="vibe-card" 
-                  initial={{ opacity: 0, y: 20 }} 
-                  animate={{ opacity: 1, y: 0 }} 
-                  exit={{ opacity: 0, y: -20 }} 
-                  transition={{ duration: 0.5 }}
-                >
-                  {isEnhancedMode ? (
-                    <EnhancedVibeCardGenerator 
-                      moodData={moodData}
-                      capsuleData={capsuleData}
-                      completionStats={completionStats}
-                      userChoices={userChoices}
-                      onCardGenerated={handleCardGenerated}
-                      isActive={true}
-                    />
-                  ) : (
-                    <VibeCardGenerator 
-                      moodData={moodData}
-                      capsuleData={capsuleData}
-                      onCardGenerated={handleCardGenerated}
-                      isActive={true}
-                    />
-                  )}
-                </motion.div>
-              )}
+{currentStep === 'vibe-card' && (
+  <motion.div 
+    key="vibe-card" 
+    initial={{ opacity: 0, y: 20 }} 
+    animate={{ opacity: 1, y: 0 }} 
+    exit={{ opacity: 0, y: -20 }} 
+    transition={{ duration: 0.5 }}
+  >
+    {isEnhancedMode ? (
+      <EnhancedVibeCardGenerator 
+  moodData={moodData || {}}
+  userChoices={userChoices || {}}
+  setUserChoices={setUserChoices}      
+  onComplete={handleCardGenerated}     // ✅ CORRECT - you fixed this
+  user={user || {}}                          
+  updateUserData={updateUserData}     
+  isActive={true}
+/>
+    ) : (
+<VibeCardGenerator 
+  moodData={moodData || {}}                  
+  capsuleData={capsuleData || {}}           
+  completionStats={completionStats || {}}   
+  user={user || {}}                         
+  onCardGenerated={handleCardGenerated}  // Keep this as is
+  isActive={true}
+/>
+    )}
+  </motion.div>
+)}
 
               {currentStep === 'summary' && (
                 <motion.div 
@@ -732,7 +748,8 @@ useEffect(() => {
                   />
                 </motion.div>
               )}
-            </AnimatePresence>
+      </AnimatePresence>
+      </ErrorBoundary>
           </div>
         </main>
 
