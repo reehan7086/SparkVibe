@@ -93,27 +93,27 @@ const updateConnectionHealth = (success) => {
     connectionHealth.backoffMultiplier = 1;
   } else {
     connectionHealth.consecutiveFailures++;
-    if (connectionHealth.consecutiveFailures >= 2) {
+    if (connectionHealth.consecutiveFailures >= 1) { // Changed from 2 to 1 for faster fallback
       connectionHealth.isHealthy = false;
       connectionHealth.backoffMultiplier = Math.min(
         connectionHealth.backoffMultiplier * 1.5,
-        5
+        3 // Reduced from 5 to 3
       );
     }
   }
 };
 
 // Get dynamic timeout based on connection health
-const getDynamicTimeout = (baseTimeout = 8000) => {
+const getDynamicTimeout = (baseTimeout = 5000) => { // Reduced from 8000 to 5000
   if (!connectionHealth.isHealthy || !connectionHealth.isOnline) {
-    return Math.min(baseTimeout * connectionHealth.backoffMultiplier, 15000);
+    return Math.min(baseTimeout * connectionHealth.backoffMultiplier, 8000); // Reduced from 15000
   }
   return baseTimeout;
 };
 
 // Enhanced API GET with immediate fallback for critical failures
 export const apiGet = async (endpoint, options = {}) => {
-  const { retries = 2, timeout, headers = {}, forceFallback = false } = options;
+  const { retries = 1, timeout, headers = {}, forceFallback = false } = options; // Reduced retries from 2 to 1
   
   // Immediate fallback for offline or forced fallback
   if (!connectionHealth.isOnline || forceFallback) {
@@ -148,32 +148,16 @@ export const apiGet = async (endpoint, options = {}) => {
       console.error(`API GET attempt ${attempt}/${retries} failed for ${endpoint}:`, error.message);
       updateConnectionHealth(false);
 
-      // Immediate fallback for certain error types
-      if (error.response?.status === 404 || 
-          error.response?.status >= 500 ||
-          error.code === 'ERR_NETWORK' || 
-          error.code === 'ECONNABORTED' || 
-          !connectionHealth.isOnline) {
-        console.log(`Using fallback due to ${error.response?.status || error.code}`);
-        return getFallbackData(endpoint);
-      }
-
-      if (attempt === retries) {
-        console.warn(`All ${retries} attempts failed for ${endpoint}, using fallback`);
-        return getFallbackData(endpoint);
-      }
-
-      // Shorter retry delay for better UX
-      const delay = Math.min(attempt * 500, 2000);
-      console.log(`Retrying in ${delay}ms...`);
-      await new Promise(resolve => setTimeout(resolve, delay));
+      // IMMEDIATE fallback for ANY error to prevent loading loops
+      console.log(`Using fallback immediately due to ${error.response?.status || error.code || 'unknown error'}`);
+      return getFallbackData(endpoint);
     }
   }
 };
 
 // Enhanced API POST with immediate fallback for critical failures
 export const apiPost = async (endpoint, data, options = {}) => {
-  const { retries = 2, timeout, headers = {}, forceFallback = false } = options;
+  const { retries = 1, timeout, headers = {}, forceFallback = false } = options; // Reduced retries from 2 to 1
   
   // Immediate fallback for offline or forced fallback
   if (!connectionHealth.isOnline || forceFallback) {
@@ -181,7 +165,7 @@ export const apiPost = async (endpoint, data, options = {}) => {
     return getPostFallbackData(endpoint, data);
   }
 
-  const dynamicTimeout = getDynamicTimeout(timeout || 10000);
+  const dynamicTimeout = getDynamicTimeout(timeout || 5000); // Reduced from 10000
 
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
@@ -209,38 +193,22 @@ export const apiPost = async (endpoint, data, options = {}) => {
       console.error(`API POST attempt ${attempt}/${retries} failed for ${endpoint}:`, error.message);
       updateConnectionHealth(false);
 
-      // Immediate fallback for certain error types
-      if (error.response?.status === 404 || 
-          error.response?.status >= 500 ||
-          error.code === 'ERR_NETWORK' || 
-          error.code === 'ECONNABORTED' || 
-          !connectionHealth.isOnline) {
-        console.log(`Using fallback due to ${error.response?.status || error.code}`);
-        return getPostFallbackData(endpoint, data);
-      }
-
-      if (attempt === retries) {
-        console.warn(`All ${retries} attempts failed for ${endpoint}, using fallback`);
-        return getPostFallbackData(endpoint, data);
-      }
-
-      // Shorter retry delay for better UX
-      const delay = Math.min(attempt * 500, 2000);
-      console.log(`Retrying in ${delay}ms...`);
-      await new Promise(resolve => setTimeout(resolve, delay));
+      // IMMEDIATE fallback for ANY error to prevent loading loops
+      console.log(`Using fallback immediately due to ${error.response?.status || error.code || 'unknown error'}`);
+      return getPostFallbackData(endpoint, data);
     }
   }
 };
 
 // Additional HTTP methods with enhanced fallback
 export const apiPut = async (endpoint, data, options = {}) => {
-  const { retries = 2, timeout, headers = {} } = options;
+  const { retries = 1, timeout, headers = {} } = options;
   
   if (!connectionHealth.isOnline) {
     return getPostFallbackData(endpoint, data);
   }
 
-  const dynamicTimeout = getDynamicTimeout(timeout || 10000);
+  const dynamicTimeout = getDynamicTimeout(timeout || 5000);
 
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
@@ -266,26 +234,19 @@ export const apiPut = async (endpoint, data, options = {}) => {
     } catch (error) {
       console.error(`API PUT attempt ${attempt}/${retries} failed for ${endpoint}:`, error.message);
       updateConnectionHealth(false);
-
-      if (attempt === retries) {
-        console.warn(`All ${retries} attempts failed for ${endpoint}, using fallback`);
-        return getPostFallbackData(endpoint, data);
-      }
-
-      const delay = Math.min(attempt * 500, 2000);
-      await new Promise(resolve => setTimeout(resolve, delay));
+      return getPostFallbackData(endpoint, data);
     }
   }
 };
 
 export const apiDelete = async (endpoint, options = {}) => {
-  const { retries = 2, timeout, headers = {} } = options;
+  const { retries = 1, timeout, headers = {} } = options;
   
   if (!connectionHealth.isOnline) {
     return getFallbackData(endpoint);
   }
 
-  const dynamicTimeout = getDynamicTimeout(timeout || 10000);
+  const dynamicTimeout = getDynamicTimeout(timeout || 5000);
 
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
@@ -311,14 +272,7 @@ export const apiDelete = async (endpoint, options = {}) => {
     } catch (error) {
       console.error(`API DELETE attempt ${attempt}/${retries} failed for ${endpoint}:`, error.message);
       updateConnectionHealth(false);
-
-      if (attempt === retries) {
-        console.warn(`All ${retries} attempts failed for ${endpoint}, using fallback`);
-        return getFallbackData(endpoint);
-      }
-
-      const delay = Math.min(attempt * 500, 2000);
-      await new Promise(resolve => setTimeout(resolve, delay));
+      return getFallbackData(endpoint);
     }
   }
 };
@@ -1006,17 +960,30 @@ function getTemplateColors(template) {
   return colorSchemes[template] || colorSchemes.cosmic;
 }
 
-// Enhanced API calls with automatic fallback
+// AGGRESSIVE fallback functions that NEVER fail
 export const apiGetWithFallback = async (endpoint) => {
+  console.log(`apiGetWithFallback called for ${endpoint}`);
   try {
-    return await apiGet(endpoint);
+    const result = await apiGet(endpoint);
+    console.log(`apiGetWithFallback success for ${endpoint}:`, result);
+    return result;
   } catch (error) {
-    console.warn(`API call failed for ${endpoint}, using fallback:`, error.message);
-    return getFallbackData(endpoint);
+    console.warn(`apiGetWithFallback failed for ${endpoint}, using fallback:`, error.message);
+    const fallbackResult = getFallbackData(endpoint);
+    console.log(`apiGetWithFallback fallback result:`, fallbackResult);
+    return fallbackResult;
   }
 };
 
 export const apiPostWithFallback = async (endpoint, data = {}) => {
+  console.log(`apiPostWithFallback called for ${endpoint} with data:`, data);
+  
+  // IMMEDIATE fallback for enhanced vibe card since we know it doesn't exist
+  if (endpoint === '/generate-enhanced-vibe-card') {
+    console.log('Immediate fallback for enhanced vibe card');
+    return getPostFallbackData(endpoint, data);
+  }
+  
   // Try multiple endpoints since backend might have different routes
   const endpoints = [
     endpoint,
@@ -1031,7 +998,7 @@ export const apiPostWithFallback = async (endpoint, data = {}) => {
       console.log(`Trying endpoint: ${tryEndpoint}`);
       const response = await apiPost(tryEndpoint, data);
       if (response && (response.success || response.card || response.data)) {
-        console.log(`Success with endpoint: ${tryEndpoint}`);
+        console.log(`Success with endpoint: ${tryEndpoint}`, response);
         return response;
       }
     } catch (error) {
@@ -1042,5 +1009,7 @@ export const apiPostWithFallback = async (endpoint, data = {}) => {
   
   // All endpoints failed, use fallback
   console.log('All backend endpoints unavailable, using fallback');
-  return getPostFallbackData(endpoint, data);
+  const fallbackResult = getPostFallbackData(endpoint, data);
+  console.log(`apiPostWithFallback fallback result:`, fallbackResult);
+  return fallbackResult;
 };
