@@ -165,7 +165,7 @@ const registerPlugins = async () => {
       if (request.url.includes('/auth/')) return 5;
       if (request.url.includes('/generate-') || request.url.includes('/upload-media')) return 20;
       if (request.url.includes('/premium/create-checkout')) return 5;
-      return request.user ? 100 : 50;
+      return (request.user && request.user.userId) ? 100 : 50;
     },
     timeWindow: '1 minute',
     keyGenerator: (request) => request.ip + ':' + (request.user?.userId || 'anonymous'),
@@ -415,6 +415,15 @@ const checkAchievements = async (userId, actionType, metadata = {}) => {
         type: 'creation'
       });
     }
+	
+	if (user.stats.cardsShared >= 100 && !existingAchievementIds.includes('viral_star')) {
+  newAchievements.push({
+    id: 'viral_star',
+    ...ACHIEVEMENTS.viral_star,
+    unlockedAt: new Date(),
+    type: 'viral'
+  });
+}
 
     if (user.stats.friendsCount >= 5 && !existingAchievementIds.includes('social_butterfly')) {
       newAchievements.push({
@@ -542,11 +551,24 @@ const uploadMediaToCloudinary = async (file) => {
     throw new Error('Cloudinary not configured');
   }
   try {
-    const result = await cloudinary.uploader.upload_stream({
-      resource_type: 'auto',
-      folder: 'sparkvibe_uploads',
-      public_id: `media_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-    }).end(file.data);
+    // Buffer the file data first
+    const chunks = [];
+    for await (const chunk of file.file) {
+      chunks.push(chunk);
+    }
+    const buffer = Buffer.concat(chunks);
+    
+    const result = await new Promise((resolve, reject) => {
+      cloudinary.uploader.upload_stream({
+        resource_type: 'auto',
+        folder: 'sparkvibe_uploads',
+        public_id: `media_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`
+      }, (error, result) => {
+        if (error) reject(error);
+        else resolve(result);
+      }).end(buffer);
+    });
+    
     return {
       url: result.secure_url,
       public_id: result.public_id,
@@ -567,16 +589,22 @@ const uploadMediaToLocal = async (file) => {
   const uploadDir = path.join(__dirname, 'uploads');
   await fs.mkdir(uploadDir, { recursive: true });
   
-  const fileName = `media_${Date.now()}_${Math.random().toString(36).substr(2, 9)}${path.extname(file.filename)}`;
+  const fileName = `media_${Date.now()}_${Math.random().toString(36).substring(2, 11)}${path.extname(file.filename)}`;
   const filePath = path.join(uploadDir, fileName);
   
-  await fs.writeFile(filePath, file.data);
+  // Properly handle the file stream
+  const chunks = [];
+  for await (const chunk of file.file) {
+    chunks.push(chunk);
+  }
+  const buffer = Buffer.concat(chunks);
+  await fs.writeFile(filePath, buffer);
   
   return {
     url: `/uploads/${fileName}`,
     type: file.mimetype.startsWith('image') ? 'image' : file.mimetype.startsWith('video') ? 'video' : 'audio',
     metadata: {
-      size: file.size,
+      size: buffer.length,
       mimeType: file.mimetype,
       filename: fileName
     }
@@ -1258,7 +1286,7 @@ const defineRoutes = () => {
       };
 
       const capsule = {
-        capsuleId: `cap_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        capsuleId: `cap_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
         adventure: {
           ...adventure,
           rewards: { points: 25, badge: 'Mood Explorer' }
@@ -1328,7 +1356,7 @@ const defineRoutes = () => {
       }
 
       const cardData = {
-        cardId: `card_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        cardId: `card_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
         content: {
           adventure: capsuleData.adventure,
           achievement: { 
@@ -1354,11 +1382,16 @@ const defineRoutes = () => {
           let imageUrl;
           if (cloudinary) {
             try {
-              const uploadResult = await cloudinary.uploader.upload_stream({
-                resource_type: 'image',
-                folder: 'sparkvibe_cards',
-                public_id: `card_${cardData.cardId}_${Date.now()}`
-              }).end(imageBuffer);
+              const uploadResult = await new Promise((resolve, reject) => {
+  cloudinary.uploader.upload_stream({
+    resource_type: 'image',
+    folder: 'sparkvibe_cards',
+    public_id: `card_${cardData.cardId}_${Date.now()}`
+  }, (error, result) => {
+    if (error) reject(error);
+    else resolve(result);
+  }).end(imageBuffer);
+});
               imageUrl = uploadResult.secure_url;
             } catch (error) {
               console.warn('Cloudinary upload failed, using local storage');
@@ -1921,6 +1954,590 @@ const defineRoutes = () => {
     }
   });
 
+  
+// Missing: Premium Checkout
+fastify.post('/premium/create-checkout', { preHandler: [fastify.authenticate] }, async (request, reply) => {
+  try {
+    const { plan } = request.body;
+    return reply.send({
+      success: true,
+      data: {
+        id: `cs_${Date.now()}`,
+        url: `https://checkout.stripe.com/demo`,
+        plan
+      },
+      message: 'Checkout session created'
+    });
+  } catch (error) {
+    return sendError(reply, 500, 'Failed to create checkout', error.message);
+  }
+});
+
+// Server.js Part 7 - Missing Routes and Advanced Features
+
+// Add these routes to the defineRoutes() function in Part 6, before the WebSocket setup
+
+  // Enhanced Capsule Generation (AI-powered)
+  fastify.post('/generate-capsule-simple', { preHandler: [fastify.authenticate] }, async (request, reply) => {
+    try {
+      const userId = request.user.userId;
+      const { category, difficulty, mood, interests } = request.body;
+
+      if (!category) {
+        return sendError(reply, 400, 'Category is required');
+      }
+
+      let adventure;
+      if (Adventure) {
+        adventure = await Adventure.findOne({ category, isActive: true }).sort({ completions: -1 });
+      }
+
+      if (!adventure) {
+        const adventureTemplates = {
+          wellness: {
+            title: 'Mindful Moments',
+            description: 'Take 10 minutes to practice mindfulness and center yourself',
+            prompt: 'Find a quiet space and focus on your breathing',
+            estimatedTime: '10 minutes'
+          },
+          creativity: {
+            title: 'Creative Spark',
+            description: 'Express yourself through a creative medium',
+            prompt: 'Draw, write, or create something that represents your current mood',
+            estimatedTime: '15 minutes'
+          },
+          fitness: {
+            title: 'Energy Boost',
+            description: 'Get your body moving with light exercise',
+            prompt: 'Do 5 minutes of stretching or light movement',
+            estimatedTime: '5 minutes'
+          },
+          productivity: {
+            title: 'Focus Flow',
+            description: 'Tackle a small task with focused attention',
+            prompt: 'Choose one small task and complete it mindfully',
+            estimatedTime: '20 minutes'
+          },
+          social: {
+            title: 'Connection Creator',
+            description: 'Reach out and connect with someone',
+            prompt: 'Send a thoughtful message to a friend or family member',
+            estimatedTime: '5 minutes'
+          }
+        };
+
+        adventure = adventureTemplates[category] || {
+          title: 'Personal Growth Adventure',
+          description: 'A personalized journey for your development',
+          prompt: 'Take a moment to reflect on your goals and take one small step forward',
+          estimatedTime: '15 minutes'
+        };
+
+        adventure.category = category;
+        adventure.difficulty = difficulty || 'easy';
+        adventure.rewards = { points: 25, badge: 'Explorer' };
+        adventure.template = mood === 'calm' ? 'minimal' : mood === 'energetic' ? 'retro' : 'cosmic';
+      }
+
+      const capsule = {
+        capsuleId: `cap_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
+        adventure,
+        brainBite: {
+          question: 'Did you know?',
+          answer: `Engaging in ${category} activities can boost your mood and overall well-being!`
+        },
+        habitNudge: `Consider making ${category} a regular part of your routine.`,
+        createdAt: new Date(),
+        id: `capsule_${Date.now()}`
+      };
+
+      if (VibeCard && userId !== 'demo_user') {
+        await VibeCard.create({
+          userId,
+          capsuleId: capsule.capsuleId,
+          content: { adventure: capsule.adventure },
+          design: { template: adventure.template || 'cosmic', colors: ['#1a1a2e', '#533483'], style: 'modern' }
+        });
+
+        await User.findByIdAndUpdate(userId, {
+          $inc: { 'stats.adventuresCompleted': 1 }
+        });
+
+        await checkAchievements(userId, 'adventure_completed');
+      }
+
+      await trackEvent('capsule_generated', userId, { category, difficulty });
+
+      const wsConnection = wsConnections.get(userId.toString());
+      if (wsConnection) {
+        wsConnection.send(JSON.stringify({
+          type: 'capsule_generated',
+          data: { message: 'Adventure capsule generated!', capsuleId: capsule.capsuleId }
+        }));
+      }
+
+      return reply.send({
+        success: true,
+        data: capsule,
+        message: 'Capsule generated successfully',
+        metadata: { timestamp: new Date().toISOString(), fallback: !Adventure }
+      });
+    } catch (error) {
+      console.error('Capsule generation error:', error);
+      return sendError(reply, 500, 'Failed to generate capsule', error.message);
+    }
+  });
+
+  // Enhanced Vibe Card Generation
+  fastify.post('/generate-enhanced-vibe-card', { preHandler: [fastify.authenticate] }, async (request, reply) => {
+    try {
+      const userId = request.user.userId;
+      const { capsuleId, template = 'cosmic', moodData, completionStats, userChoices } = request.body;
+
+      if (!capsuleId) {
+        return sendError(reply, 400, 'Capsule ID is required');
+      }
+
+      let vibeCard, user;
+      if (VibeCard && User && userId !== 'demo_user') {
+        vibeCard = await VibeCard.findOne({ capsuleId, userId });
+        user = await User.findById(userId).select('name stats');
+        if (!vibeCard || !user) {
+          return sendError(reply, 404, 'Capsule or user not found');
+        }
+      } else {
+        user = { name: 'Demo User', stats: { totalPoints: 500, streak: 3 } };
+        vibeCard = {
+          capsuleId,
+          content: {
+            adventure: { title: 'Sample Adventure', rewards: { points: 25 } },
+            achievement: { points: 25, streak: 3 },
+            user: { name: 'Demo User' }
+          }
+        };
+      }
+
+      const cardData = {
+        cardId: `card_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
+        content: {
+          adventure: vibeCard.content.adventure,
+          achievement: { 
+            points: completionStats?.vibePointsEarned || 25, 
+            streak: user.stats.streak || 0 
+          },
+          user: { name: user.name },
+          mood: moodData,
+          choices: userChoices,
+          completionStats
+        },
+        design: { 
+          template, 
+          colors: ['#1a1a2e', '#533483', '#7209b7'], 
+          style: 'enhanced' 
+        },
+        type: template,
+        timestamp: new Date()
+      };
+
+      // Generate enhanced image with completion data
+      if (Canvas) {
+        const imageBuffer = await createVibeCardImage(cardData);
+        if (imageBuffer) {
+          let imageUrl;
+          if (cloudinary) {
+            try {
+const uploadResult = await new Promise((resolve, reject) => {
+  cloudinary.uploader.upload_stream({
+    resource_type: 'image',
+    folder: 'sparkvibe_cards',
+    public_id: `card_${cardData.cardId}_${Date.now()}`
+  }, (error, result) => {
+    if (error) reject(error);
+    else resolve(result);
+  }).end(imageBuffer);
+});
+              imageUrl = uploadResult.secure_url;
+            } catch (error) {
+              const fileName = `enhanced_card_${capsuleId}_${Date.now()}.png`;
+              const filePath = path.join(__dirname, 'uploads', fileName);
+              await fs.writeFile(filePath, imageBuffer);
+              imageUrl = `/uploads/${fileName}`;
+            }
+          } else {
+            const fileName = `enhanced_card_${capsuleId}_${Date.now()}.png`;
+            const filePath = path.join(__dirname, 'uploads', fileName);
+            await fs.writeFile(filePath, imageBuffer);
+            imageUrl = `/uploads/${fileName}`;
+          }
+          cardData.imageUrl = imageUrl;
+        }
+      }
+
+      if (VibeCard && userId !== 'demo_user') {
+        await VibeCard.findOneAndUpdate(
+          { capsuleId, userId },
+          { 
+            $set: { 
+              'design.template': template, 
+              'content.imageUrl': cardData.imageUrl,
+              'content.enhanced': true
+            } 
+          }
+        );
+      }
+
+      await trackEvent('enhanced_vibe_card_generated', userId, { capsuleId, template });
+
+      const wsConnection = wsConnections.get(userId.toString());
+      if (wsConnection) {
+        wsConnection.send(JSON.stringify({
+          type: 'vibe_card_generated',
+          data: { message: 'Enhanced vibe card generated!', imageUrl: cardData.imageUrl }
+        }));
+      }
+
+      return reply.send({
+        success: true,
+        data: cardData,
+        message: 'Enhanced vibe card generated successfully',
+        metadata: { timestamp: new Date().toISOString(), fallback: !VibeCard }
+      });
+    } catch (error) {
+      console.error('Enhanced vibe card generation error:', error);
+      return sendError(reply, 500, 'Failed to generate enhanced vibe card', error.message);
+    }
+  });
+
+  // Push Notification Subscription
+  fastify.post('/notifications/subscribe', { preHandler: [fastify.authenticate] }, async (request, reply) => {
+    try {
+      const userId = request.user.userId;
+      const { subscription } = request.body;
+
+      if (!subscription || !subscription.endpoint) {
+        return sendError(reply, 400, 'Invalid subscription data');
+      }
+
+      if (User && userId !== 'demo_user') {
+        await User.findByIdAndUpdate(userId, {
+          $set: { 'preferences.pushSubscription': subscription }
+        });
+
+        if (Notification) {
+          await Notification.create({
+            userId,
+            type: 'subscription',
+            title: 'Push Notifications Enabled',
+            message: 'You have successfully subscribed to push notifications!',
+            data: { subscription }
+          });
+        }
+      }
+
+      const wsConnection = wsConnections.get(userId.toString());
+      if (wsConnection) {
+        wsConnection.send(JSON.stringify({
+          type: 'subscription',
+          data: { message: 'Successfully subscribed to push notifications!' }
+        }));
+      }
+
+      await trackEvent('notification_subscription', userId, { endpoint: subscription.endpoint });
+
+      return reply.send({
+        success: true,
+        message: 'Successfully subscribed to push notifications',
+        metadata: { timestamp: new Date().toISOString(), fallback: !User }
+      });
+    } catch (error) {
+      console.error('Notification subscription error:', error);
+      return sendError(reply, 500, 'Failed to subscribe to notifications', error.message);
+    }
+  });
+
+  // Friend Request Management
+  fastify.post('/friends/request', { preHandler: [fastify.authenticate] }, async (request, reply) => {
+    try {
+      const userId = request.user.userId;
+      const { friendId } = request.body;
+
+      if (!friendId) {
+        return sendError(reply, 400, 'Friend ID is required');
+      }
+
+      if (User && userId !== 'demo_user') {
+        const user = await User.findById(userId);
+        const friend = await User.findById(friendId);
+
+        if (!friend) {
+          return sendError(reply, 404, 'User not found');
+        }
+
+        // Check if already friends
+        const existingFriend = user.friends.find(f => f.userId.toString() === friendId);
+        if (existingFriend) {
+          return sendError(reply, 400, 'Friend request already exists');
+        }
+
+        // Add friend request
+        await User.findByIdAndUpdate(userId, {
+          $push: { 
+            friends: { 
+              userId: friendId, 
+              status: 'pending', 
+              connectedAt: new Date() 
+            } 
+          }
+        });
+
+        // Notify the friend
+        if (Notification) {
+          await Notification.create({
+            userId: friendId,
+            type: 'friend_request',
+            title: 'New Friend Request',
+            message: `${user.name} sent you a friend request!`,
+            data: { fromUserId: userId, fromUserName: user.name }
+          });
+        }
+
+        const wsConnection = wsConnections.get(friendId.toString());
+        if (wsConnection) {
+          wsConnection.send(JSON.stringify({
+            type: 'friend_request',
+            data: { message: `${user.name} sent you a friend request!`, fromUserId: userId }
+          }));
+        }
+      }
+
+      await trackEvent('friend_request_sent', userId, { friendId });
+
+      return reply.send({
+        success: true,
+        message: 'Friend request sent successfully',
+        metadata: { timestamp: new Date().toISOString(), fallback: !User }
+      });
+    } catch (error) {
+      console.error('Friend request error:', error);
+      return sendError(reply, 500, 'Failed to send friend request', error.message);
+    }
+  });
+
+  fastify.post('/friends/accept', { preHandler: [fastify.authenticate] }, async (request, reply) => {
+    try {
+      const userId = request.user.userId;
+      const { friendId } = request.body;
+
+      if (!friendId) {
+        return sendError(reply, 400, 'Friend ID is required');
+      }
+
+      if (User && userId !== 'demo_user') {
+        // Update both users' friend lists
+        await User.findOneAndUpdate(
+          { _id: userId, 'friends.userId': friendId },
+          { $set: { 'friends.$.status': 'accepted' } }
+        );
+
+        await User.findByIdAndUpdate(friendId, {
+          $push: { 
+            friends: { 
+              userId: userId, 
+              status: 'accepted', 
+              connectedAt: new Date() 
+            } 
+          }
+        });
+
+        // Update friend counts
+        await User.findByIdAndUpdate(userId, { $inc: { 'stats.friendsCount': 1 } });
+        await User.findByIdAndUpdate(friendId, { $inc: { 'stats.friendsCount': 1 } });
+
+        await checkAchievements(userId, 'friend_accepted');
+        await checkAchievements(friendId, 'friend_accepted');
+
+        // Notify the requester
+        if (Notification) {
+          const user = await User.findById(userId);
+          await Notification.create({
+            userId: friendId,
+            type: 'friend_accepted',
+            title: 'Friend Request Accepted',
+            message: `${user.name} accepted your friend request!`,
+            data: { fromUserId: userId, fromUserName: user.name }
+          });
+        }
+      }
+
+      await trackEvent('friend_request_accepted', userId, { friendId });
+
+      return reply.send({
+        success: true,
+        message: 'Friend request accepted successfully',
+        metadata: { timestamp: new Date().toISOString(), fallback: !User }
+      });
+    } catch (error) {
+      console.error('Friend accept error:', error);
+      return sendError(reply, 500, 'Failed to accept friend request', error.message);
+    }
+  });
+
+  // Challenge Management
+  fastify.post('/challenges/create', { preHandler: [fastify.authenticate] }, async (request, reply) => {
+    try {
+      const userId = request.user.userId;
+      const { challengedId, type, target, deadline } = request.body;
+
+      if (!challengedId || !type || !target) {
+        return sendError(reply, 400, 'Challenge details are required');
+      }
+
+      const challengeData = {
+        challengerId: userId,
+        challengedId,
+        type,
+        target,
+        deadline: deadline ? new Date(deadline) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        status: 'pending',
+        createdAt: new Date()
+      };
+
+      if (User && userId !== 'demo_user') {
+        const challenger = await User.findById(userId);
+        const challenged = await User.findById(challengedId);
+
+        if (!challenged) {
+          return sendError(reply, 404, 'User not found');
+        }
+
+        // Add challenge to both users
+        await User.findByIdAndUpdate(userId, {
+          $push: { challenges: challengeData }
+        });
+
+        await User.findByIdAndUpdate(challengedId, {
+          $push: { challenges: challengeData }
+        });
+
+        // Notify the challenged user
+        if (Notification) {
+          await Notification.create({
+            userId: challengedId,
+            type: 'challenge',
+            title: 'New Challenge',
+            message: `${challenger.name} challenged you to a ${type} challenge!`,
+            data: { challenge: challengeData }
+          });
+        }
+      }
+
+      await trackEvent('challenge_created', userId, { type, target, challengedId });
+
+      return reply.send({
+        success: true,
+        data: challengeData,
+        message: 'Challenge created successfully',
+        metadata: { timestamp: new Date().toISOString(), fallback: !User }
+      });
+    } catch (error) {
+      console.error('Challenge creation error:', error);
+      return sendError(reply, 500, 'Failed to create challenge', error.message);
+    }
+  });
+
+  // Social Sharing Analytics
+  fastify.post('/analytics/share', { preHandler: [fastify.authenticate] }, async (request, reply) => {
+    try {
+      const userId = request.user.userId;
+      const { cardId, platform, viralScore } = request.body;
+
+      if (!cardId || !platform) {
+        return sendError(reply, 400, 'Card ID and platform are required');
+      }
+
+      if (VibeCard && userId !== 'demo_user') {
+        await VibeCard.findOneAndUpdate(
+          { userId, _id: cardId },
+          { 
+            $inc: { 'analytics.shares': 1, 'sharing.shareCount': 1 },
+            $push: { 'sharing.platforms': platform },
+            $set: { 
+              'sharing.lastShared': new Date(),
+              'analytics.viralScore': viralScore || 0
+            }
+          }
+        );
+
+        await User.findByIdAndUpdate(userId, {
+          $inc: { 'stats.cardsShared': 1 }
+        });
+
+        await checkAchievements(userId, 'card_shared', { platform, viralScore });
+      }
+
+      await trackEvent('card_shared', userId, { cardId, platform, viralScore });
+
+      return reply.send({
+        success: true,
+        message: 'Share tracked successfully',
+        metadata: { timestamp: new Date().toISOString(), fallback: !VibeCard }
+      });
+    } catch (error) {
+      console.error('Share tracking error:', error);
+      return sendError(reply, 500, 'Failed to track share', error.message);
+    }
+  });
+
+  // User Search for Friends
+  fastify.get('/users/search', { preHandler: [fastify.authenticate] }, async (request, reply) => {
+    try {
+      const { query } = request.query;
+
+      if (!query || query.length < 2) {
+        return sendError(reply, 400, 'Query must be at least 2 characters');
+      }
+
+      if (!User) {
+        return reply.send({
+          success: true,
+          data: [
+            { id: 'demo1', name: 'Demo Friend 1', avatar: '👤' },
+            { id: 'demo2', name: 'Demo Friend 2', avatar: '🚀' }
+          ],
+          message: 'User search results (demo mode)'
+        });
+      }
+
+      const users = await User.find({
+        $or: [
+          { name: { $regex: query, $options: 'i' } },
+          { email: { $regex: query, $options: 'i' } }
+        ]
+      })
+      .select('name email avatar stats.level')
+      .limit(10)
+      .lean();
+
+      const searchResults = users.map(user => ({
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        avatar: user.avatar || '👤',
+        level: user.stats?.level || 1
+      }));
+
+      return reply.send({
+        success: true,
+        data: searchResults,
+        message: 'User search completed',
+        metadata: { query, results: searchResults.length }
+      });
+    } catch (error) {
+      console.error('User search error:', error);
+      return sendError(reply, 500, 'Failed to search users', error.message);
+    }
+  });
+
   // WebSocket Setup
   fastify.register(async function (fastify) {
     fastify.get('/ws', { websocket: true }, (connection, req) => {
@@ -1967,65 +2584,7 @@ const defineRoutes = () => {
       }
     });
   });
-  
-  // Missing: Simple Capsule Generation (your frontend calls this)
-fastify.post('/generate-capsule-simple', { preHandler: [fastify.authenticate] }, async (request, reply) => {
-  try {
-    const userId = request.user.userId;
-    const { category, difficulty } = request.body;
 
-    const mockCapsule = {
-      capsuleId: `cap_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      adventure: {
-        title: 'Sample Adventure',
-        description: 'A fun sample adventure',
-        category: category || 'wellness',
-        difficulty: difficulty || 'easy',
-        rewards: { points: 25 },
-        template: 'cosmic'
-      },
-      createdAt: new Date()
-    };
-
-    return reply.send({
-      success: true,
-      data: mockCapsule,
-      message: 'Capsule generated successfully'
-    });
-  } catch (error) {
-    return sendError(reply, 500, 'Failed to generate capsule', error.message);
-  }
-});
-
-// Missing: Premium Checkout
-fastify.post('/premium/create-checkout', { preHandler: [fastify.authenticate] }, async (request, reply) => {
-  try {
-    const { plan } = request.body;
-    return reply.send({
-      success: true,
-      data: {
-        id: `cs_${Date.now()}`,
-        url: `https://checkout.stripe.com/demo`,
-        plan
-      },
-      message: 'Checkout session created'
-    });
-  } catch (error) {
-    return sendError(reply, 500, 'Failed to create checkout', error.message);
-  }
-});
-
-// Missing: Push Notification Subscription
-fastify.post('/notifications/subscribe', { preHandler: [fastify.authenticate] }, async (request, reply) => {
-  try {
-    return reply.send({
-      success: true,
-      message: 'Push notifications subscribed'
-    });
-  } catch (error) {
-    return sendError(reply, 500, 'Failed to subscribe', error.message);
-  }
-});
 
 }; // End of defineRoutes function
 
