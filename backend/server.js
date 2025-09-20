@@ -124,43 +124,10 @@ const sendError = (reply, status, message, details) => {
   });
 };
 
-// Register plugins - CRITICAL: This must happen before routes are defined
+// Replace your entire registerPlugins function with this fixed version:
+
 const registerPlugins = async () => {
-  await fastify.register(fastifyCors, {
-    origin: (origin, cb) => {
-      const allowedOrigins = [
-        'https://sparkvibe.app',
-        'https://www.sparkvibe.app',
-        'http://localhost:5173',
-        'http://localhost:3000',
-        'http://localhost:8080',
-        'https://backend-sv-3n4v6.ondigitalocean.app',
-        'https://frontend-sv-3n4v6.ondigitalocean.app'
-      ];
-      if (process.env.NODE_ENV !== 'production') {
-        allowedOrigins.push(/^http:\/\/localhost:(3000|5173|8080)$/);
-        allowedOrigins.push(/^https:\/\/.*\.app\.github\.dev$/);
-        allowedOrigins.push(/^https:\/\/.*\.gitpod\.io$/);
-      }
-      const allowed = !origin || allowedOrigins.some(o => typeof o === 'string' ? o === origin : o.test(origin));
-      cb(null, allowed);
-    },
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Cache-Control', 'Pragma', 'Expires'],
-    credentials: true,
-    maxAge: 86400
-  });
-
-  await fastify.register(fastifyHelmet, {
-    contentSecurityPolicy: false,
-    crossOriginEmbedderPolicy: false,
-    crossOriginOpenerPolicy: false, // This was already correct
-    crossOriginResourcePolicy: { policy: 'cross-origin' },
-    // Add these specific headers for Google OAuth
-    hsts: false, // Disable in development
-    frameguard: { action: 'sameorigin' } // Allow same-origin frames
-  });
-
+  // Register CORS plugin ONLY ONCE
   await fastify.register(fastifyCors, {
     origin: (origin, cb) => {
       const allowedOrigins = [
@@ -173,7 +140,6 @@ const registerPlugins = async () => {
         'https://frontend-sv-3n4v6.ondigitalocean.app',
         // Add Google domains for OAuth
         'https://accounts.google.com',
-        'https://accounts.google.com/',
         'https://www.google.com'
       ];
       if (process.env.NODE_ENV !== 'production') {
@@ -188,9 +154,24 @@ const registerPlugins = async () => {
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Cache-Control', 'Pragma', 'Expires'],
     credentials: true,
     maxAge: 86400,
-    // Add these for Google OAuth
     exposedHeaders: ['Set-Cookie'],
     optionsSuccessStatus: 200
+  });
+
+  await fastify.register(fastifyHelmet, {
+    contentSecurityPolicy: false,
+    crossOriginEmbedderPolicy: false,
+    crossOriginOpenerPolicy: false,
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+    hsts: false,
+    frameguard: { action: 'sameorigin' }
+  });
+
+  // Register JWT plugin
+  await fastify.register(fastifyJwt, {
+    secret: JWT_SECRET,
+    sign: { expiresIn: '7d' },
+    verify: { maxAge: '7d' }
   });
 
   await fastify.register(fastifyMultipart, {
@@ -224,7 +205,7 @@ const registerPlugins = async () => {
     decorateReply: false
   });
 
-  // CRITICAL: Register authenticate decorator AFTER JWT plugin
+  // Register authenticate decorator AFTER JWT plugin
   fastify.decorate('authenticate', async function (request, reply) {
     try {
       await request.jwtVerify();
@@ -234,7 +215,6 @@ const registerPlugins = async () => {
     }
   });
 };
-
 // MongoDB Schemas
 const UserSchema = new mongoose.Schema({
   email: { 
