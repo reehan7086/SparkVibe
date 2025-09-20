@@ -579,7 +579,18 @@ useEffect(() => {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z" />
                   </svg>
                 </motion.button>
-
+                // Add this button after the friends button in your header
+<motion.button
+  onClick={() => setCurrentStep('leaderboard')}
+  className="p-2 text-white hover:bg-white/10 rounded-full transition-colors touch-target"
+  whileHover={{ scale: 1.05 }}
+  whileTap={{ scale: 0.95 }}
+  title="Leaderboard"
+>
+  <svg className="w-5 h-5 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v4a2 2 0 01-2 2h-2a2 2 0 00-2-2z" />
+  </svg>
+</motion.button>
                 <motion.button
                   onClick={handleLogout}
                   className="px-2 py-1 md:px-3 md:py-1 text-xs md:text-sm text-white bg-white/20 hover:bg-white/30 rounded-full transition-colors touch-target"
@@ -750,6 +761,21 @@ useEffect(() => {
                   />
                 </motion.div>
               )}
+
+{currentStep === 'leaderboard' && (
+  <motion.div 
+    key="leaderboard" 
+    initial={{ opacity: 0, y: 20 }} 
+    animate={{ opacity: 1, y: 0 }} 
+    exit={{ opacity: 0, y: -20 }} 
+    transition={{ duration: 0.5 }}
+  >
+    <EnhancedLeaderboard 
+      user={user}
+      onClose={() => setCurrentStep('mood')}
+    />
+  </motion.div>
+)}
       </AnimatePresence>
       </ErrorBoundary>
           </div>
