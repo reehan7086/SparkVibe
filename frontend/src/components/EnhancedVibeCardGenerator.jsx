@@ -9,16 +9,14 @@ const EnhancedVibeCardGenerator = ({
   onComplete, 
   user, 
   updateUserData,
-  capsuleData,        // ADD THIS - needed for capsuleId
-  completionStats     // ADD THIS - backend expects this
+  capsuleData,
+  completionStats
 }) => {
   console.log('CapsuleData received:', capsuleData);
-  console.log('Available keys:', Object.keys(capsuleData || {}));
-  console.log('CapsuleData ID field:', capsuleData?.id);
-  console.log('CapsuleData capsuleId field:', capsuleData?.capsuleId);
   const [currentPhase, setCurrentPhase] = useState('adventure');
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedCard, setGeneratedCard] = useState(null);
+  const [error, setError] = useState(null);
   
   const canvasRef = useRef(null);
 
@@ -58,33 +56,68 @@ const EnhancedVibeCardGenerator = ({
 
   const generateVibeCard = async (choices) => {
     setIsGenerating(true);
+    setError(null);
+    
     try {
       // Extract capsuleId from capsuleData
       const capsuleId = capsuleData?.capsuleId || capsuleData?.id || `capsule_${Date.now()}`;
-      console.log('Sending API request with capsuleId:', capsuleId); // Debug log
-      const cardData = await apiPostWithFallback('/generate-enhanced-vibe-card', {
-        capsuleId,          // ADD THIS - required by backend
-        template: 'cosmic', // ADD THIS - backend expects this
-        moodData: mockMoodData,
-        completionStats: completionStats || { vibePointsEarned: 45 }, // ADD THIS
-        userChoices: choices // FIX: backend expects 'userChoices', not 'choices'
-        // REMOVE: user: mockUser (backend doesn't expect this)
-      });
+      console.log('Attempting to generate vibe card with capsuleId:', capsuleId);
       
-      setGeneratedCard(cardData.card || cardData.data); // Handle different response formats
-      onComplete?.(cardData.card || cardData.data);
+      // Try multiple endpoints with fallback
+      const endpoints = [
+        '/generate-enhanced-vibe-card',
+        '/generate-vibe-card',
+        '/create-vibe-card'
+      ];
+      
+      let cardData = null;
+      let lastError = null;
+      
+      for (const endpoint of endpoints) {
+        try {
+          console.log(`Trying endpoint: ${endpoint}`);
+          
+          const payload = {
+            capsuleId,
+            template: 'cosmic',
+            moodData: mockMoodData,
+            completionStats: completionStats || { vibePointsEarned: 45 },
+            userChoices: choices,
+            user: {
+              id: mockUser.id,
+              name: mockUser.name,
+              level: mockUser.level,
+              totalPoints: mockUser.totalPoints
+            }
+          };
+          
+          const result = await apiPostWithFallback(endpoint, payload);
+          
+          if (result.success || result.card || result.data) {
+            cardData = result.card || result.data || result;
+            console.log('Successfully generated card from endpoint:', endpoint);
+            break;
+          }
+        } catch (endpointError) {
+          console.warn(`Endpoint ${endpoint} failed:`, endpointError);
+          lastError = endpointError;
+          continue;
+        }
+      }
+      
+      if (!cardData) {
+        throw lastError || new Error('All endpoints failed');
+      }
+      
+      setGeneratedCard(cardData);
+      onComplete?.(cardData);
+      
     } catch (error) {
       console.error('Failed to generate enhanced vibe card:', error);
-      // Fallback card generation
-      const fallbackCard = {
-        id: `enhanced_${Date.now()}`,
-        design: { template: 'cosmic', animated: true },
-        content: {
-          adventure: { title: 'Your Creative Journey', outcome: 'Embraced new possibilities' },
-          reflection: { insight: 'Growth happens outside comfort zones' },
-          action: { commitment: 'Continue exploring new perspectives' }
-        }
-      };
+      setError('Failed to generate vibe card from server');
+      
+      // Enhanced fallback card generation
+      const fallbackCard = createFallbackCard(choices);
       setGeneratedCard(fallbackCard);
       onComplete?.(fallbackCard);
     } finally {
@@ -92,46 +125,127 @@ const EnhancedVibeCardGenerator = ({
     }
   };
 
+  const createFallbackCard = (choices) => {
+    console.log('Creating fallback card with choices:', choices);
+    
+    return {
+      id: `enhanced_${Date.now()}`,
+      design: { 
+        template: 'cosmic', 
+        animated: true,
+        colors: ['#533483', '#7209b7', '#a663cc', '#4cc9f0']
+      },
+      content: {
+        adventure: { 
+          title: choices.adventure?.title || 'Your Creative Journey', 
+          outcome: choices.adventure?.description || 'Embraced new possibilities' 
+        },
+        reflection: { 
+          insight: choices.reflection?.description || 'Growth happens outside comfort zones' 
+        },
+        action: { 
+          commitment: choices.action?.description || 'Continue exploring new perspectives' 
+        },
+        summary: `You chose ${choices.adventure?.title || 'creativity'}, reflected on ${choices.reflection?.title || 'growth'}, and committed to ${choices.action?.title || 'action'}.`
+      },
+      user: {
+        name: mockUser.name,
+        level: mockUser.level,
+        totalPoints: mockUser.totalPoints,
+        avatar: mockUser.avatar
+      },
+      points: {
+        earned: 45,
+        breakdown: {
+          adventure: 15,
+          reflection: 15,
+          action: 15
+        }
+      },
+      sharing: {
+        captions: [
+          `Just completed an amazing SparkVibe adventure! 🌟 #SparkVibe #PersonalGrowth`,
+          `Level up complete! 🚀 Thanks @SparkVibe for the daily inspiration #Adventure`,
+          `Another day, another vibe! ✨ Who else is on their growth journey? #SparkVibe`
+        ],
+        hashtags: ['#SparkVibe', '#Adventure', '#Growth', '#Inspiration'],
+        qrCode: 'https://github.com/reehan7086/SparkVibe'
+      },
+      fallback: true,
+      timestamp: new Date().toISOString()
+    };
+  };
+
   // Generate animated canvas background
   useEffect(() => {
     if (generatedCard && canvasRef.current) {
-      const canvas = canvasRef.current;
-      const ctx = canvas.getContext('2d');
-      canvas.width = 300;
-      canvas.height = 500;
+      drawCard();
+    }
+  }, [generatedCard]);
 
-      // Create gradient background
-      const gradient = ctx.createLinearGradient(0, 0, 0, 500);
+  const drawCard = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    
+    const ctx = canvas.getContext('2d');
+    canvas.width = 300;
+    canvas.height = 500;
+
+    // Create gradient background
+    const gradient = ctx.createLinearGradient(0, 0, 0, 500);
+    if (generatedCard.design?.colors) {
+      generatedCard.design.colors.forEach((color, index) => {
+        gradient.addColorStop(index / (generatedCard.design.colors.length - 1), color);
+      });
+    } else {
       gradient.addColorStop(0, '#7c3aed');
       gradient.addColorStop(0.5, '#ec4899');
       gradient.addColorStop(1, '#3b82f6');
-      
-      ctx.fillStyle = gradient;
-      ctx.fillRect(0, 0, 300, 500);
-
-      // Add animated elements
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
-      for (let i = 0; i < 50; i++) {
-        const x = Math.random() * 300;
-        const y = Math.random() * 500;
-        const size = Math.random() * 3 + 1;
-        ctx.beginPath();
-        ctx.arc(x, y, size, 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      // Add content text
-      ctx.fillStyle = 'white';
-      ctx.font = 'bold 20px Arial';
-      ctx.textAlign = 'center';
-      ctx.fillText('Enhanced Vibe Card', 150, 50);
-      
-      ctx.font = '16px Arial';
-      ctx.fillText(`${mockUser.name}`, 150, 100);
-      ctx.fillText(`Level ${mockUser.level}`, 150, 130);
-      ctx.fillText(`${mockUser.totalPoints} Points`, 150, 160);
     }
-  }, [generatedCard, mockUser]);
+    
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, 300, 500);
+
+    // Add animated elements
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+    for (let i = 0; i < 30; i++) {
+      const x = Math.random() * 300;
+      const y = Math.random() * 500;
+      const size = Math.random() * 3 + 1;
+      ctx.beginPath();
+      ctx.arc(x, y, size, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Add content text
+    ctx.fillStyle = 'white';
+    ctx.font = 'bold 20px Arial';
+    ctx.textAlign = 'center';
+    ctx.shadowColor = 'rgba(0,0,0,0.5)';
+    ctx.shadowBlur = 2;
+    ctx.fillText('Enhanced Vibe Card', 150, 50);
+    
+    ctx.font = '16px Arial';
+    ctx.fillText(`${mockUser.name}`, 150, 100);
+    ctx.fillText(`Level ${mockUser.level}`, 150, 130);
+    ctx.fillText(`${mockUser.totalPoints} Points`, 150, 160);
+    
+    if (generatedCard.points?.earned) {
+      ctx.font = 'bold 18px Arial';
+      ctx.fillStyle = '#ffeb3b';
+      ctx.fillText(`+${generatedCard.points.earned} Points`, 150, 200);
+    }
+    
+    // Add phase completion indicators
+    const phases = ['Adventure', 'Reflection', 'Action'];
+    phases.forEach((phase, index) => {
+      ctx.fillStyle = 'rgba(255,255,255,0.8)';
+      ctx.font = '12px Arial';
+      ctx.fillText(`✓ ${phase}`, 150, 250 + (index * 20));
+    });
+
+    ctx.shadowBlur = 0;
+  };
 
   if (isGenerating) {
     return (
@@ -146,6 +260,13 @@ const EnhancedVibeCardGenerator = ({
         </div>
         <h3 className="text-2xl font-bold text-white mb-2">Creating your personalized vibe card...</h3>
         <p className="text-purple-200">AI is crafting something special based on your journey</p>
+        
+        {error && (
+          <div className="mt-4 p-3 bg-yellow-500/20 border border-yellow-400/30 rounded-lg">
+            <p className="text-yellow-200 text-sm">{error}</p>
+            <p className="text-yellow-300 text-xs mt-1">Creating fallback card...</p>
+          </div>
+        )}
       </motion.div>
     );
   }
@@ -159,6 +280,14 @@ const EnhancedVibeCardGenerator = ({
       >
         <h2 className="text-3xl font-bold text-white text-center mb-6">Your Enhanced Vibe Card</h2>
         
+        {generatedCard.fallback && (
+          <div className="mb-4 p-3 bg-blue-500/20 border border-blue-400/30 rounded-lg text-center">
+            <p className="text-blue-200 text-sm">
+              🔄 Generated locally - Backend endpoints unavailable
+            </p>
+          </div>
+        )}
+        
         <div className="relative bg-black rounded-2xl overflow-hidden shadow-2xl mx-auto max-w-sm">
           <canvas
             ref={canvasRef}
@@ -167,23 +296,103 @@ const EnhancedVibeCardGenerator = ({
           />
           
           <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex gap-3">
-            <button className="bg-white/20 backdrop-blur-md hover:bg-white/30 p-3 rounded-full transition-all duration-300">
+            <button 
+              onClick={() => {
+                const link = document.createElement('a');
+                link.download = `sparkvibe-card-${Date.now()}.png`;
+                link.href = canvasRef.current.toDataURL();
+                link.click();
+              }}
+              className="bg-white/20 backdrop-blur-md hover:bg-white/30 p-3 rounded-full transition-all duration-300"
+            >
               📥
             </button>
-            <button className="bg-white/20 backdrop-blur-md hover:bg-white/30 p-3 rounded-full transition-all duration-300">
+            <button 
+              onClick={() => {
+                if (navigator.share) {
+                  navigator.share({
+                    title: 'My SparkVibe Card',
+                    text: generatedCard.sharing?.captions[0] || 'Check out my SparkVibe adventure!',
+                    url: generatedCard.sharing?.qrCode || window.location.href
+                  });
+                } else {
+                  // Fallback to clipboard
+                  navigator.clipboard.writeText(generatedCard.sharing?.qrCode || window.location.href);
+                  alert('Link copied to clipboard!');
+                }
+              }}
+              className="bg-white/20 backdrop-blur-md hover:bg-white/30 p-3 rounded-full transition-all duration-300"
+            >
               📤
             </button>
           </div>
         </div>
 
-        <div className="mt-6 text-center">
-          <p className="text-white/80 mb-4">Your personalized vibe card is ready to share!</p>
+        {/* Card Summary */}
+        <div className="mt-6 space-y-4">
+          <div className="bg-white/10 rounded-xl p-4">
+            <h3 className="text-lg font-semibold text-white mb-3">Journey Summary</h3>
+            <div className="space-y-2 text-sm">
+              <p><span className="font-semibold text-purple-300">Adventure:</span> <span className="text-white/80">{generatedCard.content?.adventure?.title}</span></p>
+              <p><span className="font-semibold text-blue-300">Reflection:</span> <span className="text-white/80">{generatedCard.content?.reflection?.insight}</span></p>
+              <p><span className="font-semibold text-green-300">Action:</span> <span className="text-white/80">{generatedCard.content?.action?.commitment}</span></p>
+              {generatedCard.points && (
+                <p><span className="font-semibold text-yellow-300">Points Earned:</span> <span className="text-white/80">+{generatedCard.points.earned}</span></p>
+              )}
+            </div>
+          </div>
+
+          {/* Sharing Options */}
           <div className="flex justify-center space-x-4">
-            <button className="bg-blue-600 hover:bg-blue-700 px-6 py-2 rounded-xl text-white font-semibold transition-colors">
-              Share on Social
+            <button 
+              onClick={() => {
+                const link = document.createElement('a');
+                link.download = `sparkvibe-enhanced-card-${Date.now()}.png`;
+                link.href = canvasRef.current.toDataURL();
+                link.click();
+              }}
+              className="bg-blue-600 hover:bg-blue-700 px-6 py-2 rounded-xl text-white font-semibold transition-colors"
+            >
+              Download Card
             </button>
-            <button className="bg-green-600 hover:bg-green-700 px-6 py-2 rounded-xl text-white font-semibold transition-colors">
-              Save to Gallery
+            <button 
+              onClick={() => {
+                const shareText = generatedCard.sharing?.captions[0] || 'Check out my SparkVibe adventure!';
+                const shareUrl = generatedCard.sharing?.qrCode || window.location.href;
+                
+                if (navigator.share) {
+                  navigator.share({
+                    title: 'My Enhanced SparkVibe Card',
+                    text: shareText,
+                    url: shareUrl
+                  });
+                } else {
+                  // Fallback - copy to clipboard and open Twitter
+                  navigator.clipboard.writeText(`${shareText} ${shareUrl}`);
+                  window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(shareUrl)}`, '_blank');
+                }
+              }}
+              className="bg-green-600 hover:bg-green-700 px-6 py-2 rounded-xl text-white font-semibold transition-colors"
+            >
+              Share Card
+            </button>
+          </div>
+
+          {/* Progress to Next Adventure */}
+          <div className="bg-gradient-to-r from-purple-500/20 to-pink-500/20 border border-purple-400/30 rounded-xl p-4 text-center">
+            <h4 className="font-semibold text-white mb-2">Ready for Your Next Adventure?</h4>
+            <p className="text-white/80 text-sm mb-3">You've earned {generatedCard.points?.earned || 45} points and completed all phases!</p>
+            <button 
+              onClick={() => {
+                setGeneratedCard(null);
+                setCurrentPhase('adventure');
+                if (onComplete) {
+                  onComplete(generatedCard);
+                }
+              }}
+              className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 px-4 py-2 rounded-xl text-white font-medium transition-all duration-300"
+            >
+              Start New Adventure
             </button>
           </div>
         </div>

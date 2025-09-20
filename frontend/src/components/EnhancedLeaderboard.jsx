@@ -3,12 +3,12 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAutoAnimate } from '@formkit/auto-animate/react';
 import { apiGet } from '../utils/safeUtils';
 
-const EnhancedLeaderboard = () => {
+const EnhancedLeaderboard = ({ isCollapsed = false, onToggle }) => {
   const [leaderboardData, setLeaderboardData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [category, setCategory] = useState('points');
   const [timeframe, setTimeframe] = useState('all');
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(!isCollapsed);
   const [error, setError] = useState(null);
   
   const [containerRef] = useAutoAnimate();
@@ -34,14 +34,31 @@ const EnhancedLeaderboard = () => {
       const response = await apiGet(`/leaderboard-enhanced?category=${category}&timeframe=${timeframe}&limit=20`);
       
       if (response.success) {
-        setLeaderboardData(response.data);
+        // Process the data to fix avatar URLs and ensure proper user data
+        const processedData = response.data.map(user => ({
+          ...user,
+          // Fix Google profile image URLs
+          avatar: user.avatar && user.avatar.startsWith('http') 
+            ? null // Will fall back to emoji avatar
+            : user.avatar || getDefaultAvatar(user.username),
+          profileImage: user.avatar && user.avatar.startsWith('http') 
+            ? user.avatar 
+            : null,
+          // Ensure score exists
+          score: user.score || user.totalPoints || 0,
+          // Ensure proper username display
+          username: user.username || user.name || 'Anonymous User'
+        }));
+        
+        setLeaderboardData(processedData);
       } else {
         setLeaderboardData([]);
       }
     } catch (error) {
       console.error('Failed to fetch enhanced leaderboard:', error);
       setError('Failed to load leaderboard');
-      // Fallback data
+      
+      // Enhanced fallback data with proper avatars
       setLeaderboardData([
         {
           id: '1',
@@ -66,11 +83,29 @@ const EnhancedLeaderboard = () => {
           level: 3,
           isOnline: false,
           achievements: ['First Steps', 'Social Butterfly']
+        },
+        {
+          id: '3',
+          username: 'Mood Explorer',
+          avatar: '🎨',
+          score: 1234,
+          rank: 3,
+          streak: 8,
+          cardsGenerated: 10,
+          level: 2,
+          isOnline: true,
+          achievements: ['Creative Spirit']
         }
       ]);
     } finally {
       setLoading(false);
     }
+  };
+
+  const getDefaultAvatar = (username) => {
+    const avatars = ['🚀', '🌟', '🎨', '💫', '🔥', '⚡', '🌈', '🎯', '🏆', '💎'];
+    const index = username ? username.length % avatars.length : 0;
+    return avatars[index];
   };
 
   useEffect(() => {
@@ -96,6 +131,15 @@ const EnhancedLeaderboard = () => {
     }
   };
 
+  // Handle small icon click - show expanded view immediately
+  const handleIconClick = () => {
+    setIsExpanded(true);
+    if (onToggle) {
+      onToggle(true);
+    }
+  };
+
+  // Collapsed/Small Icon View
   if (!isExpanded) {
     return (
       <motion.div
@@ -104,20 +148,44 @@ const EnhancedLeaderboard = () => {
         className="mb-4"
       >
         <motion.button
-          onClick={() => setIsExpanded(true)}
-          className="bg-purple-600/90 hover:bg-purple-700/90 backdrop-blur-md border border-white/20 rounded-xl p-3 shadow-xl w-full"
+          onClick={handleIconClick} // Direct expansion on click
+          className="bg-purple-600/90 hover:bg-purple-700/90 backdrop-blur-md border border-white/20 rounded-xl p-3 shadow-xl w-full group"
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
         >
           <div className="flex items-center space-x-2 text-white">
             <span className="text-lg">🏆</span>
             <span className="text-sm font-medium">Leaderboard</span>
+            <div className="flex -space-x-1 ml-auto">
+              {leaderboardData.slice(0, 3).map((user, index) => (
+                <div key={user.id} className="relative">
+                  {user.profileImage ? (
+                    <img
+                      src={user.profileImage}
+                      alt={user.username}
+                      className="w-6 h-6 rounded-full border border-white/30"
+                      onError={(e) => {
+                        e.target.style.display = 'none';
+                        e.target.nextSibling.style.display = 'flex';
+                      }}
+                    />
+                  ) : null}
+                  <div 
+                    className="w-6 h-6 rounded-full bg-purple-500 border border-white/30 flex items-center justify-center text-xs"
+                    style={{ display: user.profileImage ? 'none' : 'flex' }}
+                  >
+                    {user.avatar}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </motion.button>
       </motion.div>
     );
   }
 
+  // Expanded View
   return (
     <AnimatePresence>
       <motion.div
@@ -134,7 +202,10 @@ const EnhancedLeaderboard = () => {
               <h3 className="text-lg font-bold text-white">Enhanced Leaderboard</h3>
             </div>
             <button
-              onClick={() => setIsExpanded(false)}
+              onClick={() => {
+                setIsExpanded(false);
+                if (onToggle) onToggle(false);
+              }}
               className="text-white/60 hover:text-white p-1"
             >
               ✕
@@ -200,7 +271,7 @@ const EnhancedLeaderboard = () => {
           {/* Leaderboard List */}
           {!loading && !error && (
             <div ref={containerRef} className="space-y-2">
-              {leaderboardData.length > 0 ? (
+              {Array.isArray(leaderboardData) && leaderboardData.length > 0 ? (
                 leaderboardData.map((user, index) => (
                   <motion.div
                     key={user.id}
@@ -216,7 +287,35 @@ const EnhancedLeaderboard = () => {
                     <div className="flex items-center space-x-3">
                       <span className="text-lg">{getRankEmoji(user.rank)}</span>
                       <div className="flex items-center space-x-2">
-                        <span className="text-lg">{user.avatar}</span>
+                        {/* User Avatar/Profile Image */}
+                        <div className="relative w-8 h-8">
+                          {user.profileImage ? (
+                            <>
+                              <img
+                                src={user.profileImage}
+                                alt={user.username}
+                                className="w-8 h-8 rounded-full border border-white/30"
+                                onError={(e) => {
+                                  e.target.style.display = 'none';
+                                  e.target.nextSibling.style.display = 'flex';
+                                }}
+                              />
+                              <div 
+                                className="w-8 h-8 rounded-full bg-purple-500 border border-white/30 flex items-center justify-center text-sm absolute inset-0"
+                                style={{ display: 'none' }}
+                              >
+                                {user.avatar || getDefaultAvatar(user.username)}
+                              </div>
+                            </>
+                          ) : (
+                            <div className="w-8 h-8 rounded-full bg-purple-500 border border-white/30 flex items-center justify-center text-sm">
+                              {user.avatar || getDefaultAvatar(user.username)}
+                            </div>
+                          )}
+                          {user.isOnline && (
+                            <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-400 rounded-full border border-white"></div>
+                          )}
+                        </div>
                         <div>
                           <div className="flex items-center space-x-2">
                             <span className={`font-medium text-sm ${
@@ -224,9 +323,6 @@ const EnhancedLeaderboard = () => {
                             }`}>
                               {user.username}
                             </span>
-                            {user.isOnline && (
-                              <div className="w-2 h-2 bg-green-400 rounded-full"></div>
-                            )}
                             {user.isCurrentUser && (
                               <span className="text-xs bg-purple-500 text-white px-1 py-0.5 rounded">
                                 You
@@ -234,8 +330,8 @@ const EnhancedLeaderboard = () => {
                             )}
                           </div>
                           <div className="flex items-center space-x-2 text-xs text-white/60">
-                            <span>#{user.rank}</span>
-                            <span>Lv.{user.level}</span>
+                            <span>#{user.rank || index + 1}</span>
+                            {user.level > 1 && <span>Lv.{user.level}</span>}
                             {user.streak > 0 && <span>🔥{user.streak}</span>}
                           </div>
                         </div>
@@ -243,7 +339,9 @@ const EnhancedLeaderboard = () => {
                     </div>
                     
                     <div className="text-right">
-                      <div className="font-bold text-purple-300">
+                      <div className={`font-bold text-lg ${
+                        user.isCurrentUser ? 'text-purple-300' : 'text-purple-300'
+                      }`}>
                         {getScoreForCategory(user).toLocaleString()}
                       </div>
                       <div className="text-xs text-white/60">
@@ -260,16 +358,18 @@ const EnhancedLeaderboard = () => {
             </div>
           )}
 
-          {/* Footer */}
-          <div className="mt-4 pt-3 border-t border-white/10 text-center">
+          {/* Refresh Button */}
+          <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-between">
             <p className="text-xs text-white/40">
               Updates every 30 seconds
             </p>
-            {leaderboardData.length > 0 && (
-              <p className="text-xs text-white/40 mt-1">
-                Showing top {leaderboardData.length} players
-              </p>
-            )}
+            <button
+              onClick={fetchEnhancedLeaderboard}
+              disabled={loading}
+              className="text-xs text-purple-400 hover:text-purple-300 underline disabled:opacity-50"
+            >
+              {loading ? 'Refreshing...' : 'Refresh'}
+            </button>
           </div>
         </div>
       </motion.div>
