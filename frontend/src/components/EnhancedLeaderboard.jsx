@@ -26,6 +26,24 @@ const EnhancedLeaderboard = ({ isCollapsed = false, onToggle }) => {
     { id: 'week', name: 'This Week' }
   ];
 
+  // FIXED: Define helper functions only once, at the top
+  const getDefaultAvatar = (username) => {
+    const avatars = ['🚀', '🌟', '🎨', '💫', '🔥', '⚡', '🌈', '🎯', '🏆', '💎'];
+    const index = username ? username.length % avatars.length : 0;
+    return avatars[index];
+  };
+
+  const isCurrentUser = (user) => {
+    try {
+      const currentUser = JSON.parse(localStorage.getItem('sparkvibe_user') || '{}');
+      return user.id === currentUser.id || 
+             user.email === currentUser.email || 
+             user.username === currentUser.name;
+    } catch {
+      return false;
+    }
+  };
+
   const fetchEnhancedLeaderboard = async () => {
     try {
       setLoading(true);
@@ -34,28 +52,26 @@ const EnhancedLeaderboard = ({ isCollapsed = false, onToggle }) => {
       const response = await apiGet(`/leaderboard-enhanced?category=${category}&timeframe=${timeframe}&limit=20`);
       
       if (response.success) {
-        // Process the data to fix avatar URLs and ensure proper user data
-        const processedData = response.data.map(user => ({
-          ...user,
-          // Fix Google profile image URLs
-          avatar: user.avatar && user.avatar.startsWith('http') 
-            ? null // Will fall back to emoji avatar
-            : user.avatar || getDefaultAvatar(user.username),
-          profileImage: user.avatar && user.avatar.startsWith('http') 
-            ? user.avatar 
-            : null,
-          // Ensure score exists
-          score: user.score || user.totalPoints || 0,
-          // Ensure proper username display
-          username: user.username || user.name || 'Anonymous User'
-        }));
+        // FIXED: Process Google profile images properly
+        const processedData = response.data.map(user => {
+          const isGoogleProfileUrl = user.avatar && user.avatar.startsWith('https://lh3.googleusercontent.com');
+          
+          return {
+            ...user,
+            profileImage: isGoogleProfileUrl ? user.avatar : null,
+            avatar: isGoogleProfileUrl ? getDefaultAvatar(user.username || user.name) : (user.avatar || getDefaultAvatar(user.username || user.name)),
+            score: user.score || user.totalPoints || 0,
+            username: user.username || user.name || 'Anonymous User',
+            isCurrentUser: isCurrentUser(user)
+          };
+        });
         
         setLeaderboardData(processedData);
       } else {
         setLeaderboardData([]);
       }
     } catch (error) {
-      console.error('Failed to fetch enhanced leaderboard:', error);
+      console.error('Failed to fetch leaderboard:', error);
       setError('Failed to load leaderboard');
       
       // Enhanced fallback data with proper avatars
@@ -100,12 +116,6 @@ const EnhancedLeaderboard = ({ isCollapsed = false, onToggle }) => {
     } finally {
       setLoading(false);
     }
-  };
-
-  const getDefaultAvatar = (username) => {
-    const avatars = ['🚀', '🌟', '🎨', '💫', '🔥', '⚡', '🌈', '🎯', '🏆', '💎'];
-    const index = username ? username.length % avatars.length : 0;
-    return avatars[index];
   };
 
   useEffect(() => {
@@ -158,7 +168,7 @@ const EnhancedLeaderboard = ({ isCollapsed = false, onToggle }) => {
             <span className="text-sm font-medium">Leaderboard</span>
             <div className="flex -space-x-1 ml-auto">
               {leaderboardData.slice(0, 3).map((user, index) => (
-                <div key={user.id} className="relative">
+                <div key={user.id || index} className="relative">
                   {user.profileImage ? (
                     <img
                       src={user.profileImage}
@@ -287,14 +297,14 @@ const EnhancedLeaderboard = ({ isCollapsed = false, onToggle }) => {
                     <div className="flex items-center space-x-3">
                       <span className="text-lg">{getRankEmoji(user.rank)}</span>
                       <div className="flex items-center space-x-2">
-                        {/* User Avatar/Profile Image */}
+                        {/* FIXED: User Avatar/Profile Image */}
                         <div className="relative w-8 h-8">
                           {user.profileImage ? (
                             <>
                               <img
                                 src={user.profileImage}
                                 alt={user.username}
-                                className="w-8 h-8 rounded-full border border-white/30"
+                                className="w-8 h-8 rounded-full border border-white/30 object-cover"
                                 onError={(e) => {
                                   e.target.style.display = 'none';
                                   e.target.nextSibling.style.display = 'flex';
@@ -313,7 +323,7 @@ const EnhancedLeaderboard = ({ isCollapsed = false, onToggle }) => {
                             </div>
                           )}
                           {user.isOnline && (
-                            <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-400 rounded-full border border-white"></div>
+                            <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-400 rounded-full border-2 border-gray-900"></div>
                           )}
                         </div>
                         <div>

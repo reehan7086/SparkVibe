@@ -1,4 +1,4 @@
-// App.jsx - REVERTED VERSION with all features working
+// App.jsx - FIXED VERSION with proper state management and flow
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { apiGet, apiPost, safeIncludes } from './utils/safeUtils';
@@ -23,18 +23,21 @@ import CompletionCelebration from './components/CompletionCelebration';
 import ErrorBoundary from './components/ErrorBoundary';
 
 const App = () => {
-  // State declarations
+  // Core state - simplified and fixed
   const [health, setHealth] = useState('Checking...');
-  const [capsuleData, setCapsuleData] = useState(null);
-  const [userChoices, setUserChoices] = useState({});
-  const [completionStats, setCompletionStats] = useState({ vibePointsEarned: 0 });
-  const [moodData, setMoodData] = useState(null);
   const [currentStep, setCurrentStep] = useState('mood');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [cardData, setCardData] = useState(null);
   const [error, setError] = useState('');
+
+  // Flow data - properly initialized
+  const [moodData, setMoodData] = useState(null);
+  const [capsuleData, setCapsuleData] = useState(null);
+  const [cardData, setCardData] = useState(null);
+  const [userChoices, setUserChoices] = useState({});
+  const [completionStats, setCompletionStats] = useState({ vibePointsEarned: 0 });
+
   // Enhanced features state
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -42,13 +45,13 @@ const App = () => {
   const [challenges, setChallenges] = useState([]);
   const [achievements, setAchievements] = useState([]);
   const [newAchievements, setNewAchievements] = useState([]);
+  
+  // UI state
   const [showNotifications, setShowNotifications] = useState(false);
   const [showFriends, setShowFriends] = useState(false);
   const [showChallenges, setShowChallenges] = useState(false);
   const [isEnhancedMode, setIsEnhancedMode] = useState(true);
   const [onlineUsers, setOnlineUsers] = useState(0);
-  
-  // Mobile sidebar state
   const [showMobileSidebar, setShowMobileSidebar] = useState(false);
 
   // WebSocket reference
@@ -56,7 +59,7 @@ const App = () => {
 
   console.log('App render - Current step:', currentStep, 'Auth:', isAuthenticated, 'Loading:', loading);
   
-  // MOBILE VIEWPORT HEIGHT FIX - Critical for mobile responsiveness
+  // MOBILE VIEWPORT HEIGHT FIX
   useEffect(() => {
     const setVH = () => {
       let vh = window.innerHeight * 0.01;
@@ -73,55 +76,59 @@ const App = () => {
     };
   }, []);
 
-// Add this useEffect after the viewport height fix
-useEffect(() => {
-  const handleOAuthRedirect = () => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const code = urlParams.get('code');
-    const state = urlParams.get('state');
-    if (code && state) {
-      const storedState = sessionStorage.getItem('google_oauth_state');
-      console.log('Stored State:', storedState, 'Received State:', state); // Debug
-      if (state === storedState) {
-        apiPost('/auth/google', { code })
-          .then(result => {
-            if (result.success && result.data) {
-              AuthService.setAuthData(result.data.token, result.data.user);
-              setIsAuthenticated(true);
-              setUser(result.data.user);
+  // OAuth redirect handler
+  useEffect(() => {
+    const handleOAuthRedirect = () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      const code = urlParams.get('code');
+      const state = urlParams.get('state');
+      
+      if (code && state) {
+        const storedState = sessionStorage.getItem('google_oauth_state');
+        console.log('OAuth redirect - Stored State:', storedState, 'Received State:', state);
+        
+        if (state === storedState) {
+          apiPost('/auth/google', { code })
+            .then(result => {
+              if (result.success && result.data) {
+                AuthService.setAuthData(result.data.token, result.data.user);
+                setIsAuthenticated(true);
+                setUser(result.data.user);
+                window.history.replaceState({}, document.title, window.location.pathname);
+                setError('');
+              }
+            })
+            .catch(error => {
+              console.error('OAuth code exchange failed:', error);
+              setError('Authentication failed. Please try again.');
               window.history.replaceState({}, document.title, window.location.pathname);
-              setError(''); // Clear error on success
-            }
-          })
-          .catch(error => {
-            console.error('OAuth code exchange failed:', error);
-            setError('Authentication failed. Please try again.');
-            window.history.replaceState({}, document.title, window.location.pathname);
-          });
-      } else {
-        setError('Invalid authentication state');
-        window.history.replaceState({}, document.title, window.location.pathname);
+            });
+        } else {
+          setError('Invalid authentication state');
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }
+        sessionStorage.removeItem('google_oauth_state');
       }
-      sessionStorage.removeItem('google_oauth_state');
-    }
-  };
-  handleOAuthRedirect();
-  window.addEventListener('popstate', handleOAuthRedirect);
-  return () => window.removeEventListener('popstate', handleOAuthRedirect);
-}, []);
+    };
+    
+    handleOAuthRedirect();
+    window.addEventListener('popstate', handleOAuthRedirect);
+    return () => window.removeEventListener('popstate', handleOAuthRedirect);
+  }, []);
 
-// Add this useEffect after your viewport height fix and OAuth redirect handler
-useEffect(() => {
-  console.log('App state:', {
-    currentStep,
-    moodData: !!moodData,
-    capsuleData: !!capsuleData,
-    cardData: !!cardData,
-    user: !!user,
-    isAuthenticated
-  });
-}, [currentStep, moodData, capsuleData, cardData, user, isAuthenticated]);
-  // Enhanced user data update with event dispatching
+  // Debug state changes
+  useEffect(() => {
+    console.log('App state changed:', {
+      currentStep,
+      moodData: !!moodData,
+      capsuleData: !!capsuleData,
+      cardData: !!cardData,
+      user: !!user,
+      isAuthenticated
+    });
+  }, [currentStep, moodData, capsuleData, cardData, user, isAuthenticated]);
+
+  // Enhanced user data update
   const updateUserData = useCallback(async (updatedUser) => {
     console.log('Updating user data:', updatedUser);
     setUser(updatedUser);
@@ -144,10 +151,10 @@ useEffect(() => {
         });
         
         if (syncResult.success) {
-          console.log('Points synced with backend successfully');
+          console.log('User stats synced with backend successfully');
         }
       } catch (error) {
-        console.warn('Failed to sync points with backend:', error.message);
+        console.warn('Failed to sync user stats with backend:', error.message);
       }
     }
   }, []);
@@ -254,8 +261,9 @@ useEffect(() => {
     }
   }, [isAuthenticated, user?.isGuest, user?.id, fetchFriends]);
 
-  // Handle mood analysis completion
+  // FIXED: Flow handlers with proper state management
   const handleMoodAnalysisComplete = useCallback((analysisData) => {
+    console.log('Mood analysis complete:', analysisData);
     setMoodData(analysisData);
     setCurrentStep('capsule');
     trackEvent('mood_analysis_completed', { 
@@ -264,17 +272,17 @@ useEffect(() => {
     });
   }, [trackEvent]);
 
-  // Handle capsule generation
-  const handleCapsuleGenerated = useCallback((capsuleData) => {
-    setCapsuleData(capsuleData);
+  const handleCapsuleGenerated = useCallback((generatedCapsuleData) => {
+    console.log('Capsule generated:', generatedCapsuleData);
+    setCapsuleData(generatedCapsuleData);
     setCurrentStep('experience');
     trackEvent('capsule_generated', { 
-      adventureType: capsuleData.adventure?.category 
+      adventureType: generatedCapsuleData.adventure?.category 
     });
   }, [trackEvent]);
 
-  // Handle experience completion
   const handleExperienceComplete = useCallback(async (stats = {}) => {
+    console.log('Experience complete:', stats);
     setCompletionStats(stats);
     setCurrentStep('vibe-card');
     
@@ -288,7 +296,8 @@ useEffect(() => {
           ...user.stats,
           totalPoints: (user.stats?.totalPoints || 0) + completionPoints,
           streak: (user.stats?.streak || 0) + 1,
-          lastActiveDate: new Date().toISOString()
+          lastActiveDate: new Date().toISOString(),
+          adventuresCompleted: (user.stats?.adventuresCompleted || 0) + 1
         }
       };
       await updateUserData(updatedUser);
@@ -297,57 +306,44 @@ useEffect(() => {
     trackEvent('experience_completed', stats);
   }, [user, updateUserData, trackEvent]);
 
-  // FIXED: Handle vibe card generation (now uses setCardData)
-  const handleVibeCardGenerated = useCallback(async (cardData) => {
-    setCardData(cardData); // FIXED: was setCapsuleData
-    setCurrentStep('summary');
-    
-    if (user) {
-      const updatedUser = {
-        ...user,
-        cardsGenerated: (user.cardsGenerated || 0) + 1,
-        totalPoints: (user.totalPoints || 0) + 25,
-        stats: {
-          ...user.stats,
-          cardsGenerated: (user.stats?.cardsGenerated || 0) + 1,
-          totalPoints: (user.stats?.totalPoints || 0) + 25
-        }
-      };
-      await updateUserData(updatedUser);
-    }
-    
-    trackEvent('vibe_card_generated', { 
-      cardType: cardData.type,
-      mood: moodData?.primaryMood || moodData?.mood
-    });
-  }, [user, updateUserData, trackEvent, moodData]);
-
-  const handleCardGenerated = useCallback(async (generatedCardData = {}) => {
-    console.log('Card generated callback:', generatedCardData); // Debug log
+  // FIXED: Consolidated card generation handler
+  const handleCardGenerated = useCallback(async (generatedCardData) => {
+    console.log('Card generated:', generatedCardData);
     setCardData(generatedCardData);
     setCurrentStep('summary');
     
     if (user) {
+      const cardPoints = 25;
       const updatedUser = {
         ...user,
         cardsGenerated: (user.cardsGenerated || 0) + 1,
-        totalPoints: (user.totalPoints || 0) + 25,
+        totalPoints: (user.totalPoints || 0) + cardPoints,
         stats: {
           ...user.stats,
           cardsGenerated: (user.stats?.cardsGenerated || 0) + 1,
-          totalPoints: (user.stats?.totalPoints || 0) + 25
+          totalPoints: (user.stats?.totalPoints || 0) + cardPoints
         }
       };
       await updateUserData(updatedUser);
     }
     
     trackEvent('card_generated', { 
-      cardType: generatedCardData.type,
+      cardType: generatedCardData.type || 'standard',
       mood: moodData?.primaryMood || moodData?.mood
     });
   }, [user, updateUserData, trackEvent, moodData]);
+
+  // FIXED: User choice handler for CapsuleExperience
+  const handleUserChoice = useCallback((choiceType, choiceData) => {
+    console.log('User choice made:', choiceType, choiceData);
+    setUserChoices(prev => ({
+      ...prev,
+      [choiceType]: choiceData
+    }));
+  }, []);
  
   const resetFlow = useCallback(() => {
+    console.log('Resetting flow');
     setCurrentStep('mood');
     setMoodData(null);
     setCapsuleData(null);
@@ -357,45 +353,59 @@ useEffect(() => {
   }, []);
 
   const shareCard = useCallback(async () => {
-    if (!cardData) return;
+    if (!cardData) {
+      console.warn('No card data to share');
+      return;
+    }
     
     try {
       if (user) {
+        const sharePoints = 15;
         const updatedUser = {
           ...user,
           cardsShared: (user.cardsShared || 0) + 1,
-          totalPoints: (user.totalPoints || 0) + 15,
+          totalPoints: (user.totalPoints || 0) + sharePoints,
           stats: {
             ...user.stats,
             cardsShared: (user.stats?.cardsShared || 0) + 1,
-            totalPoints: (user.stats?.totalPoints || 0) + 15
+            totalPoints: (user.stats?.totalPoints || 0) + sharePoints
           }
         };
         await updateUserData(updatedUser);
       }
       
-      if (navigator.share) {
-        await navigator.share({
-          title: 'Check out my SparkVibe card!',
-          text: `I just created an awesome mood card with SparkVibe! ${cardData.adventure?.title || 'Check it out!'}`,
-          url: window.location.href
-        });
+      const shareData = {
+        title: 'Check out my SparkVibe card!',
+        text: `I just created an awesome mood card with SparkVibe! ${cardData.adventure?.title || 'Check it out!'}`,
+        url: window.location.href
+      };
+
+      if (navigator.share && navigator.canShare && navigator.canShare(shareData)) {
+        await navigator.share(shareData);
       } else {
-        const shareText = `Check out my SparkVibe card: ${cardData.adventure?.title || 'Mood adventure!'} - ${window.location.href}`;
+        const shareText = `${shareData.text} - ${shareData.url}`;
         await navigator.clipboard.writeText(shareText);
         alert('Share link copied to clipboard!');
       }
       
       trackEvent('card_shared', { 
-        cardType: cardData.type,
+        cardType: cardData.type || 'standard',
         method: navigator.share ? 'native' : 'clipboard'
       });
     } catch (error) {
       console.error('Failed to share card:', error);
+      // Fallback to copying URL
+      try {
+        await navigator.clipboard.writeText(window.location.href);
+        alert('Link copied to clipboard!');
+      } catch (clipboardError) {
+        console.error('Failed to copy to clipboard:', clipboardError);
+      }
     }
   }, [cardData, user, updateUserData, trackEvent]);
 
   const handleLogout = useCallback(() => {
+    console.log('Logging out user');
     AuthService.signOut();
     if (wsManager.current) {
       wsManager.current.disconnect();
@@ -429,13 +439,13 @@ useEffect(() => {
               ...currentUser,
               name: currentUser.name || currentUser.given_name || 'SparkVibe Explorer',
               totalPoints: currentUser.totalPoints || currentUser.stats?.totalPoints || 0,
-              level: currentUser.level || currentUser.stats?.level || 1,
+              level: currentUser.level || Math.floor((currentUser.totalPoints || currentUser.stats?.totalPoints || 0) / 100) + 1,
               streak: currentUser.streak || currentUser.stats?.streak || 0,
               cardsGenerated: currentUser.cardsGenerated || currentUser.stats?.cardsGenerated || 0,
               cardsShared: currentUser.cardsShared || currentUser.stats?.cardsShared || 0,
               stats: {
                 totalPoints: currentUser.totalPoints || currentUser.stats?.totalPoints || 0,
-                level: currentUser.level || currentUser.stats?.level || 1,
+                level: currentUser.level || Math.floor((currentUser.totalPoints || currentUser.stats?.totalPoints || 0) / 100) + 1,
                 streak: currentUser.streak || currentUser.stats?.streak || 0,
                 cardsGenerated: currentUser.cardsGenerated || currentUser.stats?.cardsGenerated || 0,
                 cardsShared: currentUser.cardsShared || currentUser.stats?.cardsShared || 0,
@@ -448,6 +458,7 @@ useEffect(() => {
             };
             
             setUser(userData);
+            localStorage.setItem('sparkvibe_user', JSON.stringify(userData));
             
             if (!userData.isGuest && !userData.provider?.includes('demo')) {
               await Promise.all([
@@ -580,17 +591,23 @@ useEffect(() => {
                   </svg>
                 </motion.button>
 
-<motion.button
-  onClick={() => setCurrentStep('leaderboard')}
-  className="p-2 text-white hover:bg-white/10 rounded-full transition-colors touch-target"
-  whileHover={{ scale: 1.05 }}
-  whileTap={{ scale: 0.95 }}
-  title="Leaderboard"
->
-  <svg className="w-5 h-5 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v4a2 2 0 01-2 2h-2a2 2 0 00-2-2z" />
-  </svg>
-</motion.button>
+                <motion.button
+                  onClick={() => setCurrentStep('leaderboard')}
+                  className="relative p-2 text-white hover:bg-white/10 rounded-full transition-colors touch-target"
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  title="View Leaderboard"
+                >
+                  <svg className="w-5 h-5 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v4a2 2 0 01-2 2h-2a2 2 0 00-2-2z" />
+                  </svg>
+                  {user && user.totalPoints > 0 && (
+                    <span className="absolute -top-1 -right-1 bg-purple-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">
+                      {Math.min(Math.floor(user.totalPoints / 100) + 1, 99)}
+                    </span>
+                  )}
+                </motion.button>
+                
                 <motion.button
                   onClick={handleLogout}
                   className="px-2 py-1 md:px-3 md:py-1 text-xs md:text-sm text-white bg-white/20 hover:bg-white/30 rounded-full transition-colors touch-target"
@@ -620,7 +637,7 @@ useEffect(() => {
           user={user}
         />
 
-        {/* Achievement Notifications - FIXED: Added missing section */}
+        {/* Achievement Notifications */}
         <AnimatePresence>
           {newAchievements.map((achievement) => (
             <AchievementDisplay
@@ -631,22 +648,25 @@ useEffect(() => {
           ))}
         </AnimatePresence>
 
-        {/* Main Content - SINGLE AnimatePresence */}
+        {/* Main Content - SINGLE AnimatePresence with proper step management */}
         <main className="relative z-10 mobile-container py-4 md:py-8">
           <div className="max-w-4xl mx-auto">
-          <ErrorBoundary fallback={<div className="text-red-400 text-center p-4">Something went wrong. Please refresh the page.</div>}>
-          <AnimatePresence mode="wait">
-              {currentStep === 'mood' && (
-                <motion.div 
-                  key="mood" 
-                  initial={{ opacity: 0, y: 20 }} 
-                  animate={{ opacity: 1, y: 0 }} 
-                  exit={{ opacity: 0, y: -20 }} 
-                  transition={{ duration: 0.5 }}
-                >
-                  <MoodAnalyzer onMoodAnalyzed={handleMoodAnalysisComplete} isActive={true} />
-                </motion.div>
-              )}
+            <ErrorBoundary fallback={<div className="text-red-400 text-center p-4">Something went wrong with this step. Please try again.</div>}>
+              <AnimatePresence mode="wait">
+                {currentStep === 'mood' && (
+                  <motion.div 
+                    key="mood" 
+                    initial={{ opacity: 0, y: 20 }} 
+                    animate={{ opacity: 1, y: 0 }} 
+                    exit={{ opacity: 0, y: -20 }} 
+                    transition={{ duration: 0.5 }}
+                  >
+                    <MoodAnalyzer 
+                      onMoodAnalyzed={handleMoodAnalysisComplete} 
+                      isActive={true} 
+                    />
+                  </motion.div>
+                )}
 
               {currentStep === 'capsule' && (
                 <motion.div 
