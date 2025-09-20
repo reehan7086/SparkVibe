@@ -21,6 +21,7 @@ import CapsuleExperience from './components/CapsuleExperience';
 import MoodSummary from './components/MoodSummary';
 import CompletionCelebration from './components/CompletionCelebration';
 import ErrorBoundary from './components/ErrorBoundary';
+import DebugTest from './components/DebugTest';
 
 const App = () => {
   // State declarations
@@ -53,7 +54,10 @@ const App = () => {
 
   // WebSocket reference
   const wsManager = useRef(null);
-
+  const handleDebugClick = (e) => {
+    console.log('Click detected!', e.target);
+    e.stopPropagation();
+  };
   console.log('App render - Current step:', currentStep, 'Auth:', isAuthenticated, 'Loading:', loading);
   
   // MOBILE VIEWPORT HEIGHT FIX - Critical for mobile responsiveness
@@ -481,34 +485,67 @@ useEffect(() => {
   // Loading screen
   if (loading) {
     return (
-      <div className="min-h-screen min-h-screen-dynamic bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 flex items-center justify-center">
-        <motion.div 
-          className="text-center"
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.6 }}
-        >
+      <div 
+        className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 flex items-center justify-center"
+        onClick={handleDebugClick} // Debug clicks
+      > <DebugTest />
+        <div className="text-center">
           <div className="w-16 h-16 border-4 border-purple-400 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
           <h1 className="text-2xl font-bold text-white mb-2">SparkVibe</h1>
-          <p className="text-purple-200">Initializing your mood journey...</p>
-        </motion.div>
+          <p className="text-purple-200">Loading...</p>
+          
+          {/* EMERGENCY: Add skip button for testing */}
+          <button 
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setLoading(false);
+              setIsAuthenticated(true);
+              setUser({
+                id: 'debug_user',
+                name: 'Debug User',
+                email: 'debug@test.com',
+                isGuest: true,
+                totalPoints: 0,
+                level: 1
+              });
+            }}
+            className="mt-4 px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+            style={{ pointerEvents: 'auto', cursor: 'pointer' }}
+          >
+            🚨 Debug: Skip Loading
+          </button>
+        </div>
       </div>
     );
   }
 
   // Login screen
   if (!isAuthenticated) {
-    return <LoginScreen onLoginSuccess={(userData) => {
-      setIsAuthenticated(true);
-      setUser(userData);
-      setLoading(false);
-    }} />;
+    return (
+      <div onClick={handleDebugClick}>
+        <DebugTest />
+        <LoginScreen 
+          onLoginSuccess={(userData) => {
+            console.log('Login success:', userData);
+            setIsAuthenticated(true);
+            setUser(userData);
+            setLoading(false);
+          }} 
+        />
+      </div>
+    );
   }
   
   return (
     <ErrorBoundary fallback={<div className="text-red-400 text-center p-4">Something went wrong. Please refresh the page.</div>}>
-      <div className="min-h-screen min-h-screen-dynamic bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 relative no-scroll-x">
-        {/* Background Effects */}
+    <div 
+      className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 relative"
+      onClick={handleDebugClick}
+      style={{ pointerEvents: 'auto' }}
+    >       
+    <DebugTest />
+     {/* Background Effects */}
         <div className="absolute inset-0 opacity-20">
           <div className="absolute top-1/4 left-1/4 w-32 h-32 md:w-64 md:h-64 bg-purple-500 rounded-full mix-blend-multiply filter blur-xl animate-pulse"></div>
           <div className="absolute top-3/4 right-1/4 w-32 h-32 md:w-64 md:h-64 bg-blue-500 rounded-full mix-blend-multiply filter blur-xl animate-pulse delay-1000"></div>
