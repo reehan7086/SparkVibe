@@ -183,21 +183,45 @@ const registerPlugins = async () => {
   await fastify.register(fastifyWebsocket);
 
   await fastify.register(fastifyRateLimit, {
+    global: false,
     max: async (request) => {
-      if (request.url.includes('/auth/')) return 5;
-      if (request.url.includes('/generate-') || request.url.includes('/upload-media')) return 20;
-      if (request.url.includes('/premium/create-checkout')) return 5;
-      return (request.user && request.user.userId) ? 100 : 50;
+      if (request.url.includes('/health')) return 1000;
+      if (request.url.includes('/auth/')) return 20;
+      if (request.url.includes('/generate-') || request.url.includes('/upload-media')) return 60;
+      if (request.url.includes('/premium/create-checkout')) return 10;
+      // CRITICAL FIX: Increase these limits massively
+      if (request.url.includes('/friends') || request.url.includes('/notifications') || request.url.includes('/challenges')) return 1000;
+      if (request.url.includes('/leaderboard')) return 500;
+      
+      return (request.user && request.user.userId) ? 2000 : 500;
     },
     timeWindow: '1 minute',
-    keyGenerator: (request) => request.ip + ':' + (request.user?.userId || 'anonymous'),
+    
+    skip: (request) => {
+      if (request.url === '/health' || request.url === '/ping') return true;
+      if (request.headers['x-internal-request']) return true;
+      // Skip your K8s cluster IPs
+      const ip = request.ip || request.connection?.remoteAddress || '';
+      if (ip.startsWith('10.244.')) return true;
+      return false;
+    },
+    
+    keyGenerator: (request) => {
+      const ip = request.ip || 'unknown';
+      const userId = request.user?.userId || 'anonymous';
+      return `${ip}:${userId}`;
+    },
+    
+    // MAIN FIX: Return 429, not 500
     errorResponseBuilder: () => ({
-      success: false,
+      statusCode: 429,
+      error: 'Too Many Requests',
       message: 'Rate limit exceeded. Please try again later.',
-      retryAfter: 60
+      retryAfter: 60,
+      success: false
     })
   });
-
+  
   await fastify.register(fastifyStatic, {
     root: path.join(__dirname, 'uploads'),
     prefix: '/uploads/',
