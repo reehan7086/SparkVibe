@@ -895,40 +895,32 @@ const App = () => {
     }
   ], [headerButtonHandlers, unreadCount, user?.totalPoints]);
 
-  const HeaderSection = React.memo(({ user, health, unreadCount, handleLogout }) => {
-    // Memoize user display data to prevent unnecessary re-renders
-    const userDisplay = useMemo(() => ({
-      name: user?.name || 'SparkVibe Explorer',
-      level: user?.level || 1,
-      totalPoints: user?.totalPoints || 0,
-    }), [user?.name, user?.level, user?.totalPoints]);
-  
-    return (
-      <header className="relative z-10 p-3 md:p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 safe-area-inset">
-        <motion.div 
-          className="flex items-center space-x-2"
-          initial={{ opacity: 0, x: -20 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: 0.3, once: true }} // Run animation only once on mount
-        >
-          <h1 className="text-xl md:text-2xl font-bold text-white">SparkVibe</h1>
-          <ConnectionStatus status={health} />
-        </motion.div>
-  
+  const HeaderSection = React.memo(() => (
+    <header className="relative z-10 p-3 md:p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 safe-area-inset">
+      <motion.div 
+        className="flex items-center space-x-2"
+        initial={{ opacity: 0, x: -20 }}
+        animate={{ opacity: 1, x: 0 }}
+      >
+        <h1 className="text-xl md:text-2xl font-bold text-white">SparkVibe</h1>
+        <ConnectionStatus status={health} />
+      </motion.div>
+      
+      <div className="flex items-center space-x-2 md:space-x-4 w-full sm:w-auto justify-between sm:justify-end">
         {user && (
-          <div className="flex items-center space-x-2 md:space-x-4 w-full sm:w-auto justify-between sm:justify-end">
+          <div className="flex items-center space-x-2 md:space-x-4">
             <motion.div 
               className="text-white text-xs md:text-sm"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              transition={{ duration: 0.3, delay: 0.2, once: true }} // Single animation on mount
+              transition={{ delay: 0.2 }}
             >
-              <span className="font-medium truncate-mobile">{userDisplay.name}</span>
+              <span className="font-medium truncate-mobile">{user.name}</span>
               <div className="text-xs text-purple-200">
-                Level {userDisplay.level} • {userDisplay.totalPoints} points
+                Level {user.level || 1} • {user.totalPoints || 0} points
               </div>
             </motion.div>
-  
+            
             {optimizedHeaderButtons.map(button => (
               <HeaderButton
                 key={button.key}
@@ -945,23 +937,18 @@ const App = () => {
                 )}
               </HeaderButton>
             ))}
-  
+            
             <HeaderButton
-              onClick={handleLogout}
+              onClick={headerButtonHandlers.logout}
               className="px-2 py-1 md:px-3 md:py-1 text-xs md:text-sm text-white bg-white/20 hover:bg-white/30 rounded-full transition-colors touch-target"
             >
               Logout
             </HeaderButton>
           </div>
         )}
-      </header>
-    );
-  }, (prevProps, nextProps) => {
-    // Memoize based on props to prevent re-render unless critical data changes
-    return prevProps.health === nextProps.health &&
-           prevProps.user?.id === nextProps.user?.id &&
-           prevProps.unreadCount === nextProps.unreadCount;
-  });
+      </div>
+    </header>
+  ));
 
   // CRITICAL FIX 15: Final cleanup
   useEffect(() => {
