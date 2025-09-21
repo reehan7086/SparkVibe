@@ -183,45 +183,87 @@ const registerPlugins = async () => {
   await fastify.register(fastifyWebsocket);
 
   await fastify.register(fastifyRateLimit, {
-    global: false,
+    global: false, // Don't apply globally, apply per route
     max: async (request) => {
+      // MUCH more generous limits to prevent blocking
       if (request.url.includes('/health')) return 1000;
-      if (request.url.includes('/auth/')) return 20;
-      if (request.url.includes('/generate-') || request.url.includes('/upload-media')) return 60;
-      if (request.url.includes('/premium/create-checkout')) return 10;
-      // CRITICAL FIX: Increase these limits massively
-      if (request.url.includes('/friends') || request.url.includes('/notifications') || request.url.includes('/challenges')) return 1000;
-      if (request.url.includes('/leaderboard')) return 500;
+      if (request.url.includes('/auth/')) return 20; // Increased from 10
+      if (request.url.includes('/generate-') || request.url.includes('/upload-media')) return 60; // Increased from 30
+      if (request.url.includes('/premium/create-checkout')) return 10; // Increased from 5
+      if (request.url.includes('/friends') || request.url.includes('/notifications') || request.url.includes('/challenges')) return 1000; // MASSIVELY increased from 200
+      if (request.url.includes('/leaderboard')) return 500; // Increased from 100
       
-      return (request.user && request.user.userId) ? 2000 : 500;
+      // Much higher default limits
+      return (request.user && request.user.userId) ? 2000 : 500; // Increased from 500/100
     },
     timeWindow: '1 minute',
     
+    // Better skip conditions for internal traffic
     skip: (request) => {
+      // Skip rate limiting for health checks and internal requests
       if (request.url === '/health' || request.url === '/ping') return true;
       if (request.headers['x-internal-request']) return true;
-      // Skip your K8s cluster IPs
+      
+      // Skip for Kubernetes internal IPs (your cluster range)
       const ip = request.ip || request.connection?.remoteAddress || '';
-      if (ip.startsWith('10.244.')) return true;
+      if (ip.startsWith('10.244.')) return true; // Your DigitalOcean cluster
+      if (ip.startsWith('127.0.0.1') || ip === '::1') return true; // Localhost
+      
       return false;
     },
     
+    // Simplified key generator
     keyGenerator: (request) => {
       const ip = request.ip || 'unknown';
       const userId = request.user?.userId || 'anonymous';
       return `${ip}:${userId}`;
     },
     
-    // MAIN FIX: Return 429, not 500
-    errorResponseBuilder: () => ({
-      statusCode: 429,
+    // Fixed error response builder - CRITICAL: Use 429, not 500
+    errorResponseBuilder: (req, context) => {
+      return {
+        statusCode: 429, // This was the main issue
+        error: 'Too Many Requests',
+        message: 'Rate limit exceeded. Please try again later.',
+        retryAfter: 60,
+        success: false
+      };
+    },
+    
+    // Better logging
+    onExceeding: (request) => {
+      console.warn(`Rate limit warning: ${request.ip} -> ${request.url}`);
+    },
+    
+    onExceeded: (request) => {
+      console.error(`Rate limit BLOCKED: ${request.ip} -> ${request.url} (User: ${request.user?.userId || 'anonymous'})`);
+    }
+  });
+
+  // ALSO ADD this error handler after all plugins are registered:
+fastify.setErrorHandler(function (error, request, reply) {
+  // Ensure rate limit errors return 429, not 500
+  if (error.statusCode === 429 || error.message?.includes('Rate limit')) {
+    reply.code(429).send({
+      success: false,
       error: 'Too Many Requests',
       message: 'Rate limit exceeded. Please try again later.',
       retryAfter: 60,
-      success: false
-    })
+      timestamp: new Date().toISOString()
+    });
+    return;
+  }
+  
+  // Log other errors for debugging
+  console.error('Request error:', {
+    url: request.url,
+    method: request.method,
+    error: error.message
   });
   
+  reply.send(error);
+});
+
   await fastify.register(fastifyStatic, {
     root: path.join(__dirname, 'uploads'),
     prefix: '/uploads/',
