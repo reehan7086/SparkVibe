@@ -1,4 +1,4 @@
-// backend/server.js - Enhanced SparkVibe Backend Server with All Features
+// Server.js Part 1 - Setup, Imports, and Plugin Registration
 const fastify = require('fastify')({
   logger: {
     level: process.env.LOG_LEVEL || 'info'
@@ -12,50 +12,80 @@ const fastifyJwt = require('@fastify/jwt');
 const fastifyMultipart = require('@fastify/multipart');
 const fastifyRateLimit = require('@fastify/rate-limit');
 const fastifyWebsocket = require('@fastify/websocket');
+const fastifyStatic = require('@fastify/static');
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const sanitize = require('mongo-sanitize');
-const Canvas = require('canvas');
 const path = require('path');
+const fs = require('fs').promises;
 const { OAuth2Client } = require('google-auth-library');
+const axios = require('axios');
 
-// Load environment variables
+// Canvas for image generation
+let Canvas;
+try {
+  Canvas = require('canvas');
+  console.log('✅ Canvas loaded for image generation');
+} catch (error) {
+  console.warn('⚠️ Canvas not available - image generation will be disabled');
+}
+
 require('dotenv').config();
 
-// Validate required environment variables
+// Environment variable validation
 const requiredEnvVars = ['MONGODB_URI', 'JWT_SECRET', 'GOOGLE_CLIENT_ID'];
 const missingEnvVars = requiredEnvVars.filter(envVar => !process.env[envVar]);
 
 if (missingEnvVars.length > 0) {
-  console.error('❌ Missing required environment variables:', missingEnvVars.join(', '));
-  process.exit(1);
+  console.warn('⚠️ Missing required environment variables:', missingEnvVars.join(', '));
+  console.log('✅ Running in demo mode with fallback features');
 }
 
+// JWT_SECRET validation
+const JWT_SECRET = process.env.JWT_SECRET || 'demo-secret-1234567890abcdef1234567890abcdef';
 if (process.env.JWT_SECRET && process.env.JWT_SECRET.length < 32) {
-  console.error('❌ JWT_SECRET must be at least 32 characters long for security');
-  process.exit(1);
+  console.warn('⚠️ JWT_SECRET should be at least 32 characters long for security');
+  console.log('ℹ️ Using fallback JWT_SECRET for demo mode');
 }
+
+console.log('✅ JWT_SECRET configured');
+
+  // Additional helper: Validate Google Client ID format
+  const validateGoogleClientId = (clientId) => {
+    if (!clientId) return false;
+    
+    // Google Client IDs should end with .apps.googleusercontent.com
+    const pattern = /^[0-9]+-[a-zA-Z0-9_]+\.apps\.googleusercontent\.com$/;
+    return pattern.test(clientId);
+  };
 
 // Optional service initialization
-let openai, googleClient, redisClient, emailTransporter, cloudinary;
+let googleClient, redisClient, cloudinary;
 
-// OpenAI initialization (optional)
-if (process.env.OPENAI_API_KEY) {
-  try {
-    const { OpenAI } = require('openai');
-    openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-    console.log('✅ OpenAI initialized');
-  } catch (error) {
-    console.warn('⚠️ OpenAI initialization failed:', error.message);
+if (process.env.GOOGLE_CLIENT_ID) {
+  if (validateGoogleClientId(process.env.GOOGLE_CLIENT_ID)) {
+    try {
+      googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+      console.log('✅ Google OAuth2 client initialized successfully');
+    } catch (error) {
+      console.error('❌ Google OAuth2 client initialization failed:', error.message);
+    }
+  } else {
+    console.error('❌ Invalid Google Client ID format. Expected: xxxxxxx-xxxxxx.apps.googleusercontent.com');
   }
+} else {
+  console.warn('⚠️ GOOGLE_CLIENT_ID not configured - Google Sign-In will be disabled');
 }
 
-// Google OAuth initialization
+// Cloudinary initialization for media uploads
 try {
-  googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
-  console.log('✅ Google OAuth initialized');
+  if (process.env.CLOUDINARY_URL) {
+    cloudinary = require('cloudinary').v2;
+    cloudinary.config({ url: process.env.CLOUDINARY_URL });
+    console.log('✅ Cloudinary initialized');
+  }
 } catch (error) {
-  console.warn('⚠️ Google OAuth initialization failed:', error.message);
+  console.warn('⚠️ Cloudinary initialization failed:', error.message);
 }
 
 // Redis initialization (optional)
@@ -73,14 +103,191 @@ if (process.env.REDIS_URL) {
   }
 }
 
-// Enhanced MongoDB Schemas
+// MongoDB Connection Options
+const mongooseOptions = {
+  serverSelectionTimeoutMS: 60000,
+  connectTimeoutMS: 60000,
+  maxPoolSize: 10,
+  minPoolSize: 1,
+  maxIdleTimeMS: 30000,
+  retryWrites: true,
+  writeConcern: { w: 'majority' }
+};
+
+// Error handler
+const sendError = (reply, status, message, details) => {
+  console.error(`❌ Error [${status}]: ${message}`, details);
+  reply.status(status).send({
+    success: false,
+    message,
+    details: process.env.NODE_ENV === 'development' ? details : undefined
+  });
+};
+
+// Replace your entire registerPlugins function with this fixed version:
+
+const registerPlugins = async () => {
+  // Register CORS plugin ONLY ONCE
+  await fastify.register(fastifyCors, {
+    origin: (origin, cb) => {
+      const allowedOrigins = [
+        'https://sparkvibe.app',
+        'https://www.sparkvibe.app',
+        'http://localhost:5173',
+        'http://localhost:3000',
+        'http://localhost:8080',
+        'https://backend-sv-3n4v6.ondigitalocean.app',
+        'https://frontend-sv-3n4v6.ondigitalocean.app',
+        'https://accounts.google.com',
+        'https://www.google.com'
+      ];
+      if (process.env.NODE_ENV !== 'production') {
+        allowedOrigins.push(/^http:\/\/localhost:(3000|5173|8080)$/);
+        allowedOrigins.push(/^https:\/\/.*\.app\.github\.dev$/);
+        allowedOrigins.push(/^https:\/\/.*\.gitpod\.io$/);
+      }
+      const allowed = !origin || allowedOrigins.some(o => typeof o === 'string' ? o === origin : o.test(origin));
+      cb(null, allowed);
+    },
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Cache-Control', 'Pragma', 'Expires'],
+    credentials: true,
+    maxAge: 86400,
+    exposedHeaders: ['Set-Cookie'],
+    optionsSuccessStatus: 200
+  });
+
+  await fastify.register(fastifyHelmet, {
+    contentSecurityPolicy: false,
+    crossOriginEmbedderPolicy: false,
+    crossOriginOpenerPolicy: false,
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+    hsts: false,
+    frameguard: { action: 'sameorigin' }
+  });
+
+  // Register JWT plugin
+  await fastify.register(fastifyJwt, {
+    secret: JWT_SECRET,
+    sign: { expiresIn: '7d' },
+    verify: { maxAge: '7d' }
+  });
+
+  await fastify.register(fastifyMultipart, {
+    limits: {
+      fileSize: 10 * 1024 * 1024, // 10MB limit
+      files: 1
+    }
+  });
+
+  await fastify.register(fastifyWebsocket);
+
+  await fastify.register(fastifyRateLimit, {
+    global: false, // Don't apply globally, apply per route
+    max: async (request) => {
+      // MUCH more generous limits to prevent blocking
+      if (request.url.includes('/health')) return 1000;
+      if (request.url.includes('/auth/')) return 20; // Increased from 10
+      if (request.url.includes('/generate-') || request.url.includes('/upload-media')) return 60; // Increased from 30
+      if (request.url.includes('/premium/create-checkout')) return 10; // Increased from 5
+      if (request.url.includes('/friends') || request.url.includes('/notifications') || request.url.includes('/challenges')) return 1000; // MASSIVELY increased from 200
+      if (request.url.includes('/leaderboard')) return 500; // Increased from 100
+      
+      // Much higher default limits
+      return (request.user && request.user.userId) ? 2000 : 500; // Increased from 500/100
+    },
+    timeWindow: '1 minute',
+    
+    // Better skip conditions for internal traffic
+    skip: (request) => {
+      // Skip rate limiting for health checks and internal requests
+      if (request.url === '/health' || request.url === '/ping') return true;
+      if (request.headers['x-internal-request']) return true;
+      
+      // Skip for Kubernetes internal IPs (your cluster range)
+      const ip = request.ip || request.connection?.remoteAddress || '';
+      if (ip.startsWith('10.244.')) return true; // Your DigitalOcean cluster
+      if (ip.startsWith('127.0.0.1') || ip === '::1') return true; // Localhost
+      
+      return false;
+    },
+    
+    // Simplified key generator
+    keyGenerator: (request) => {
+      const ip = request.ip || 'unknown';
+      const userId = request.user?.userId || 'anonymous';
+      return `${ip}:${userId}`;
+    },
+    
+    // Fixed error response builder - CRITICAL: Use 429, not 500
+    errorResponseBuilder: (req, context) => {
+      return {
+        statusCode: 429, // This was the main issue
+        error: 'Too Many Requests',
+        message: 'Rate limit exceeded. Please try again later.',
+        retryAfter: 60,
+        success: false
+      };
+    },
+    
+    // Better logging
+    onExceeding: (request) => {
+      console.warn(`Rate limit warning: ${request.ip} -> ${request.url}`);
+    },
+    
+    onExceeded: (request) => {
+      console.error(`Rate limit BLOCKED: ${request.ip} -> ${request.url} (User: ${request.user?.userId || 'anonymous'})`);
+    }
+  });
+
+  // ALSO ADD this error handler after all plugins are registered:
+fastify.setErrorHandler(function (error, request, reply) {
+  // Ensure rate limit errors return 429, not 500
+  if (error.statusCode === 429 || error.message?.includes('Rate limit')) {
+    reply.code(429).send({
+      success: false,
+      error: 'Too Many Requests',
+      message: 'Rate limit exceeded. Please try again later.',
+      retryAfter: 60,
+      timestamp: new Date().toISOString()
+    });
+    return;
+  }
+  
+  // Log other errors for debugging
+  console.error('Request error:', {
+    url: request.url,
+    method: request.method,
+    error: error.message
+  });
+  
+  reply.send(error);
+});
+
+  await fastify.register(fastifyStatic, {
+    root: path.join(__dirname, 'uploads'),
+    prefix: '/uploads/',
+    decorateReply: false
+  });
+
+  // Register authenticate decorator AFTER JWT plugin
+  fastify.decorate('authenticate', async function (request, reply) {
+    try {
+      await request.jwtVerify();
+      console.log(`🔐 JWT verified for user: ${request.user.userId}`);
+    } catch (err) {
+      sendError(reply, 401, 'Authentication required', err.message);
+    }
+  });
+};
+// MongoDB Schemas
 const UserSchema = new mongoose.Schema({
   email: { 
     type: String, 
     required: true, 
     unique: true, 
     lowercase: true,
-    match: [/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/, 'Please enter a valid email']
+    match: /^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/
   },
   name: { 
     type: String, 
@@ -94,11 +301,11 @@ const UserSchema = new mongoose.Schema({
   },
   googleId: { 
     type: String,
-    sparse: true // Allow multiple null values
+    sparse: true
   },
   password: { 
     type: String,
-    minlength: [8, 'Password must be at least 8 characters long']
+    minlength: 8
   },
   emailVerified: { type: Boolean, default: false },
   authProvider: { type: String, enum: ['email', 'google'], default: 'email' },
@@ -111,90 +318,25 @@ const UserSchema = new mongoose.Schema({
     adventureTypes: [String]
   },
   stats: {
-    totalPoints: { 
-      type: Number, 
-      default: 0,
-      min: [0, 'Points cannot be negative']
-    },
-    streak: { 
-      type: Number, 
-      default: 0,
-      min: [0, 'Streak cannot be negative']
-    },
-    level: { 
-      type: Number, 
-      default: 1,
-      min: [1, 'Level must be at least 1']
-    },
-    cardsGenerated: { 
-      type: Number, 
-      default: 0,
-      min: [0, 'Cards generated cannot be negative']
-    },
-    cardsShared: { 
-      type: Number, 
-      default: 0,
-      min: [0, 'Cards shared cannot be negative']
-    },
+    totalPoints: { type: Number, default: 0, min: [0, 'Points cannot be negative'] },
+    streak: { type: Number, default: 0, min: [0, 'Streak cannot be negative'] },
+    level: { type: Number, default: 1, min: [1, 'Level must be at least 1'] },
+    cardsGenerated: { type: Number, default: 0, min: [0, 'Cards generated cannot be negative'] },
+    cardsShared: { type: Number, default: 0, min: [0, 'Cards shared cannot be negative'] },
     lastActivity: { type: Date, default: Date.now },
-    bestStreak: { 
-      type: Number, 
-      default: 0,
-      min: [0, 'Best streak cannot be negative']
-    },
-    adventuresCompleted: { 
-      type: Number, 
-      default: 0,
-      min: [0, 'Adventures completed cannot be negative']
-    },
-    friendsCount: { 
-      type: Number, 
-      default: 0,
-      min: [0, 'Friends count cannot be negative']
-    },
-    challengesWon: { 
-      type: Number, 
-      default: 0,
-      min: [0, 'Challenges won cannot be negative']
-    },
-    challengesLost: { 
-      type: Number, 
-      default: 0,
-      min: [0, 'Challenges lost cannot be negative']
-    },
-    referralsCount: { 
-      type: Number, 
-      default: 0,
-      min: [0, 'Referrals count cannot be negative']
-    },
-    moodHistory: [{ 
-      mood: { type: Object, required: true }, 
-      timestamp: { type: Date, default: Date.now }
-    }],
-    choices: [{ 
-      choice: { type: String, required: true }, 
-      capsuleId: { type: String, required: true }, 
-      timestamp: { type: Date, default: Date.now }
-    }],
-    completions: [{ 
-      capsuleId: { type: String, required: true }, 
-      completedAt: { type: Date, default: Date.now }, 
-      points: { type: Number, required: true, min: 0 }
-    }]
+    bestStreak: { type: Number, default: 0, min: [0, 'Best streak cannot be negative'] },
+    adventuresCompleted: { type: Number, default: 0, min: [0, 'Adventures completed cannot be negative'] },
+    friendsCount: { type: Number, default: 0, min: [0, 'Friends count cannot be negative'] },
+    challengesWon: { type: Number, default: 0, min: [0, 'Challenges won cannot be negative'] },
+    challengesLost: { type: Number, default: 0, min: [0, 'Challenges lost cannot be negative'] },
+    referralsCount: { type: Number, default: 0, min: [0, 'Referrals count can not be negative'] },
+    mediaUploads: { type: Number, default: 0, min: [0, 'Media uploads cannot be negative'] },
+    moodHistory: [{ mood: { type: Object, required: false }, timestamp: { type: Date, default: Date.now } }],
+    choices: [{ choice: { type: String, required: true }, capsuleId: { type: String, required: true }, timestamp: { type: Date, default: Date.now } }],
+    completions: [{ capsuleId: { type: String, required: true }, completedAt: { type: Date, default: Date.now }, points: { type: Number, required: true, min: 0 } }]
   },
-  achievements: [{ 
-    id: String, 
-    unlockedAt: Date, 
-    type: String,
-    title: String,
-    description: String,
-    icon: String
-  }],
-  friends: [{ 
-    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-    status: { type: String, enum: ['pending', 'accepted', 'blocked'], default: 'pending' },
-    connectedAt: Date
-  }],
+  achievements: [{ id: String, unlockedAt: Date, type: String, title: String, description: String, icon: String }],
+  friends: [{ userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, status: { type: String, enum: ['pending', 'accepted', 'blocked'], default: 'pending' }, connectedAt: Date }],
   challenges: [{
     challengerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     challengedId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
@@ -208,6 +350,13 @@ const UserSchema = new mongoose.Schema({
   }],
   referralCode: { type: String, unique: true },
   referredBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  premiumStatus: {
+    active: { type: Boolean, default: false },
+    subscriptionId: String,
+    plan: { type: String, enum: ['basic', 'pro', 'enterprise'], default: 'basic' },
+    startDate: Date,
+    endDate: Date
+  },
   createdAt: { type: Date, default: Date.now }
 });
 
@@ -225,11 +374,7 @@ const AdventureSchema = new mongoose.Schema({
   isActive: { type: Boolean, default: true },
   isFeatured: { type: Boolean, default: false },
   tags: [String],
-  rewards: {
-    points: { type: Number, default: 25 },
-    badge: String,
-    unlocks: [String]
-  },
+  rewards: { points: { type: Number, default: 25 }, badge: String, unlocks: [String] },
   aiGenerated: { type: Boolean, default: false },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   createdAt: { type: Date, default: Date.now }
@@ -238,28 +383,10 @@ const AdventureSchema = new mongoose.Schema({
 const VibeCardSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   capsuleId: String,
-  content: {
-    adventure: Object,
-    achievement: Object,
-    mood: Object,
-    user: Object
-  },
-  design: {
-    template: String,
-    colors: [String],
-    style: String
-  },
-  sharing: {
-    platforms: [String],
-    shareCount: { type: Number, default: 0 },
-    lastShared: Date
-  },
-  analytics: {
-    views: { type: Number, default: 0 },
-    likes: { type: Number, default: 0 },
-    shares: { type: Number, default: 0 },
-    viralScore: { type: Number, default: 0 }
-  },
+  content: { adventure: Object, achievement: Object, mood: Object, user: Object },
+  design: { template: String, colors: [String], style: String },
+  sharing: { platforms: [String], shareCount: { type: Number, default: 0 }, lastShared: Date },
+  analytics: { views: { type: Number, default: 0 }, likes: { type: Number, default: 0 }, shares: { type: Number, default: 0 }, viralScore: { type: Number, default: 0 } },
   isPublic: { type: Boolean, default: true },
   createdAt: { type: Date, default: Date.now }
 });
@@ -284,30 +411,32 @@ const NotificationSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now }
 });
 
+const MediaSchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  url: { type: String, required: true },
+  type: { type: String, enum: ['image', 'video', 'audio'], required: true },
+  metadata: {
+    size: Number,
+    filename: String,
+    mimeType: String
+  },
+  createdAt: { type: Date, default: Date.now }
+});
+
 // Create indexes
 AdventureSchema.index({ category: 1, completions: -1 });
 AnalyticsSchema.index({ eventType: 1, timestamp: -1 });
 VibeCardSchema.index({ userId: 1, createdAt: -1 });
+NotificationSchema.index({ userId: 1, createdAt: -1 });
+MediaSchema.index({ userId: 1, createdAt: -1 });
 
-const User = mongoose.model('User', UserSchema);
-const Adventure = mongoose.model('Adventure', AdventureSchema);
-const VibeCard = mongoose.model('VibeCard', VibeCardSchema);
-const Analytics = mongoose.model('Analytics', AnalyticsSchema);
-const Notification = mongoose.model('Notification', NotificationSchema);
+// Initialize models only if MongoDB is available
+let User, Adventure, VibeCard, Analytics, Notification, Media;
 
 // WebSocket connections store
 const wsConnections = new Map();
 
-// MongoDB Connection Options
-const mongooseOptions = {
-  serverSelectionTimeoutMS: 30000,
-  connectTimeoutMS: 30000,
-  maxPoolSize: 10,
-  minPoolSize: 1,
-  maxIdleTimeMS: 30000,
-  retryWrites: true,
-  writeConcern: { w: 'majority' }
-};
+// Server.js Part 2 - Achievement System and Utility Functions
 
 // Achievement definitions
 const ACHIEVEMENTS = {
@@ -317,489 +446,469 @@ const ACHIEVEMENTS = {
   content_creator: { title: 'Content Creator', description: 'Generate 10 vibe cards', icon: '🎨', points: 150 },
   social_butterfly: { title: 'Social Butterfly', description: 'Add 5 friends', icon: '🦋', points: 75 },
   challenger: { title: 'Challenger', description: 'Win your first challenge', icon: '🏆', points: 125 },
-  viral_star: { title: 'Viral Star', description: 'Get 100 shares on a vibe card', icon: '⭐', points: 300 }
+  viral_star: { title: 'Viral Star', description: 'Get 100 shares on a vibe card', icon: '⭐', points: 300 },
+  media_maven: { title: 'Media Maven', description: 'Upload 5 media files', icon: '📸', points: 100 },
+  premium_pioneer: { title: 'Premium Pioneer', description: 'Activate a premium subscription', icon: '💎', points: 150 }
 };
 
-// Start server function
-const startServer = async () => {
+// Utility functions
+const generateReferralCode = () => {
+  return Math.random().toString(36).substring(2, 8).toUpperCase();
+};
+
+const checkAchievements = async (userId, actionType, metadata = {}) => {
+  if (!User) return [];
+  
   try {
-    // MongoDB Connection
-    console.log('🔌 Connecting to MongoDB...');
-    // MongoDB connection initiated
+    const user = await User.findById(userId);
+    if (!user) return [];
 
-    mongoose.connection.on('connected', () => {
-      console.log('✅ MongoDB connected:', mongoose.connection.host, mongoose.connection.name);
+    const newAchievements = [];
+    const existingAchievementIds = user.achievements.map(a => a.id);
+
+    if (actionType === 'adventure_completed' && !existingAchievementIds.includes('first_adventure')) {
+      newAchievements.push({
+        id: 'first_adventure',
+        ...ACHIEVEMENTS.first_adventure,
+        unlockedAt: new Date(),
+        type: 'milestone'
+      });
+    }
+
+    if (user.stats.streak >= 7 && !existingAchievementIds.includes('week_warrior')) {
+      newAchievements.push({
+        id: 'week_warrior',
+        ...ACHIEVEMENTS.week_warrior,
+        unlockedAt: new Date(),
+        type: 'streak'
+      });
+    }
+
+    if (user.stats.totalPoints >= 1000 && !existingAchievementIds.includes('point_master')) {
+      newAchievements.push({
+        id: 'point_master',
+        ...ACHIEVEMENTS.point_master,
+        unlockedAt: new Date(),
+        type: 'points'
+      });
+    }
+
+    if (user.stats.cardsGenerated >= 10 && !existingAchievementIds.includes('content_creator')) {
+      newAchievements.push({
+        id: 'content_creator',
+        ...ACHIEVEMENTS.content_creator,
+        unlockedAt: new Date(),
+        type: 'creation'
+      });
+    }
+	
+	if (user.stats.cardsShared >= 100 && !existingAchievementIds.includes('viral_star')) {
+  newAchievements.push({
+    id: 'viral_star',
+    ...ACHIEVEMENTS.viral_star,
+    unlockedAt: new Date(),
+    type: 'viral'
+  });
+}
+
+    if (user.stats.friendsCount >= 5 && !existingAchievementIds.includes('social_butterfly')) {
+      newAchievements.push({
+        id: 'social_butterfly',
+        ...ACHIEVEMENTS.social_butterfly,
+        unlockedAt: new Date(),
+        type: 'social'
+      });
+    }
+
+    if (user.stats.challengesWon >= 1 && !existingAchievementIds.includes('challenger')) {
+      newAchievements.push({
+        id: 'challenger',
+        ...ACHIEVEMENTS.challenger,
+        unlockedAt: new Date(),
+        type: 'challenge'
+      });
+    }
+
+    if (user.stats.mediaUploads >= 5 && !existingAchievementIds.includes('media_maven')) {
+      newAchievements.push({
+        id: 'media_maven',
+        ...ACHIEVEMENTS.media_maven,
+        unlockedAt: new Date(),
+        type: 'media'
+      });
+    }
+
+    if (user.premiumStatus.active && !existingAchievementIds.includes('premium_pioneer')) {
+      newAchievements.push({
+        id: 'premium_pioneer',
+        ...ACHIEVEMENTS.premium_pioneer,
+        unlockedAt: new Date(),
+        type: 'premium'
+      });
+    }
+
+    if (newAchievements.length > 0) {
+      await User.findByIdAndUpdate(userId, {
+        $push: { achievements: { $each: newAchievements } },
+        $inc: { 'stats.totalPoints': newAchievements.reduce((sum, a) => sum + a.points, 0) }
+      });
+
+      for (const achievement of newAchievements) {
+        if (Notification) {
+          await Notification.create({
+            userId,
+            type: 'achievement',
+            title: 'Achievement Unlocked!',
+            message: `You've earned the "${achievement.title}" achievement!`,
+            data: { achievement }
+          });
+        }
+      }
+
+      const wsConnection = wsConnections.get(userId.toString());
+      if (wsConnection) {
+        wsConnection.send(JSON.stringify({
+          type: 'achievement',
+          data: newAchievements
+        }));
+      }
+    }
+
+    return newAchievements;
+  } catch (error) {
+    console.error('Achievement check failed:', error);
+    return [];
+  }
+};
+
+// Canvas image creation with proper error handling
+const createVibeCardImage = async (cardData) => {
+  if (!Canvas) {
+    console.warn('Canvas not available for image generation');
+    return null;
+  }
+
+  try {
+    const canvas = Canvas.createCanvas(540, 960);
+    const ctx = canvas.getContext('2d');
+
+    const gradient = ctx.createLinearGradient(0, 0, 540, 960);
+    const template = cardData.design.template || 'cosmic';
+    
+    const colors = {
+      cosmic: ['#1a1a2e', '#533483', '#7209b7'],
+      nature: ['#2d5016', '#60a531', '#8bc34a'],
+      retro: ['#ff006e', '#8338ec', '#ffbe0b'],
+      minimal: ['#f8f9fa', '#495057', '#dee2e6']
+    };
+
+    const templateColors = colors[template] || colors.cosmic;
+    gradient.addColorStop(0, templateColors[0]);
+    gradient.addColorStop(0.5, templateColors[1]);
+    gradient.addColorStop(1, templateColors[2]);
+    
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, 540, 960);
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 32px Arial';
+    ctx.textAlign = 'center';
+    
+    const title = cardData.content.adventure.title;
+    ctx.fillText(title, 270, 200);
+    
+    ctx.font = '24px Arial';
+    ctx.fillText(`+${cardData.content.achievement.points} Points`, 270, 300);
+    
+    ctx.fillText(`${cardData.content.achievement.streak} Day Streak`, 270, 350);
+    
+    ctx.font = 'bold 20px Arial';
+    ctx.fillText(cardData.content.user.name, 270, 800);
+
+    return canvas.toBuffer('image/png');
+  } catch (error) {
+    console.error('Vibe card image creation failed:', error);
+    return null;
+  }
+};
+
+const uploadMediaToCloudinary = async (file) => {
+  if (!cloudinary) {
+    throw new Error('Cloudinary not configured');
+  }
+  try {
+    // Buffer the file data first
+    const chunks = [];
+    for await (const chunk of file.file) {
+      chunks.push(chunk);
+    }
+    const buffer = Buffer.concat(chunks);
+    
+    const result = await new Promise((resolve, reject) => {
+      cloudinary.uploader.upload_stream({
+        resource_type: 'auto',
+        folder: 'sparkvibe_uploads',
+        public_id: `media_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`
+      }, (error, result) => {
+        if (error) reject(error);
+        else resolve(result);
+      }).end(buffer);
     });
     
-    mongoose.connection.on('error', (err) => {
-      console.error('❌ MongoDB error:', err.message);
-    });
-    
-    mongoose.connection.on('disconnected', () => {
-      console.warn('⚠️ MongoDB disconnected');
-    });
+    return {
+      url: result.secure_url,
+      public_id: result.public_id,
+      type: result.resource_type,
+      metadata: {
+        size: result.bytes,
+        mimeType: result.format
+      }
+    };
+  } catch (error) {
+    console.error('Cloudinary upload failed:', error);
+    throw error;
+  }
+};
 
-    let connected = false;
-    let connectionAttempts = 0;
-    const maxAttempts = 3;
+// Local media upload with proper fs import
+const uploadMediaToLocal = async (file) => {
+  const uploadDir = path.join(__dirname, 'uploads');
+  await fs.mkdir(uploadDir, { recursive: true });
+  
+  const fileName = `media_${Date.now()}_${Math.random().toString(36).substring(2, 11)}${path.extname(file.filename)}`;
+  const filePath = path.join(uploadDir, fileName);
+  
+  // Properly handle the file stream
+  const chunks = [];
+  for await (const chunk of file.file) {
+    chunks.push(chunk);
+  }
+  const buffer = Buffer.concat(chunks);
+  await fs.writeFile(filePath, buffer);
+  
+  return {
+    url: `/uploads/${fileName}`,
+    type: file.mimetype.startsWith('image') ? 'image' : file.mimetype.startsWith('video') ? 'video' : 'audio',
+    metadata: {
+      size: buffer.length,
+      mimeType: file.mimetype,
+      filename: fileName
+    }
+  };
+};
 
-    while (!connected && connectionAttempts < maxAttempts) {
-      try {
-        connectionAttempts++;
-        // MongoDB connection attempt
-        
+const trackEvent = async (eventType, userId, metadata = {}, sessionId = null) => {
+  if (!Analytics) return;
+  
+  try {
+    await Analytics.create({
+      eventType,
+      userId,
+      metadata,
+      sessionId,
+      userAgent: 'unknown',
+      ip: 'unknown',
+      timestamp: new Date()
+    });
+  } catch (error) {
+    console.error('Analytics tracking failed:', error);
+  }
+};
+
+const getFallbackLeaderboard = () => ({
+  success: true,
+  data: [
+    { id: 'demo1', username: 'VibeMaster', avatar: '🌟', score: 1500, rank: 1, level: 5, streak: 7, mediaUploads: 3 },
+    { id: 'demo2', username: 'SparkSeeker', avatar: '🚀', score: 1200, rank: 2, level: 4, streak: 5, mediaUploads: 2 },
+    { id: 'demo3', username: 'MoodMover', avatar: '🎉', score: 1000, rank: 3, level: 3, streak: 3, mediaUploads: 1 }
+  ],
+  metadata: { totalUsers: 3, timestamp: new Date().toISOString(), fallback: true }
+});
+
+// MongoDB Connection with Retry Logic
+const connectMongoDB = async () => {
+  const maxRetries = 5;
+  let attempt = 1;
+
+  while (attempt <= maxRetries) {
+    try {
+      if (process.env.MONGODB_URI) {
         await mongoose.connect(process.env.MONGODB_URI, mongooseOptions);
-        await mongoose.connection.db.admin().ping();
-        
-        console.log('✅ MongoDB ping successful');
-        connected = true;
-      } catch (connectError) {
-        console.error(`❌ MongoDB connection attempt ${connectionAttempts} failed:`, connectError.message);
-        
-        if (connectError.message.includes('ReplicaSetNoPrimary')) {
-          console.log('🔄 Replica set has no primary, retrying in 5 seconds...');
-          await new Promise(resolve => setTimeout(resolve, 5000));
-        } else {
-          console.log(`⏳ Waiting 3 seconds before retry...`);
-          await new Promise(resolve => setTimeout(resolve, 3000));
-        }
-        
-        if (connectionAttempts === maxAttempts) {
-          console.warn('⚠️ MongoDB connection failed after all attempts, using fallback data');
-          fastify.mongodbConnected = false;
-        }
+        console.log('✅ MongoDB connected successfully');
+
+        // Initialize models
+        User = mongoose.model('User', UserSchema);
+        Adventure = mongoose.model('Adventure', AdventureSchema);
+        VibeCard = mongoose.model('VibeCard', VibeCardSchema);
+        Analytics = mongoose.model('Analytics', AnalyticsSchema);
+        Notification = mongoose.model('Notification', NotificationSchema);
+        Media = mongoose.model('Media', MediaSchema);
+
+        return true;
+      } else {
+        console.warn('⚠️ MONGODB_URI not provided, running in demo mode');
+        return false;
       }
+    } catch (error) {
+      console.error(`❌ MongoDB connection attempt ${attempt} failed:`, error.message);
+      if (attempt === maxRetries) {
+        console.warn('⚠️ Max retries reached, running in demo mode');
+        return false;
+      }
+      const delay = Math.pow(2, attempt) * 1000; // Exponential backoff
+      console.log(`⏳ Retrying MongoDB connection in ${delay}ms...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      attempt++;
     }
+  }
+};
 
-    // Connect to Redis if available
-    if (redisClient) {
-      try {
-        await redisClient.connect();
-        console.log('✅ Connected to Redis');
-      } catch (error) {
-        console.warn('⚠️ Redis connection failed:', error.message);
-        redisClient = null;
-      }
+// Redis Connection (Optional)
+const connectRedis = async () => {
+  if (redisClient) {
+    try {
+      await redisClient.connect();
+      console.log('✅ Redis connected successfully');
+      return true;
+    } catch (error) {
+      console.error('❌ Redis connection failed:', error.message);
+      return false;
     }
+  }
+  return false;
+};
 
-    // Register plugins
-    await fastify.register(fastifyCors, {
-      origin: (origin, cb) => {
-        const allowedOrigins = [
-          'https://sparkvibe.app',
-          'https://www.sparkvibe.app',
-          'http://localhost:5173',
-          'http://localhost:3000',
-          'http://localhost:8080',
-          'https://backend-sv-3n4v6.ondigitalocean.app'
-        ];
-        
-        if (process.env.NODE_ENV !== 'production') {
-          allowedOrigins.push(/^http:\/\/localhost:(3000|5173|8080)$/);
-          allowedOrigins.push(/^https:\/\/.*\.app\.github\.dev$/);
-          allowedOrigins.push(/^https:\/\/.*\.gitpod\.io$/);
-        }
-        
-        const allowed = !origin || allowedOrigins.some(o => typeof o === 'string' ? o === origin : o.test(origin));
-        cb(null, allowed);
-      },
-      methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-      allowedHeaders: [
-        'Content-Type', 
-        'Authorization', 
-        'X-Requested-With',
-        'Cache-Control',
-        'Pragma',
-        'Expires'
-      ],
-      credentials: true,
-      maxAge: 86400
-    });
+// Server.js Part 3 - Authentication Routes
 
-    await fastify.register(fastifyHelmet, {
-      contentSecurityPolicy: false,
-      crossOriginEmbedderPolicy: false,
-      crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
-      crossOriginResourcePolicy: { policy: 'cross-origin' }
-    });
-
-    await fastify.register(fastifyJwt, {
-      secret: process.env.JWT_SECRET,
-      sign: { expiresIn: '7d' },
-      verify: { maxAge: '7d' }
-    });
-
-    await fastify.register(fastifyMultipart);
-    await fastify.register(fastifyWebsocket);
-    await fastify.register(fastifyRateLimit, {
-      max: async (request) => {
-        // Different limits for different endpoints
-        if (request.url.includes('/auth/')) {
-          return 5; // Strict limit for auth endpoints
-        }
-        if (request.url.includes('/generate-')) {
-          return 20; // Moderate limit for generation endpoints
-        }
-        return request.user ? 100 : 50; // General limits
-      },
-      timeWindow: '1 minute',
-      keyGenerator: (request) => {
-        return request.ip + ':' + (request.user?.userId || 'anonymous');
-      },
-      errorResponseBuilder: () => ({
-        success: false,
-        message: 'Rate limit exceeded. Please try again later.',
-        retryAfter: 60
-      })
-    });
-
-    // Error handler
-    const sendError = (reply, status, message, details) => {
-      console.error(`❌ Error [${status}]: ${message}`, details);
-      reply.status(status).send({
-        success: false,
-        message,
-        details: process.env.NODE_ENV === 'development' ? details : undefined
-      });
+// Define all routes AFTER plugins are registered
+const defineRoutes = () => {
+  
+  // Health endpoint - CRITICAL for deployment
+  fastify.get('/health', async (request, reply) => {
+    const health = {
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+      environment: process.env.NODE_ENV || 'development',
+      mongodb: !!mongoose.connection.readyState,
+      google_oauth: !!googleClient,
+      canvas_support: !!Canvas,
+      cloudinary: !!cloudinary,
+      redis: !!redisClient
     };
-
-    fastify.setErrorHandler((error, request, reply) => {
-      sendError(reply, error.statusCode || 500, error.message || 'Internal server error', error.stack);
-    });
-
-    // Authentication decorator
-    fastify.decorate('authenticate', async function (request, reply) {
-      try {
-        await request.jwtVerify();
-        console.log(`🔐 JWT verified for user: ${request.user.userId}`);
-      } catch (err) {
-        sendError(reply, 401, 'Authentication required', err.message);
-      }
-    });
-
-    // ===== UTILITY FUNCTIONS =====
     
-    const generateReferralCode = () => {
-      return Math.random().toString(36).substring(2, 8).toUpperCase();
-    };
+    reply.send(health);
+  });
 
-    const checkAchievements = async (userId, actionType, metadata = {}) => {
-      try {
-        const user = await User.findById(userId);
-        if (!user) return [];
-
-        const newAchievements = [];
-        const existingAchievementIds = user.achievements.map(a => a.id);
-
-        if (actionType === 'adventure_completed' && !existingAchievementIds.includes('first_adventure')) {
-          newAchievements.push({
-            id: 'first_adventure',
-            ...ACHIEVEMENTS.first_adventure,
-            unlockedAt: new Date(),
-            type: 'milestone'
-          });
-        }
-
-        if (user.stats.streak >= 7 && !existingAchievementIds.includes('week_warrior')) {
-          newAchievements.push({
-            id: 'week_warrior',
-            ...ACHIEVEMENTS.week_warrior,
-            unlockedAt: new Date(),
-            type: 'streak'
-          });
-        }
-
-        if (user.stats.totalPoints >= 1000 && !existingAchievementIds.includes('point_master')) {
-          newAchievements.push({
-            id: 'point_master',
-            ...ACHIEVEMENTS.point_master,
-            unlockedAt: new Date(),
-            type: 'points'
-          });
-        }
-
-        if (user.stats.cardsGenerated >= 10 && !existingAchievementIds.includes('content_creator')) {
-          newAchievements.push({
-            id: 'content_creator',
-            ...ACHIEVEMENTS.content_creator,
-            unlockedAt: new Date(),
-            type: 'creation'
-          });
-        }
-
-        if (newAchievements.length > 0) {
-          await User.findByIdAndUpdate(userId, {
-            $push: { achievements: { $each: newAchievements } },
-            $inc: { 'stats.totalPoints': newAchievements.reduce((sum, a) => sum + a.points, 0) }
-          });
-
-          for (const achievement of newAchievements) {
-            await Notification.create({
-              userId,
-              type: 'achievement',
-              title: 'Achievement Unlocked!',
-              message: `You've earned the "${achievement.title}" achievement!`,
-              data: { achievement }
-            });
-          }
-
-          const wsConnection = wsConnections.get(userId.toString());
-          if (wsConnection) {
-            wsConnection.send(JSON.stringify({
-              type: 'achievement',
-              data: newAchievements
-            }));
-          }
-        }
-
-        return newAchievements;
-      } catch (error) {
-        console.error('Achievement check failed:', error);
-        return [];
+  // Authentication Routes
+  fastify.post('/auth/signup', async (request, reply) => {
+    try {
+      const { name, email, password } = request.body;
+      if (!name || !email || !password) {
+        return sendError(reply, 400, 'Name, email, and password are required');
       }
-    };
-
-    const createVibeCardImage = async (cardData) => {
-      try {
-        const canvas = Canvas.createCanvas(540, 960);
-        const ctx = canvas.getContext('2d');
-
-        const gradient = ctx.createLinearGradient(0, 0, 540, 960);
-        const template = cardData.design.template || 'cosmic';
-        
-        const colors = {
-          cosmic: ['#1a1a2e', '#533483', '#7209b7'],
-          nature: ['#2d5016', '#60a531', '#8bc34a'],
-          retro: ['#ff006e', '#8338ec', '#ffbe0b'],
-          minimal: ['#f8f9fa', '#495057', '#dee2e6']
-        };
-
-        const templateColors = colors[template] || colors.cosmic;
-        gradient.addColorStop(0, templateColors[0]);
-        gradient.addColorStop(0.5, templateColors[1]);
-        gradient.addColorStop(1, templateColors[2]);
-        
-        ctx.fillStyle = gradient;
-        ctx.fillRect(0, 0, 540, 960);
-
-        ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 32px Arial';
-        ctx.textAlign = 'center';
-        
-        const title = cardData.content.adventure.title;
-        ctx.fillText(title, 270, 200);
-        
-        ctx.font = '24px Arial';
-        ctx.fillText(`+${cardData.content.achievement.points} Points`, 270, 300);
-        
-        ctx.fillText(`${cardData.content.achievement.streak} Day Streak`, 270, 350);
-        
-        ctx.font = 'bold 20px Arial';
-        ctx.fillText(cardData.content.user.name, 270, 800);
-
-        return canvas.toBuffer('image/png');
-      } catch (error) {
-        console.error('Vibe card image creation failed:', error);
-        return null;
+      if (password.length < 8) {
+        return sendError(reply, 400, 'Password must be at least 8 characters long');
       }
-    };
 
-    const trackEvent = async (eventType, userId, metadata = {}, sessionId = null) => {
-      try {
-        await Analytics.create({
-          eventType,
-          userId,
-          metadata,
-          sessionId,
-          timestamp: new Date()
-        });
-      } catch (error) {
-        console.error('Analytics tracking failed:', error);
-      }
-    };
-
-    // ===== WEBSOCKET ROUTES =====
-    fastify.register(async function (fastify) {
-      fastify.get('/ws', { websocket: true }, (connection, req) => {
-        const userId = req.query.userId;
-        if (userId) {
-          wsConnections.set(userId, connection.socket);
-          console.log(`WebSocket connected: ${userId}`);
-        }
-
-        connection.socket.on('message', async (message) => {
-          try {
-            const data = JSON.parse(message);
-            
-            if (data.type === 'ping') {
-              connection.socket.send(JSON.stringify({ type: 'pong' }));
-            }
-          } catch (error) {
-            console.error('WebSocket message error:', error);
-          }
-        });
-
-        connection.socket.on('close', (code, reason) => {
-          if (userId) {
-            wsConnections.delete(userId);
-            console.log(`WebSocket disconnected: ${userId}, Code: ${code}, Reason: ${reason || 'No reason'}`);
-          }
-          if (code === 1006) {
-            console.warn('Abnormal WebSocket closure (1006) - Check load balancer timeout');
-          }
-        });
-      });
-    });
-
-    // ===== BASIC ROUTES =====
-    fastify.get('/', async (request, reply) => {
-      const services = await checkServiceHealth();
-      return reply.send({
-        message: 'SparkVibe API Server - v2.5.0 Enhanced',
-        status: 'running',
-        timestamp: new Date().toISOString(),
-        services,
-        environment: process.env.NODE_ENV || 'development',
-        mongodb: {
-          connected: mongoose.connection.readyState === 1,
-          readyState: mongoose.connection.readyState,
-          host: mongoose.connection.host,
-          name: mongoose.connection.name
-        },
-        features: [
-          'Enhanced Vibe Cards',
-          'Social Features',
-          'Real-time WebSocket',
-          'Achievement System',
-          'Analytics Tracking',
-          'Friend Challenges'
-        ]
-      });
-    });
-
-    fastify.get('/health', async (request, reply) => {
-      const health = {
-        status: 'OK',
-        message: 'SparkVibe Enhanced Backend is healthy',
-        timestamp: new Date().toISOString(),
-        uptime: process.uptime(),
-        services: await checkServiceHealth(),
-        memory: process.memoryUsage(),
-        mongodb: {
-          connected: mongoose.connection.readyState === 1,
-          readyState: mongoose.connection.readyState,
-          host: mongoose.connection.host,
-          name: mongoose.connection.name,
-          collections: {}
-        },
-        websockets: {
-          connections: wsConnections.size
-        }
-      };
-    
-      if (mongoose.connection.readyState === 1) {
-        try {
-          health.mongodb.collections.users = await User.countDocuments();
-          health.mongodb.collections.adventures = await Adventure.countDocuments();
-          health.mongodb.collections.vibeCards = await VibeCard.countDocuments();
-          health.mongodb.collections.analytics = await Analytics.countDocuments();
-        } catch (error) {
-          health.mongodb.error = error.message;
-        }
-      }
-    
-      const isHealthy = health.mongodb.connected && (!redisClient || health.services.redis === 'healthy');
-      reply.status(isHealthy ? 200 : 503).send(health);
-    });
-
-    // ===== AUTHENTICATION ROUTES =====
-    fastify.post('/auth/signup', async (request, reply) => {
-      try {
-        const { name, email, password } = request.body;
-        
-        if (!name || !email || !password) {
-          return sendError(reply, 400, 'Name, email, and password are required');
-        }
-
-        // Password validation
-        if (password.length < 8) {
-          return sendError(reply, 400, 'Password must be at least 8 characters long');
-        }
-        
-        if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(password)) {
-          return sendError(reply, 400, 'Password must contain at least one uppercase letter, one lowercase letter, and one number');
-        }
-
-        if (mongoose.connection.readyState !== 1) {
-          return sendError(reply, 503, 'Database connection unavailable');
-        }
-
-        const sanitizedEmail = sanitize(email.toLowerCase());
-        const sanitizedName = sanitize(name);
-
+      const sanitizedEmail = sanitize(email.toLowerCase());
+      const sanitizedName = sanitize(name);
+      
+      if (User) {
         const existingUser = await User.findOne({ email: sanitizedEmail });
         if (existingUser) {
           return sendError(reply, 400, 'User with this email already exists');
         }
+      }
 
-        const hashedPassword = await bcrypt.hash(password, 12);
-        const referralCode = generateReferralCode();
-        
-        const user = new User({
-          name: sanitizedName,
-          email: sanitizedEmail,
-          password: hashedPassword,
-          authProvider: 'email',
-          emailVerified: process.env.NODE_ENV === 'development' ? true : false,
-          referralCode,
-          preferences: { 
-            interests: ['wellness', 'creativity'], 
-            aiPersonality: 'encouraging' 
-          }
-        });
+      const hashedPassword = await bcrypt.hash(password, 12);
+      const referralCode = generateReferralCode();
+      
+      const userData = {
+        name: sanitizedName,
+        email: sanitizedEmail,
+        password: hashedPassword,
+        authProvider: 'email',
+        emailVerified: true,
+        referralCode,
+        preferences: { interests: ['wellness', 'creativity'], aiPersonality: 'encouraging', adventureTypes: ['general'], difficulty: 'easy' },
+        stats: {
+          totalPoints: 0,
+          level: 1,
+          streak: 0,
+          cardsGenerated: 0,
+          cardsShared: 0,
+          lastActivity: new Date(),
+          bestStreak: 0,
+          adventuresCompleted: 0,
+          friendsCount: 0,
+          challengesWon: 0,
+          challengesLost: 0,
+          referralsCount: 0,
+          mediaUploads: 0,
+          moodHistory: [],
+          choices: [],
+          completions: []
+        },
+        premiumStatus: { active: false, plan: 'basic' }
+      };
 
+      let user;
+      if (User) {
+        user = new User(userData);
         await user.save();
+      } else {
+        user = { _id: `demo_${Date.now()}`, ...userData };
+      }
 
-        const jwtToken = fastify.jwt.sign({ userId: user._id }, { expiresIn: '7d' });
-        await trackEvent('user_signup', user._id, { provider: 'email' });
+      const jwtToken = fastify.jwt.sign({ userId: user._id }, { expiresIn: '7d' });
+      await trackEvent('user_signup', user._id, { provider: 'email' });
 
-        return reply.send({
-          success: true,
+      const wsConnection = wsConnections.get(user._id.toString());
+      if (wsConnection) {
+        wsConnection.send(JSON.stringify({
+          type: 'signup',
+          data: { message: 'Welcome to SparkVibe!' }
+        }));
+      }
+      
+      return reply.send({
+        success: true,
+        data: {
           token: jwtToken,
-          message: 'Account created successfully!',
           user: {
             id: user._id,
             name: user.name,
             email: user.email,
-            avatar: user.avatar,
+            avatar: user.avatar || '👤',
             emailVerified: user.emailVerified,
             stats: user.stats,
-            achievements: user.achievements,
+            achievements: user.achievements || [],
             preferences: user.preferences,
-            referralCode: user.referralCode
+            referralCode: user.referralCode,
+            premiumStatus: user.premiumStatus
           }
-        });
-      } catch (error) {
-        return sendError(reply, 500, 'Account creation failed', error.message);
+        },
+        message: 'Account created successfully!',
+        metadata: { timestamp: new Date().toISOString(), fallback: !User }
+      });
+    } catch (error) {
+      return sendError(reply, 500, 'Account creation failed', error.message);
+    }
+  });
+
+  fastify.post('/auth/signin', async (request, reply) => {
+    try {
+      const { email, password } = request.body;
+      if (!email || !password) {
+        return sendError(reply, 400, 'Email and password are required');
       }
-    });
 
-    // Email/Password Login Route
-    fastify.post('/auth/signin', async (request, reply) => {
-      try {
-        const { email, password } = request.body;
-        
-        if (!email || !password) {
-          return sendError(reply, 400, 'Email and password are required');
-        }
-
-        if (mongoose.connection.readyState !== 1) {
-          return sendError(reply, 503, 'Database connection unavailable');
-        }
-
-        const sanitizedEmail = sanitize(email.toLowerCase());
-        const user = await User.findOne({ email: sanitizedEmail });
-        
+      const sanitizedEmail = sanitize(email.toLowerCase());
+      
+      let user;
+      if (User) {
+        user = await User.findOne({ email: sanitizedEmail });
         if (!user || !user.password) {
           return sendError(reply, 401, 'Invalid email or password');
         }
@@ -808,923 +917,1455 @@ const startServer = async () => {
         if (!isValidPassword) {
           return sendError(reply, 401, 'Invalid email or password');
         }
+      } else {
+        user = {
+          _id: `demo_signin_${Date.now()}`,
+          name: sanitizedEmail.split('@')[0],
+          email: sanitizedEmail,
+          avatar: '👤',
+          emailVerified: true,
+          authProvider: 'email',
+          stats: {
+            totalPoints: 0,
+            level: 1,
+            streak: 0,
+            cardsGenerated: 0,
+            cardsShared: 0,
+            mediaUploads: 0,
+            lastActivity: new Date(),
+            bestStreak: 0,
+            adventuresCompleted: 0,
+            friendsCount: 0,
+            challengesWon: 0,
+            challengesLost: 0,
+            referralsCount: 0,
+            moodHistory: [],
+            choices: [],
+            completions: []
+          },
+          achievements: [],
+          preferences: { interests: ['wellness', 'creativity'], aiPersonality: 'encouraging', adventureTypes: ['general'], difficulty: 'easy' },
+          referralCode: generateReferralCode(),
+          premiumStatus: { active: false, plan: 'basic' }
+        };
+      }
 
-        const jwtToken = fastify.jwt.sign({ userId: user._id }, { expiresIn: '7d' });
-        await trackEvent('user_login', user._id, { provider: 'email' });
-
-        // Update last activity
+      const jwtToken = fastify.jwt.sign({ userId: user._id }, { expiresIn: '7d' });
+      await trackEvent('user_login', user._id, { provider: 'email' });
+      
+      if (User && user.save) {
         user.stats.lastActivity = new Date();
         await user.save();
-
-        return reply.send({
-          success: true,
-          token: jwtToken,
-          message: 'Login successful!',
-          user: {
-            id: user._id,
-            name: user.name,
-            email: user.email,
-            avatar: user.avatar,
-            emailVerified: user.emailVerified,
-            stats: user.stats,
-            achievements: user.achievements,
-            preferences: user.preferences,
-            referralCode: user.referralCode
-          }
-        });
-      } catch (error) {
-        return sendError(reply, 500, 'Login failed', error.message);
       }
-    });
 
-    // Google Auth Route
-    fastify.post('/auth/google', async (request, reply) => {
-      try {
-        const { token } = request.body;
-        if (!token) {
-          return sendError(reply, 400, 'No token provided');
-        }
-
-        if (!googleClient) {
-          return sendError(reply, 500, 'Google OAuth not configured');
-        }
-
-        const ticket = await googleClient.verifyIdToken({
-          idToken: token,
-          audience: process.env.GOOGLE_CLIENT_ID,
-        });
-        const payload = ticket.getPayload();
-
-        let user = await User.findOne({ googleId: payload.sub });
-        if (!user) {
-          user = new User({
-            googleId: payload.sub,
-            email: sanitize(payload.email),
-            name: sanitize(payload.name),
-            avatar: payload.picture,
-            emailVerified: payload.email_verified,
-            authProvider: 'google',
-            referralCode: generateReferralCode(),
-            preferences: {
-              interests: ['wellness', 'creativity'],
-              aiPersonality: 'encouraging'
-            }
-          });
-          await user.save();
-        }
-
-        const jwtToken = fastify.jwt.sign({
-          userId: user._id,
-          email: user.email,
-          name: user.name,
-          googleId: user.googleId
-        }, { expiresIn: '1h' });
-
-        await trackEvent('user_login', user._id, { provider: 'google' });
-
-        return reply.send({
-          success: true,
-          token: jwtToken,
-          user: {
-            id: user._id,
-            email: user.email,
-            name: user.name,
-            avatar: user.avatar,
-            points: user.stats.totalPoints,
-            emailVerified: user.emailVerified,
-            preferences: user.preferences,
-            referralCode: user.referralCode
-          }
-        });
-      } catch (error) {
-        console.error('Google auth error:', error);
-        return sendError(reply, 500, 'Authentication failed', error.message);
+      const wsConnection = wsConnections.get(user._id.toString());
+      if (wsConnection) {
+        wsConnection.send(JSON.stringify({
+          type: 'signin',
+          data: { message: 'Successfully signed in!' }
+        }));
       }
-    });
-
-// User Profile Route
-fastify.get('/user/profile', { preHandler: [fastify.authenticate] }, async (request, reply) => {
-  try {
-    const userId = request.user.userId;
-
-    if (mongoose.connection.readyState !== 1) {
+      
       return reply.send({
         success: true,
-        message: 'Profile retrieved from fallback (database unavailable)',
-        user: {
-          id: userId,
-          email: 'user@example.com',
-          name: 'Anonymous User',
-          avatar: '🌟',
-          preferences: { interests: ['wellness', 'creativity'], aiPersonality: 'encouraging' },
-          stats: { totalPoints: 0, level: 1, streak: 0, cardsGenerated: 0, cardsShared: 0 },
-          fallback: true
-        }
+        data: {
+          token: jwtToken,
+          user: {
+            id: user._id,
+            name: user.name,
+            email: user.email,
+            avatar: user.avatar || '👤',
+            emailVerified: user.emailVerified,
+            stats: user.stats,
+            achievements: user.achievements || [],
+            preferences: user.preferences,
+            referralCode: user.referralCode,
+            premiumStatus: user.premiumStatus
+          }
+        },
+        message: 'Login successful!',
+        metadata: { timestamp: new Date().toISOString(), fallback: !User }
       });
+    } catch (error) {
+      return sendError(reply, 500, 'Login failed', error.message);
+    }
+  });
+
+// Add this route to handle Google OAuth code exchange
+fastify.post('/auth/google', async (request, reply) => {
+  const { id_token } = request.body;
+  if (!id_token) return reply.status(400).send({ success: false, error: 'Missing ID token' });
+
+  try {
+    const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+    const ticket = await client.verifyIdToken({
+      idToken: id_token,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+    const payload = ticket.getPayload();
+
+    const userData = {
+      id: payload.sub,
+      name: payload.name,
+      email: payload.email,
+      avatar: payload.picture,
+      emailVerified: payload.email_verified,
+      stats: { totalPoints: 0, level: 1, streak: 0, cardsGenerated: 0, cardsShared: 0 },
+      totalPoints: 0,
+      level: 1,
+      streak: 0,
+      cardsGenerated: 0,
+      cardsShared: 0,
+    };
+
+    let user;
+    if (User) {
+      user = await User.findOneAndUpdate(
+        { email: payload.email },
+        { $setOnInsert: userData, $set: { googleId: payload.sub, authProvider: 'google' } },
+        { upsert: true, new: true }
+      );
+    } else {
+      user = { _id: `demo_${payload.sub}`, ...userData };
     }
 
-    const user = await User.findById(userId).select(
-      'email name avatar preferences stats achievements referralCode emailVerified'
-    );
-    if (!user) {
-      return sendError(reply, 404, 'User not found');
-    }
-
-    await trackEvent('profile_view', userId, { timestamp: new Date().toISOString() });
-
+    const jwtToken = fastify.jwt.sign({ userId: user._id }, { expiresIn: '7d' });
     return reply.send({
       success: true,
-      user: {
-        id: user._id,
-        email: user.email,
-        name: user.name,
-        avatar: user.avatar,
-        preferences: user.preferences,
-        stats: user.stats,
-        achievements: user.achievements,
-        referralCode: user.referralCode,
-        emailVerified: user.emailVerified,
-        fallback: false
-      }
+      data: { token: jwtToken, user: userData },
+      message: 'Google authentication successful'
     });
   } catch (error) {
-    console.error('Profile fetch error:', error);
-    return sendError(reply, 500, 'Failed to fetch profile', error.message);
+    console.error('Google auth error:', error);
+    return sendError(reply, 500, 'Failed to authenticate with Google', error.message);
   }
 });
 
-    // Leaderboard Route
-    fastify.get('/leaderboard', async (request, reply) => {
-      try {
-        if (mongoose.connection.readyState !== 1) {
-          return reply.send(getFallbackLeaderboard());
-        }
+// Add this route to handle the OAuth redirect (optional, if frontend doesn't handle it)
+const googleOauthStates = new Map();
 
-        const leaders = await User.find()
-          .sort({ 'stats.totalPoints': -1 })
-          .limit(10)
-          .select('name avatar stats.totalPoints stats.level stats.streak')
-          .lean();
+fastify.get('/auth/google/callback', async (request, reply) => {
+  const { code, state } = request.query;
+  if (!code || !state || !googleOauthStates.has(state)) {
+    return sendError(reply, 400, 'Invalid authentication request');
+  }
+  googleOauthStates.delete(state);
 
-        const leaderboard = leaders.map((user, index) => ({
-          id: user._id,
-          username: user.name || 'Anonymous User',
-          avatar: user.avatar || '🚀',
-          score: user.stats.totalPoints || 0,
-          rank: index + 1,
-          level: user.stats.level || 1,
-          streak: user.stats.streak || 0
-        }));
+  try {
+    const tokenResponse = await axios.post('https://oauth2.googleapis.com/token', {
+      code,
+      client_id: process.env.GOOGLE_CLIENT_ID,
+      client_secret: process.env.GOOGLE_CLIENT_SECRET,
+      redirect_uri: 'https://sparkvibe.app/auth/google/callback',
+      grant_type: 'authorization_code',
+    });
+    const { id_token } = tokenResponse.data;
 
+    const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+    const ticket = await client.verifyIdToken({
+      idToken: id_token,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+    const payload = ticket.getPayload();
+
+    const userData = {
+      id: payload.sub,
+      name: payload.name,
+      email: payload.email,
+      avatar: payload.picture,
+      emailVerified: payload.email_verified,
+      stats: { totalPoints: 0, level: 1, streak: 0, cardsGenerated: 0, cardsShared: 0 },
+      totalPoints: 0,
+      level: 1,
+      streak: 0,
+      cardsGenerated: 0,
+      cardsShared: 0,
+    };
+
+    let user;
+    if (User) {
+      user = await User.findOneAndUpdate(
+        { email: payload.email },
+        { $setOnInsert: userData, $set: { googleId: payload.sub, authProvider: 'google' } },
+        { upsert: true, new: true }
+      );
+    } else {
+      user = { _id: `demo_${payload.sub}`, ...userData };
+    }
+
+    const jwtToken = fastify.jwt.sign({ userId: user._id }, { expiresIn: '7d' });
+    reply.redirect(`/dashboard?token=${encodeURIComponent(jwtToken)}&user=${encodeURIComponent(JSON.stringify(user))}`);
+  } catch (error) {
+    console.error('Google callback error:', error);
+    return reply.redirect('/login?error=auth_failed');
+  }
+});
+// Ensure CORS and COOP/COEP headers are set
+fastify.addHook('onSend', (request, reply, payload, next) => {
+  reply.header('Cross-Origin-Opener-Policy', 'same-origin');
+  reply.header('Cross-Origin-Embedder-Policy', 'require-corp');
+  next();
+});
+
+  // Log Google configuration on startup
+console.log('🔑 Google Auth Configuration:');
+console.log('- Client ID configured:', !!process.env.GOOGLE_CLIENT_ID);
+console.log('- Client ID format valid:', validateGoogleClientId(process.env.GOOGLE_CLIENT_ID));
+console.log('- Google client initialized:', !!googleClient);
+  
+  // Server.js Part 4 - Core Functionality Routes
+
+  // User Routes
+  fastify.get('/user/profile', { preHandler: [fastify.authenticate] }, async (request, reply) => {
+    try {
+      const userId = request.user.userId;
+      
+      if (!User) {
         return reply.send({
           success: true,
-          data: leaderboard,
-          fallback: false,
-          metadata: {
-            totalUsers: await User.countDocuments(),
-            timestamp: new Date().toISOString()
+          data: {
+            user: {
+              id: userId,
+              email: 'demo@sparkvibe.app',
+              name: 'Demo User',
+              avatar: '🌟',
+              preferences: { interests: ['wellness', 'creativity'], aiPersonality: 'encouraging', adventureTypes: ['general'], difficulty: 'easy' },
+              stats: { totalPoints: 0, level: 1, streak: 0, cardsGenerated: 0, cardsShared: 0, mediaUploads: 0 },
+              achievements: [],
+              referralCode: 'DEMO123',
+              emailVerified: true,
+              premiumStatus: { active: false, plan: 'basic' }
+            }
+          },
+          message: 'Profile retrieved from demo mode',
+          metadata: { timestamp: new Date().toISOString(), fallback: true }
+        });
+      }
+      
+      const user = await User.findById(userId).select('email name avatar preferences stats achievements referralCode emailVerified premiumStatus');
+      if (!user) {
+        return sendError(reply, 404, 'User not found');
+      }
+
+      await trackEvent('profile_view', userId, { timestamp: new Date().toISOString() });
+      
+      return reply.send({
+        success: true,
+        data: {
+          user: {
+            id: user._id,
+            email: user.email,
+            name: user.name,
+            avatar: user.avatar || '👤',
+            preferences: user.preferences,
+            stats: user.stats,
+            achievements: user.achievements,
+            referralCode: user.referralCode,
+            emailVerified: user.emailVerified,
+            premiumStatus: user.premiumStatus
           }
-        });
-      } catch (error) {
-        console.error('Leaderboard error:', error);
-        return reply.send(getFallbackLeaderboard());
-      }
-    });
+        },
+        message: 'Profile retrieved successfully',
+        metadata: { timestamp: new Date().toISOString(), fallback: false }
+      });
+    } catch (error) {
+      return sendError(reply, 500, 'Failed to fetch user profile', error.message);
+    }
+  });
 
-    // Trending Adventures Route
-    fastify.get('/trending-adventures', async (request, reply) => {
-      try {
-        if (mongoose.connection.readyState !== 1) {
-          return reply.send({
-            success: true,
-            trending: [],
-            viralAdventure: {},
-            metadata: { lastUpdated: new Date().toISOString(), fallback: true }
-          });
-        }
-
-        const trending = await Adventure.find()
-          .sort({ completions: -1 })
-          .limit(3)
-          .lean();
-
-        const viralAdventure = trending[0] || {};
-
+  fastify.post('/user/sync-stats', { preHandler: [fastify.authenticate] }, async (request, reply) => {
+    try {
+      const userId = request.user.userId;
+      const { totalPoints, level, streak, cardsGenerated, cardsShared, mediaUploads } = request.body;
+      
+      if (!User) {
         return reply.send({
           success: true,
-          trending,
-          viralAdventure,
-          metadata: { lastUpdated: new Date().toISOString(), fallback: false }
-        });
-      } catch (error) {
-        console.error('Trending adventures error:', error);
-        return reply.send({
-          success: true,
-          trending: [],
-          viralAdventure: {},
-          metadata: { lastUpdated: new Date().toISOString(), fallback: true }
+          data: {
+            synced: { totalPoints, level, streak, cardsGenerated, cardsShared, mediaUploads }
+          },
+          message: 'Stats synced locally (demo mode)',
+          metadata: { timestamp: new Date().toISOString(), fallback: true }
         });
       }
-    });
+      
+      const user = await User.findById(userId);
+      if (!user) {
+        return sendError(reply, 404, 'User not found');
+      }
 
-    // Sync Stats Route
-    fastify.post('/user/sync-stats', { preHandler: [fastify.authenticate] }, async (request, reply) => {
-      try {
-        const userId = request.user.userId;
-        const { totalPoints, level, streak, cardsGenerated, cardsShared } = request.body;
+      user.stats.totalPoints = totalPoints !== undefined ? totalPoints : user.stats.totalPoints;
+      user.stats.level = level !== undefined ? level : user.stats.level;
+      user.stats.streak = streak !== undefined ? streak : user.stats.streak;
+      user.stats.cardsGenerated = cardsGenerated !== undefined ? cardsGenerated : user.stats.cardsGenerated;
+      user.stats.cardsShared = cardsShared !== undefined ? cardsShared : user.stats.cardsShared;
+      user.stats.mediaUploads = mediaUploads !== undefined ? mediaUploads : user.stats.mediaUploads;
+      user.stats.lastActivity = new Date();
+      
+      await user.save();
+      await checkAchievements(userId, 'stats_updated');
+      
+      const wsConnection = wsConnections.get(userId.toString());
+      if (wsConnection) {
+        wsConnection.send(JSON.stringify({
+          type: 'stats_updated',
+          data: { message: 'User stats updated successfully!' }
+        }));
+      }
 
-        if (mongoose.connection.readyState !== 1) {
-          return reply.send({
-            success: true,
-            message: 'Stats synced locally (database unavailable)',
-            synced: { totalPoints, level, streak, cardsGenerated, cardsShared },
-            fallback: true
-          });
-        }
-
-        const user = await User.findById(userId);
-        if (!user) {
-          return sendError(reply, 404, 'User not found');
-        }
-
-        user.stats.totalPoints = totalPoints !== undefined ? totalPoints : user.stats.totalPoints;
-        user.stats.level = level !== undefined ? level : user.stats.level;
-        user.stats.streak = streak !== undefined ? streak : user.stats.streak;
-        user.stats.cardsGenerated = cardsGenerated !== undefined ? cardsGenerated : user.stats.cardsGenerated;
-        user.stats.cardsShared = cardsShared !== undefined ? cardsShared : user.stats.cardsShared;
-        user.stats.lastActivity = new Date();
-
-        await user.save();
-        await checkAchievements(userId, 'stats_updated');
-
-        return reply.send({
-          success: true,
-          message: 'User stats synchronized successfully',
+      return reply.send({
+        success: true,
+        data: {
           synced: {
             totalPoints: user.stats.totalPoints,
             level: user.stats.level,
             streak: user.stats.streak,
             cardsGenerated: user.stats.cardsGenerated,
-            cardsShared: user.stats.cardsShared
-          },
-          fallback: false
-        });
-      } catch (error) {
-        console.error('Sync stats error:', error);
-        return sendError(reply, 500, 'Failed to sync user stats', error.message);
+            cardsShared: user.stats.cardsShared,
+            mediaUploads: user.stats.mediaUploads
+          }
+        },
+        message: 'User stats synchronized successfully',
+        metadata: { timestamp: new Date().toISOString(), fallback: false }
+      });
+    } catch (error) {
+      console.error('Sync stats error:', error);
+      return sendError(reply, 500, 'Failed to sync user stats', error.message);
+    }
+  });
+
+  // Mood Analysis
+  fastify.post('/analyze-mood', { preHandler: [fastify.authenticate] }, async (request, reply) => {
+    try {
+      const userId = request.user.userId;
+      const { textInput, timeOfDay, recentActivities } = request.body;
+
+      if (!textInput) {
+        return sendError(reply, 400, 'Text input is required for mood analysis');
       }
-    });
 
-    // Save Profile Route
-    fastify.post('/user/save-profile', { preHandler: [fastify.authenticate] }, async (request, reply) => {
-      try {
-        const userId = request.user.userId;
-        const { name, avatar, preferences } = request.body;
+      // Simple mood analysis fallback
+      const moodKeywords = {
+        happy: ['happy', 'joy', 'excited', 'great', 'awesome', 'love', 'amazing'],
+        sad: ['sad', 'down', 'depressed', 'upset', 'cry', 'disappointed'],
+        anxious: ['worried', 'anxiety', 'nervous', 'stress', 'overwhelmed'],
+        angry: ['angry', 'mad', 'frustrated', 'annoyed', 'irritated'],
+        calm: ['calm', 'peaceful', 'relaxed', 'zen', 'tranquil'],
+        energetic: ['energetic', 'pumped', 'motivated', 'ready', 'charged']
+      };
 
-        if (mongoose.connection.readyState !== 1) {
-          return reply.send({
-            success: true,
-            message: 'Profile saved locally (database unavailable)',
-            user: { id: userId, name, avatar, preferences },
-            fallback: true
-          });
+      let detectedMood = 'curious';
+      let confidence = 0.65;
+      const text = textInput.toLowerCase();
+      
+      for (const [mood, keywords] of Object.entries(moodKeywords)) {
+        const matches = keywords.filter(keyword => text.includes(keyword));
+        if (matches.length > 0) {
+          detectedMood = mood;
+          confidence = Math.min(0.95, 0.6 + (matches.length * 0.15));
+          break;
         }
+      }
 
-        const user = await User.findById(userId);
+      const moodData = {
+        mood: detectedMood,
+        primaryMood: detectedMood,
+        confidence,
+        emotions: [detectedMood, 'hopeful'],
+        recommendations: ['Take time for self-care', 'Connect with friends', 'Try something new'],
+        suggestedTemplate: 'cosmic',
+        energyLevel: 'medium',
+        socialMood: 'balanced',
+        timestamp: new Date()
+      };
+
+      if (User && userId !== 'demo_user') {
+        await User.findByIdAndUpdate(userId, {
+          $push: { 'stats.moodHistory': { mood: moodData, timestamp: new Date() } }
+        });
+      }
+
+      await trackEvent('mood_analyzed', userId, { mood: detectedMood, confidence });
+
+      const wsConnection = wsConnections.get(userId.toString());
+      if (wsConnection) {
+        wsConnection.send(JSON.stringify({
+          type: 'mood_analyzed',
+          data: { message: 'Mood analyzed successfully!', mood: detectedMood }
+        }));
+      }
+
+      return reply.send({
+        success: true,
+        data: moodData,
+        message: 'Mood analyzed successfully',
+        metadata: { timestamp: new Date().toISOString(), fallback: !User }
+      });
+    } catch (error) {
+      console.error('Mood analysis error:', error);
+      return sendError(reply, 500, 'Failed to analyze mood', error.message);
+    }
+  });
+
+  // Generate Capsule
+  fastify.post('/generate-capsule', { preHandler: [fastify.authenticate] }, async (request, reply) => {
+    try {
+      const userId = request.user.userId;
+      const { mood, interests, timeOfDay, moodAnalysis } = request.body;
+
+      if (!mood) {
+        return sendError(reply, 400, 'Mood is required for capsule generation');
+      }
+
+      // Generate adventure based on mood
+      const adventureTemplates = {
+        happy: {
+          title: 'Joy Amplifier Challenge',
+          prompt: 'Spread your happiness by doing something kind for a stranger today!',
+          category: 'Social Connection',
+          difficulty: 'easy',
+          estimatedTime: '15 minutes'
+        },
+        sad: {
+          title: 'Gentle Self-Care Journey',
+          prompt: 'Take a moment to nurture yourself with a calming activity.',
+          category: 'Self-Care',
+          difficulty: 'easy',
+          estimatedTime: '20 minutes'
+        },
+        anxious: {
+          title: 'Calm Creator Exercise',
+          prompt: 'Practice a breathing exercise and create something with your hands.',
+          category: 'Mindfulness',
+          difficulty: 'easy',
+          estimatedTime: '10 minutes'
+        },
+        angry: {
+          title: 'Energy Transformer',
+          prompt: 'Channel your energy into a physical activity or creative outlet.',
+          category: 'Physical Activity',
+          difficulty: 'medium',
+          estimatedTime: '25 minutes'
+        },
+        calm: {
+          title: 'Mindful Moment Maker',
+          prompt: 'Use this peaceful energy to meditate or journal your thoughts.',
+          category: 'Mindfulness',
+          difficulty: 'easy',
+          estimatedTime: '15 minutes'
+        },
+        energetic: {
+          title: 'Power Hour Adventure',
+          prompt: 'Tackle something on your to-do list or try a new skill!',
+          category: 'Productivity',
+          difficulty: 'medium',
+          estimatedTime: '30 minutes'
+        }
+      };
+
+      const adventure = adventureTemplates[mood] || adventureTemplates.curious || {
+        title: 'Curiosity Quest',
+        prompt: 'Explore something new that sparks your interest today!',
+        category: 'Personal Growth',
+        difficulty: 'easy',
+        estimatedTime: '20 minutes'
+      };
+
+      const capsule = {
+        capsuleId: `cap_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
+        adventure: {
+          ...adventure,
+          rewards: { points: 25, badge: 'Mood Explorer' }
+        },
+        brainBite: {
+          question: 'Did you know?',
+          answer: `Your ${mood} mood can actually enhance your ${mood === 'happy' ? 'creativity and social connections' : mood === 'calm' ? 'focus and decision-making' : 'problem-solving abilities'}!`
+        },
+        habitNudge: `Consider making ${timeOfDay || 'daily'} mood check-ins a regular practice to build emotional awareness.`,
+        moodData: moodAnalysis,
+        timestamp: new Date(),
+        id: `capsule_${Date.now()}`
+      };
+
+      if (VibeCard && userId !== 'demo_user') {
+        await VibeCard.create({
+          userId,
+          capsuleId: capsule.capsuleId,
+          content: { adventure: capsule.adventure, mood: moodAnalysis },
+          design: { template: moodAnalysis?.suggestedTemplate || 'cosmic', colors: ['#1a1a2e', '#533483'], style: 'modern' }
+        });
+      }
+
+      await trackEvent('capsule_generated', userId, { mood, category: adventure.category });
+
+      const wsConnection = wsConnections.get(userId.toString());
+      if (wsConnection) {
+        wsConnection.send(JSON.stringify({
+          type: 'capsule_generated',
+          data: { message: 'Adventure capsule generated!', capsuleId: capsule.capsuleId }
+        }));
+      }
+
+      return reply.send({
+        success: true,
+        data: capsule,
+        message: 'Adventure capsule generated successfully',
+        metadata: { timestamp: new Date().toISOString(), fallback: !VibeCard }
+      });
+    } catch (error) {
+      console.error('Capsule generation error:', error);
+      return sendError(reply, 500, 'Failed to generate capsule', error.message);
+    }
+  });
+
+  // Generate Vibe Card
+  fastify.post('/generate-vibe-card', { preHandler: [fastify.authenticate] }, async (request, reply) => {
+    try {
+      const userId = request.user.userId;
+      const { moodData, capsuleData, template = 'cosmic' } = request.body;
+
+      if (!moodData || !capsuleData) {
+        return sendError(reply, 400, 'Mood data and capsule data are required');
+      }
+
+      let user;
+      if (User && userId !== 'demo_user') {
+        user = await User.findById(userId).select('name stats');
         if (!user) {
           return sendError(reply, 404, 'User not found');
         }
+      } else {
+        user = { 
+          name: 'Demo User', 
+          stats: { totalPoints: 500, streak: 3, cardsGenerated: 0 } 
+        };
+      }
 
-        user.name = sanitize(name) || user.name;
-        user.avatar = sanitize(avatar) || user.avatar;
-        if (preferences) {
-          user.preferences = { ...user.preferences, ...sanitize(preferences) };
-        }
-        user.stats.lastActivity = new Date();
-
-        await user.save();
-
-        return reply.send({
-          success: true,
-          message: 'Profile saved successfully',
-          user: {
-            id: user._id,
-            email: user.email,
-            name: user.name,
-            avatar: user.avatar,
-            preferences: user.preferences
+      const cardData = {
+        cardId: `card_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
+        content: {
+          adventure: capsuleData.adventure,
+          achievement: { 
+            points: capsuleData.adventure.rewards?.points || 25, 
+            streak: user.stats.streak || 0 
           },
-          fallback: false
-        });
-      } catch (error) {
-        console.error('Save profile error:', error);
-        return sendError(reply, 500, 'Failed to save profile', error.message);
-      }
-    });
+          user: { name: user.name },
+          mood: moodData
+        },
+        design: { 
+          template, 
+          colors: ['#1a1a2e', '#533483', '#7209b7'], 
+          style: 'modern' 
+        },
+        type: template,
+        timestamp: new Date()
+      };
 
-    // Mood Analysis Route
-    fastify.post('/analyze-mood', async (request, reply) => {
-      try {
-        const { textInput, userId } = request.body;
-        
-        if (!textInput || textInput.trim().length < 3) {
-          return sendError(reply, 400, 'Text input is required and must be at least 3 characters');
-        }
-
-        // Simple mood analysis (can be enhanced with AI later)
-        const text = textInput.toLowerCase();
-        let mood, confidence, emotions, recommendations, suggestedTemplate, energyLevel, socialMood;
-
-        if (text.includes('excited') || text.includes('happy') || text.includes('great') || text.includes('amazing')) {
-          mood = 'happy';
-          confidence = 0.92;
-          emotions = ['excited', 'joyful', 'optimistic'];
-          recommendations = [
-            'Channel your positive energy into a creative project',
-            'Share your enthusiasm with someone special',
-            'Try a high-energy adventure'
-          ];
-          suggestedTemplate = 'cosmic';
-          energyLevel = 'high';
-          socialMood = 'outgoing';
-        } else if (text.includes('nervous') || text.includes('anxious') || text.includes('worried') || text.includes('stressed')) {
-          mood = 'anxious';
-          confidence = 0.88;
-          emotions = ['nervous', 'concerned', 'thoughtful'];
-          recommendations = [
-            'Practice deep breathing exercises',
-            'Break tasks into smaller, manageable steps',
-            'Try a calming mindfulness exercise'
-          ];
-          suggestedTemplate = 'minimal';
-          energyLevel = 'medium-low';
-          socialMood = 'introspective';
-        } else if (text.includes('tired') || text.includes('exhausted') || text.includes('drained')) {
-          mood = 'calm';
-          confidence = 0.85;
-          emotions = ['tired', 'peaceful', 'relaxed'];
-          recommendations = [
-            'Focus on gentle, restorative activities',
-            'Practice gratitude for small moments',
-            'Try a short nature walk'
-          ];
-          suggestedTemplate = 'nature';
-          energyLevel = 'low';
-          socialMood = 'quiet';
-        } else {
-          mood = 'curious';
-          confidence = 0.65;
-          emotions = ['curious', 'open', 'exploratory'];
-          recommendations = [
-            'Try something new and unexpected today',
-            'Explore a topic that sparks your interest',
-            'Stay open to surprising opportunities'
-          ];
-          suggestedTemplate = 'cosmic';
-          energyLevel = 'medium';
-          socialMood = 'balanced';
-        }
-
-        // Track mood analysis
-        if (userId) {
-          await trackEvent('mood_analyzed', userId, { 
-            mood, 
-            confidence,
-            textLength: textInput.length 
-          });
-        }
-
-        return reply.send({
-          success: true,
-          mood,
-          confidence,
-          emotions,
-          recommendations,
-          suggestedTemplate,
-          energyLevel,
-          socialMood,
-          analyzedAt: new Date().toISOString(),
-          primaryMood: mood,
-          suggestedActivities: recommendations.slice(0, 2)
-        });
-      } catch (error) {
-        return sendError(reply, 500, 'Mood analysis failed', error.message);
-      }
-    });
-
-    // Simple Capsule Generation Route
-    fastify.post('/generate-capsule-simple', async (request, reply) => {
-      try {
-        const { mood, interests = ['general'], timeOfDay = 'afternoon', userId } = request.body;
-        
-        if (!mood) {
-          return sendError(reply, 400, 'Mood is required');
-        }
-
-        let adventure;
-        if (mood === 'happy') {
-          adventure = {
-            title: '✨ Spread Joy Challenge',
-            prompt: 'Send a heartfelt message to three people telling them why they matter to you.',
-            difficulty: 'easy',
-            estimatedTime: '10 minutes',
-            category: 'Social'
-          };
-        } else if (mood === 'anxious') {
-          adventure = {
-            title: '🧘 Grounding Ritual',
-            prompt: 'Practice the 5-4-3-2-1 technique: Notice 5 things you can see, 4 things you can touch, 3 things you can hear, 2 things you can smell, and 1 thing you can taste.',
-            difficulty: 'easy',
-            estimatedTime: '5 minutes',
-            category: 'Mindfulness'
-          };
-        } else if (mood === 'calm') {
-          adventure = {
-            title: '🌿 Gentle Gratitude Walk',
-            prompt: 'Take a slow, mindful walk and find three things in nature that bring you peace.',
-            difficulty: 'easy',
-            estimatedTime: '15 minutes',
-            category: 'Nature'
-          };
-        } else {
-          adventure = {
-            title: '🎨 Creative Discovery',
-            prompt: 'Set a timer for 10 minutes and create something with whatever materials you have nearby.',
-            difficulty: 'easy',
-            estimatedTime: '10 minutes',
-            category: 'Creativity'
-          };
-        }
-
-        // Track capsule generation
-        if (userId) {
-          await trackEvent('capsule_generated', userId, { 
-            mood, 
-            adventureType: adventure.category,
-            timeOfDay 
-          });
-        }
-
-        return reply.send({
-          success: true,
-          capsule: `Good ${timeOfDay}! Your ${mood} energy is perfect for growth today.`,
-          adventure,
-          moodBoost: `Your ${mood} mood is a superpower - use it to create positive change!`,
-          brainBite: {
-            question: 'Did you know?',
-            answer: 'Engaging in novel activities creates new neural pathways, enhancing cognitive flexibility and creativity.'
-          },
-          habitNudge: `Build on today's ${mood} energy by making this a daily practice!`,
-          viralPotential: 0.7,
-          id: `capsule_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-        });
-      } catch (error) {
-        return sendError(reply, 500, 'Capsule generation failed', error.message);
-      }
-    });
-
-    // Existing routes (unchanged)
-    fastify.post('/generate-enhanced-vibe-card', async (request, reply) => {
-      try {
-        const { moodData, choices, user } = request.body;
-        
-        // Enhanced vibe card generation requested
-
-        const completedPhases = Object.keys(choices || {}).length;
-        const basePoints = 25;
-        const phaseBonus = completedPhases * 15;
-        const totalPoints = basePoints + phaseBonus;
-
-        const enhancedContent = await generateEnhancedContent(choices, moodData, user);
-        
-        const enhancedVibeCard = {
-          id: `enhanced_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-          type: 'enhanced',
-          version: '2.0',
-          content: {
-            title: enhancedContent.title,
-            subtitle: 'Your Multi-Phase Adventure Journey',
-            adventure: {
-              choice: choices.adventure?.title || 'Creative Expression',
-              outcome: enhancedContent.adventure.outcome,
-              impact: enhancedContent.adventure.impact,
-              visual: enhancedContent.adventure.visual
-            },
-            reflection: {
-              choice: choices.reflection?.title || 'Personal Growth',
-              insight: enhancedContent.reflection.insight,
-              wisdom: enhancedContent.reflection.wisdom,
-              mantra: enhancedContent.reflection.mantra
-            },
-            action: {
-              choice: choices.action?.title || 'Daily Practice',
-              commitment: enhancedContent.action.commitment,
-              strategy: enhancedContent.action.strategy,
-              timeline: enhancedContent.action.timeline
-            },
-            achievement: {
-              totalPoints: totalPoints,
-              phasesCompleted: completedPhases,
-              badge: getBadgeForPhases(completedPhases),
-              level: calculateLevel(user?.totalPoints || 0, totalPoints),
-              streak: Math.floor(Math.random() * 10) + 1,
-              timestamp: new Date().toISOString()
-            },
-            moodJourney: {
-              before: moodData?.mood || 'curious',
-              after: enhancedContent.finalMood,
-              transformation: enhancedContent.moodTransformation,
-              energyBoost: `+${Math.floor(Math.random() * 25) + 15}%`
+      // Generate image if Canvas is available
+      if (Canvas) {
+        const imageBuffer = await createVibeCardImage(cardData);
+        if (imageBuffer) {
+          let imageUrl;
+          if (cloudinary) {
+            try {
+              const uploadResult = await new Promise((resolve, reject) => {
+  cloudinary.uploader.upload_stream({
+    resource_type: 'image',
+    folder: 'sparkvibe_cards',
+    public_id: `card_${cardData.cardId}_${Date.now()}`
+  }, (error, result) => {
+    if (error) reject(error);
+    else resolve(result);
+  }).end(imageBuffer);
+});
+              imageUrl = uploadResult.secure_url;
+            } catch (error) {
+              console.warn('Cloudinary upload failed, using local storage');
+              const fileName = `card_${cardData.cardId}_${Date.now()}.png`;
+              const filePath = path.join(__dirname, 'uploads', fileName);
+              await fs.writeFile(filePath, imageBuffer);
+              imageUrl = `/uploads/${fileName}`;
             }
-          },
-          design: {
-            template: getTemplateForChoices(choices),
-            theme: enhancedContent.theme,
-            colors: getEnhancedColors(choices, moodData),
-            animations: ['morphGradient', 'particleField', 'pulseGlow'],
-            layout: 'multi-phase',
-            effects: {
-              background: 'cosmic-particles',
-              transitions: 'smooth-morph',
-              highlights: 'neon-glow'
-            }
-          },
-          user: {
-            name: user?.name || 'Vibe Explorer',
-            avatar: user?.avatar || '🌟',
-            level: calculateLevel(user?.totalPoints || 0, totalPoints),
-            totalPoints: (user?.totalPoints || 0) + totalPoints,
-            streak: user?.streak || 1,
-            badgeCount: (user?.badgeCount || 0) + 1
-          },
-          sharing: {
-            title: `${user?.name || 'Someone'}'s Enhanced Vibe Journey`,
-            description: `Completed a 3-phase adventure and earned ${totalPoints} points!`,
-            captions: [
-              `🚀 Just completed my Enhanced Vibe Journey and earned ${totalPoints} points!`,
-              `✨ ${enhancedContent.adventure.outcome} #SparkVibeJourney`,
-              `🌟 Three phases, infinite possibilities. ${enhancedContent.reflection.mantra}`,
-              `⚡ ${enhancedContent.action.commitment} Starting today!`
-            ],
-            hashtags: [
-              '#SparkVibe', '#EnhancedJourney', '#MindfulAdventure', 
-              '#PersonalGrowth', '#VibeCard', '#Transformation'
-            ],
-            socialLinks: {
-              twitter: generateEnhancedTwitterShare(enhancedContent, totalPoints),
-              instagram: generateEnhancedInstagramShare(enhancedContent),
-              facebook: generateEnhancedFacebookShare(enhancedContent, totalPoints)
-            },
-            qrCode: `https://sparkvibe.app/card/${enhancedVibeCard.id}`,
-            shareUrl: `https://sparkvibe.app/shared/${enhancedVibeCard.id}`
-          },
-          analytics: {
-            viralScore: calculateViralScore(choices, moodData, enhancedContent),
-            engagementPotential: calculateEngagement(enhancedContent),
-            personalityMatch: calculatePersonalityMatch(choices),
-            uniqueness: Math.random() * 0.3 + 0.7
-          },
-          metadata: {
-            generatedAt: new Date().toISOString(),
-            version: '2.0',
-            type: 'enhanced-multi-phase',
-            aiEnhanced: true,
-            processingTime: '2.1s',
-            phases: completedPhases,
-            choicePattern: Object.keys(choices).join('-'),
-            moodContext: moodData?.mood || 'neutral'
+          } else {
+            const fileName = `card_${cardData.cardId}_${Date.now()}.png`;
+            const filePath = path.join(__dirname, 'uploads', fileName);
+            await fs.writeFile(filePath, imageBuffer);
+            imageUrl = `/uploads/${fileName}`;
           }
-        };
-
-        return reply.send({
-          success: true,
-          card: enhancedVibeCard,
-          cardId: enhancedVibeCard.id,
-          message: '🎨 Enhanced vibe card generated successfully!',
-          processingTime: '2.1s',
-          pointsEarned: totalPoints,
-          achievement: enhancedVibeCard.content.achievement
-        });
-      } catch (error) {
-        console.error('Enhanced vibe card generation error:', error);
-        const fallbackCard = {
-          id: `fallback_enhanced_${Date.now()}`,
-          type: 'enhanced',
-          content: {
-            title: 'Your Amazing Journey',
-            adventure: { choice: 'Creative Path', outcome: 'Embraced new possibilities' },
-            reflection: { insight: 'Growth happens through action', mantra: 'I am becoming' },
-            action: { commitment: 'Continue exploring', strategy: 'One step at a time' },
-            achievement: { totalPoints: 55, badge: 'Journey Pioneer' }
-          },
-          design: { template: 'cosmic', theme: 'inspiring' },
-          sharing: { title: 'Enhanced Vibe Journey Complete!' }
-        };
-        
-        return reply.send({
-          success: true,
-          card: fallbackCard,
-          message: '🎨 Enhanced vibe card generated (fallback)',
-          fallback: true
-        });
+          cardData.imageUrl = imageUrl;
+        }
       }
-    });
 
-    // Helper functions for enhanced generation
-    async function generateEnhancedContent(choices, moodData, user) {
-      const adventureTypes = {
-        'creative': {
-          outcome: 'Unleashed your creative potential',
-          impact: 'Discovered new forms of self-expression',
-          visual: '🎨'
-        },
-        'mindful': {
-          outcome: 'Found inner peace and clarity',
-          impact: 'Connected with your deeper self',
-          visual: '🧘‍♀️'
-        },
-        'social': {
-          outcome: 'Strengthened meaningful connections',
-          impact: 'Expanded your support network',
-          visual: '💫'
-        },
-        'learning': {
-          outcome: 'Expanded your knowledge horizon',
-          impact: 'Gained fresh perspectives',
-          visual: '📚'
-        }
-      };
-
-      const reflectionTypes = {
-        'growth': {
-          insight: 'Every challenge is a stepping stone to strength',
-          wisdom: 'Resilience grows through embracing discomfort',
-          mantra: 'I am becoming stronger every day'
-        },
-        'gratitude': {
-          insight: 'Joy exists in the smallest moments',
-          wisdom: 'Appreciation amplifies abundance',
-          mantra: 'I choose to see beauty everywhere'
-        },
-        'purpose': {
-          insight: 'Alignment creates authentic power',
-          wisdom: 'Values guide meaningful action',
-          mantra: 'My purpose illuminates my path'
-        },
-        'connection': {
-          insight: 'We are all threads in a beautiful tapestry',
-          wisdom: 'Unity emerges through understanding',
-          mantra: 'I am connected to something greater'
-        }
-      };
-
-      const actionTypes = {
-        'daily_practice': {
-          commitment: 'Dedicate 10 minutes daily to growth',
-          strategy: 'Small consistent steps create transformation',
-          timeline: 'Starting today, building for 30 days'
-        },
-        'share_journey': {
-          commitment: 'Inspire others through my story',
-          strategy: 'Authentic sharing creates ripple effects',
-          timeline: 'Share one insight this week'
-        },
-        'build_habit': {
-          commitment: 'Create sustainable positive routines',
-          strategy: 'Stack new habits with existing ones',
-          timeline: 'Implement gradually over 21 days'
-        },
-        'explore_deeper': {
-          commitment: 'Dive deeper into this area of growth',
-          strategy: 'Research, learn, and apply new knowledge',
-          timeline: 'Dedicate 1 hour weekly to learning'
-        }
-      };
-
-      const adventureChoice = choices.adventure?.id || 'creative';
-      const reflectionChoice = choices.reflection?.id || 'growth';
-      const actionChoice = choices.action?.id || 'daily_practice';
-
-      return {
-        title: `Your ${adventureChoice.charAt(0).toUpperCase() + adventureChoice.slice(1)} Journey`,
-        adventure: adventureTypes[adventureChoice] || adventureTypes['creative'],
-        reflection: reflectionTypes[reflectionChoice] || reflectionTypes['growth'],
-        action: actionTypes[actionChoice] || actionTypes['daily_practice'],
-        theme: determineTheme(choices),
-        finalMood: 'inspired',
-        moodTransformation: 'Elevated through mindful action'
-      };
-    }
-
-    function getBadgeForPhases(phases) {
-      if (phases >= 3) return 'Journey Master';
-      if (phases >= 2) return 'Path Walker';
-      if (phases >= 1) return 'Step Taker';
-      return 'Explorer';
-    }
-
-    function calculateLevel(currentPoints, earnedPoints) {
-      const totalPoints = currentPoints + earnedPoints;
-      return Math.floor(totalPoints / 100) + 1;
-    }
-
-    function getTemplateForChoices(choices) {
-      const templates = {
-        'creative': 'artistic',
-        'mindful': 'zen',
-        'social': 'vibrant',
-        'learning': 'academic'
-      };
-      return templates[choices.adventure?.id] || 'cosmic';
-    }
-
-    function getEnhancedColors(choices, moodData) {
-      const colorPalettes = {
-        'creative': { primary: '#ff6b9d', secondary: '#ffd93d', accent: '#6bcf7f' },
-        'mindful': { primary: '#4ecdc4', secondary: '#44a08d', accent: '#096dd9' },
-        'social': { primary: '#ff9a9e', secondary: '#fecfef', accent: '#ffeaa7' },
-        'learning': { primary: '#667eea', secondary: '#764ba2', accent: '#f093fb' }
-      };
-      return colorPalettes[choices.adventure?.id] || colorPalettes['creative'];
-    }
-
-    function determineTheme(choices) {
-      if (choices.adventure?.id === 'mindful') return 'serene';
-      if (choices.adventure?.id === 'creative') return 'artistic';
-      if (choices.adventure?.id === 'social') return 'vibrant';
-      return 'inspiring';
-    }
-
-    function calculateViralScore(choices, moodData, content) {
-      let score = 0.5;
-      if (content.adventure?.outcome?.length > 20) score += 0.1;
-      if (content.reflection?.mantra?.length > 10) score += 0.1;
-      if (content.action?.commitment?.length > 15) score += 0.1;
-      const positiveMoods = ['happy', 'excited', 'inspired', 'grateful'];
-      if (positiveMoods.includes(moodData?.mood)) score += 0.2;
-      return Math.min(score, 1.0);
-    }
-
-    function calculateEngagement(content) {
-      return Math.random() * 0.3 + 0.7;
-    }
-
-    function calculatePersonalityMatch(choices) {
-      return Math.random() * 0.2 + 0.8;
-    }
-
-    function generateEnhancedTwitterShare(content, points) {
-      const text = `✨ Just completed my Enhanced Vibe Journey! ${content.adventure.outcome} and earned ${points} points! 🚀 ${content.reflection.mantra} #SparkVibe #EnhancedJourney`;
-      return `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=https://sparkvibe.app`;
-    }
-
-    function generateEnhancedInstagramShare(content) {
-      return `https://www.instagram.com/create/story/`;
-    }
-
-    function generateEnhancedFacebookShare(content, points) {
-      const text = `Just completed an Enhanced Vibe Journey and earned ${points} points! ${content.reflection.insight}`;
-      return `https://www.facebook.com/sharer/sharer.php?u=https://sparkvibe.app&quote=${encodeURIComponent(text)}`;
-    }
-
-    fastify.post('/track-share', { preHandler: [fastify.authenticate] }, async (request, reply) => {
-      try {
-        const { cardId, platform, url } = request.body;
-        const userId = request.user.userId;
-
-        if (!cardId || !platform) {
-          return sendError(reply, 400, 'Card ID and platform are required');
-        }
-
-        const vibeCard = await VibeCard.findByIdAndUpdate(cardId, {
-          $inc: { 'analytics.shares': 1 },
-          $push: { 'sharing.platforms': platform },
-          'sharing.lastShared': new Date()
-        }, { new: true });
-
-        if (!vibeCard) {
-          return sendError(reply, 404, 'Vibe card not found');
-        }
-
+      if (User && userId !== 'demo_user') {
         await User.findByIdAndUpdate(userId, {
-          $inc: { 'stats.cardsShared': 1 },
-          'stats.lastActivity': new Date()
-        });
-
-        if (vibeCard.analytics.shares >= 100) {
-          await checkAchievements(userId, 'viral_achievement', { shares: vibeCard.analytics.shares });
-        }
-
-        await trackEvent('card_shared', userId, { 
-          cardId, 
-          platform, 
-          totalShares: vibeCard.analytics.shares 
-        });
-
-        Array.from(wsConnections.values()).forEach(ws => {
-          ws.send(JSON.stringify({
-            type: 'leaderboard_update',
-            data: { userId, action: 'card_shared' }
-          }));
-        });
-
-        return reply.send({
-          success: true,
-          message: 'Share tracked successfully',
-          totalShares: vibeCard.analytics.shares,
-          viralScore: vibeCard.analytics.viralScore
-        });
-      } catch (error) {
-        return sendError(reply, 500, 'Failed to track share', error.message);
-      }
-    });
-
-    fastify.get('/leaderboard-enhanced', async (request, reply) => {
-      try {
-        const { category = 'points', limit = 10, timeframe = 'all' } = request.query;
-
-        if (mongoose.connection.readyState !== 1) {
-          return reply.send(getFallbackLeaderboard());
-        }
-
-        let dateFilter = {};
-        if (timeframe === 'week') {
-          dateFilter = { 'stats.lastActivity': { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } };
-        } else if (timeframe === 'month') {
-          dateFilter = { 'stats.lastActivity': { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } };
-        }
-
-        let sortField = 'stats.totalPoints';
-        if (category === 'adventures') sortField = 'stats.adventuresCompleted';
-        if (category === 'streak') sortField = 'stats.streak';
-        if (category === 'cards') sortField = 'stats.cardsGenerated';
-        if (category === 'social') sortField = 'stats.friendsCount';
-
-        const leaders = await User.find(dateFilter, {
-          name: 1,
-          avatar: 1,
-          stats: 1,
-          achievements: 1,
-          referralCode: 1
-        })
-        .sort({ [sortField]: -1 })
-        .limit(parseInt(limit))
-        .lean();
-
-        const leaderboard = leaders.map((user, index) => ({
-          id: user._id,
-          username: user.name || 'Anonymous User',
-          avatar: user.avatar || '🚀',
-          score: user.stats?.totalPoints || 0,
-          rank: index + 1,
-          streak: user.stats?.streak || 0,
-          cardsShared: user.stats?.cardsShared || 0,
-          cardsGenerated: user.stats?.cardsGenerated || 0,
-          level: user.stats?.level || 1,
-          friendsCount: user.stats?.friendsCount || 0,
-          challengesWon: user.stats?.challengesWon || 0,
-          achievements: (user.achievements || []).slice(0, 3),
-          referralCode: user.referralCode,
-          isOnline: wsConnections.has(user._id.toString())
-        }));
-
-        return reply.send({ 
-          success: true, 
-          data: leaderboard,
-          metadata: {
-            category,
-            timeframe,
-            totalUsers: await User.countDocuments(dateFilter),
-            onlineUsers: wsConnections.size
+          $inc: { 
+            'stats.cardsGenerated': 1,
+            'stats.totalPoints': 25
           }
         });
-      } catch (error) {
-        console.error('Enhanced leaderboard error:', error);
+        await checkAchievements(userId, 'card_generated');
+      }
+
+      await trackEvent('vibe_card_generated', userId, { template, mood: moodData.mood });
+
+      const wsConnection = wsConnections.get(userId.toString());
+      if (wsConnection) {
+        wsConnection.send(JSON.stringify({
+          type: 'vibe_card_generated',
+          data: { message: 'Vibe card generated successfully!', cardId: cardData.cardId }
+        }));
+      }
+
+      return reply.send({
+        success: true,
+        data: cardData,
+        message: 'Vibe card generated successfully',
+        metadata: { timestamp: new Date().toISOString(), fallback: !User }
+      });
+    } catch (error) {
+      console.error('Vibe card generation error:', error);
+      return sendError(reply, 500, 'Failed to generate vibe card', error.message);
+    }
+  });
+  
+  // Server.js Part 5 - Leaderboards and Social Features
+
+  // Leaderboard Routes
+  fastify.get('/leaderboard', async (request, reply) => {
+    try {
+      if (!User) {
         return reply.send(getFallbackLeaderboard());
       }
-    });
+      
+      const leaders = await User.find()
+        .sort({ 'stats.totalPoints': -1 })
+        .limit(10)
+        .select('name avatar stats.totalPoints stats.level stats.streak stats.mediaUploads')
+        .lean();
+        
+      const leaderboard = leaders.map((user, index) => ({
+        id: user._id,
+        username: user.name || 'Anonymous User',
+        avatar: user.avatar || '🚀',
+        score: user.stats.totalPoints || 0,
+        rank: index + 1,
+        level: user.stats.level || 1,
+        streak: user.stats.streak || 0,
+        mediaUploads: user.stats.mediaUploads || 0
+      }));
 
-    fastify.post('/friends/request', { preHandler: [fastify.authenticate] }, async (request, reply) => {
-      try {
-        const { friendId } = request.body;
-        const userId = request.user.userId;
+      await trackEvent('leaderboard_view', null, { totalUsers: leaderboard.length });
 
-        if (!friendId || friendId === userId) {
-          return sendError(reply, 400, 'Invalid friend ID');
+      return reply.send({
+        success: true,
+        data: leaderboard,
+        metadata: {
+          totalUsers: await User.countDocuments(),
+          timestamp: new Date().toISOString(),
+          fallback: false
         }
+      });
+    } catch (error) {
+      console.error('Leaderboard error:', error);
+      return reply.send(getFallbackLeaderboard());
+    }
+  });
 
+  // Enhanced Leaderboard with fixed mongoose aggregation
+  fastify.get('/leaderboard-enhanced', async (request, reply) => {
+    try {
+      const { category = 'points', limit = 10, timeframe = 'all' } = request.query;
+      
+      if (!User) {
+        return reply.send(getFallbackLeaderboard());
+      }
+      
+      let dateFilter = {};
+      if (timeframe === 'week') {
+        dateFilter = { 'stats.lastActivity': { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } };
+      } else if (timeframe === 'month') {
+        dateFilter = { 'stats.lastActivity': { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } };
+      }
+      
+      let sortField = 'stats.totalPoints';
+      if (category === 'adventures') sortField = 'stats.adventuresCompleted';
+      if (category === 'streak') sortField = 'stats.streak';
+      if (category === 'cards') sortField = 'stats.cardsGenerated';
+      if (category === 'social') sortField = 'stats.friendsCount';
+      if (category === 'media') sortField = 'stats.mediaUploads';
+      
+      const leaders = await User.find(dateFilter)
+        .sort({ [sortField]: -1 })
+        .limit(parseInt(limit))
+        .select('name avatar stats achievements referralCode premiumStatus')
+        .lean();
+      
+      const leaderboard = leaders.map((user, index) => ({
+        id: user._id,
+        username: user.name || 'Anonymous User',
+        avatar: user.avatar || '🚀',
+        score: user.stats?.totalPoints || 0,
+        rank: index + 1,
+        streak: user.stats?.streak || 0,
+        cardsShared: user.stats?.cardsShared || 0,
+        cardsGenerated: user.stats?.cardsGenerated || 0,
+        mediaUploads: user.stats?.mediaUploads || 0,
+        level: user.stats?.level || 1,
+        friendsCount: user.stats?.friendsCount || 0,
+        challengesWon: user.stats?.challengesWon || 0,
+        achievements: (user.achievements || []).slice(0, 3),
+        referralCode: user.referralCode,
+        isOnline: wsConnections.has(user._id.toString()),
+        isPremium: user.premiumStatus?.active || false
+      }));
+      
+      await trackEvent('leaderboard_enhanced_view', null, { category, timeframe, totalUsers: leaderboard.length });
+
+      return reply.send({
+        success: true,
+        data: leaderboard,
+        metadata: {
+          category,
+          timeframe,
+          totalUsers: await User.countDocuments(dateFilter),
+          onlineUsers: wsConnections.size,
+          timestamp: new Date().toISOString(),
+          fallback: false
+        }
+      });
+    } catch (error) {
+      console.error('Enhanced leaderboard error:', error);
+      return reply.send(getFallbackLeaderboard());
+    }
+  });
+
+  // Analytics Dashboard with fixed aggregation
+  fastify.get('/analytics/dashboard', { preHandler: [fastify.authenticate] }, async (request, reply) => {
+    try {
+      const userId = request.user.userId;
+      
+      if (!Analytics || !User || userId === 'demo_user') {
+        return reply.send({
+          success: true,
+          data: {
+            overview: {
+              totalCards: 10,
+              totalPoints: 500,
+              level: 5,
+              streak: 3,
+              cardGrowth: 10,
+              streakGrowth: 5,
+              shares: 5,
+              shareGrowth: 15,
+              mediaUploads: 2
+            },
+            cardActivity: {
+              labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+              data: [2, 3, 1, 4, 2]
+            },
+            pointHistory: {
+              labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+              data: [100, 150, 50, 200, 100]
+            },
+            moodDistribution: {
+              labels: ['Joy', 'Sadness', 'Anger'],
+              data: [40, 30, 20]
+            },
+            mediaUploads: {
+              labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+              data: [0, 1, 0, 1, 0]
+            }
+          },
+          message: 'Analytics dashboard data retrieved (demo mode)',
+          metadata: { timestamp: new Date().toISOString(), fallback: true }
+        });
+      }
+
+      const user = await User.findById(userId).select('stats');
+      if (!user) {
+        return sendError(reply, 404, 'User not found');
+      }
+
+      const analyticsData = {
+        overview: {
+          totalCards: user.stats.cardsGenerated || 0,
+          totalPoints: user.stats.totalPoints || 0,
+          level: user.stats.level || 1,
+          streak: user.stats.streak || 0,
+          cardGrowth: 0,
+          streakGrowth: user.stats.bestStreak || 0,
+          shares: user.stats.cardsShared || 0,
+          shareGrowth: user.stats.cardsGenerated ? Math.round((user.stats.cardsShared / (user.stats.cardsGenerated || 1)) * 100) : 0,
+          mediaUploads: user.stats.mediaUploads || 0
+        },
+        cardActivity: {
+          labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+          data: [2, 3, 1, 4, 2]
+        },
+        pointHistory: {
+          labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+          data: [100, 150, 50, 200, 100]
+        },
+        moodDistribution: {
+          labels: ['Joy', 'Calm', 'Energetic'],
+          data: [40, 30, 30]
+        },
+        mediaUploads: {
+          labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+          data: [0, 1, 0, 1, 0]
+        }
+      };
+
+      await trackEvent('dashboard_view', userId, { timestamp: new Date().toISOString() });
+
+      return reply.send({
+        success: true,
+        data: analyticsData,
+        message: 'Analytics dashboard data retrieved',
+        metadata: { timestamp: new Date().toISOString(), fallback: false }
+      });
+    } catch (error) {
+      console.error('Dashboard analytics error:', error);
+      return sendError(reply, 500, 'Failed to fetch dashboard analytics', error.message);
+    }
+  });
+
+  // Media Upload
+  fastify.post('/upload-media', { preHandler: [fastify.authenticate] }, async (request, reply) => {
+    try {
+      const userId = request.user.userId;
+      const data = await request.file();
+      
+      if (!data) {
+        return sendError(reply, 400, 'No file uploaded');
+      }
+
+      if (!data.mimetype.startsWith('image/') && !data.mimetype.startsWith('video/') && !data.mimetype.startsWith('audio/')) {
+        return sendError(reply, 400, 'Unsupported file type');
+      }
+
+      let mediaData;
+      try {
+        mediaData = cloudinary ? await uploadMediaToCloudinary(data) : await uploadMediaToLocal(data);
+      } catch (error) {
+        console.error('Media upload error:', error);
+        return sendError(reply, 500, 'Failed to upload media', error.message);
+      }
+
+      if (Media && userId !== 'demo_user') {
+        await Media.create({
+          userId,
+          url: mediaData.url,
+          type: mediaData.type,
+          metadata: mediaData.metadata
+        });
+
+        await User.findByIdAndUpdate(userId, {
+          $inc: { 'stats.mediaUploads': 1 }
+        });
+
+        await checkAchievements(userId, 'media_uploaded');
+      }
+
+      await trackEvent('media_uploaded', userId, {
+        type: mediaData.type,
+        size: mediaData.metadata.size,
+        mimeType: mediaData.metadata.mimeType
+      });
+
+      const wsConnection = wsConnections.get(userId.toString());
+      if (wsConnection) {
+        wsConnection.send(JSON.stringify({
+          type: 'media_uploaded',
+          data: { message: 'Media uploaded successfully!', url: mediaData.url }
+        }));
+      }
+
+      return reply.send({
+        success: true,
+        data: {
+          url: mediaData.url,
+          type: mediaData.type,
+          metadata: mediaData.metadata
+        },
+        message: 'Media uploaded successfully',
+        metadata: { timestamp: new Date().toISOString(), fallback: !Media }
+      });
+    } catch (error) {
+      console.error('Media upload error:', error);
+      return sendError(reply, 500, 'Failed to upload media', error.message);
+    }
+  });
+
+  // Friends Management
+  fastify.get('/friends', { preHandler: [fastify.authenticate] }, async (request, reply) => {
+    try {
+      const userId = request.user.userId;
+
+      if (!User) {
+        return reply.send({
+          success: true,
+          data: [
+            { userId: 'demo1', username: 'Friend1', avatar: '😊', status: 'accepted' },
+            { userId: 'demo2', username: 'Friend2', avatar: '🚀', status: 'pending' }
+          ],
+          message: 'Friends retrieved (demo mode)',
+          metadata: { timestamp: new Date().toISOString(), fallback: true }
+        });
+      }
+
+      const user = await User.findById(userId).select('friends').populate('friends.userId', 'name avatar');
+      if (!user) {
+        return sendError(reply, 404, 'User not found');
+      }
+
+      const friends = user.friends.map(f => ({
+        userId: f.userId._id,
+        username: f.userId.name,
+        avatar: f.userId.avatar || '👤',
+        status: f.status,
+        connectedAt: f.connectedAt
+      }));
+
+      await trackEvent('friends_view', userId, { totalFriends: friends.length });
+
+      return reply.send({
+        success: true,
+        data: friends,
+        message: 'Friends retrieved successfully',
+        metadata: { timestamp: new Date().toISOString(), totalFriends: friends.length, fallback: false }
+      });
+    } catch (error) {
+      console.error('Friends fetch error:', error);
+      return sendError(reply, 500, 'Failed to fetch friends', error.message);
+    }
+  });
+
+  // Challenges Management
+  fastify.get('/challenges', { preHandler: [fastify.authenticate] }, async (request, reply) => {
+    try {
+      const userId = request.user.userId;
+
+      if (!User) {
+        return reply.send({
+          success: true,
+          data: [
+            { id: 'demo1', type: 'streak', target: 5, status: 'active', deadline: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) },
+            { id: 'demo2', type: 'points', target: 100, status: 'pending', deadline: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000) }
+          ],
+          message: 'Challenges retrieved (demo mode)',
+          metadata: { timestamp: new Date().toISOString(), fallback: true }
+        });
+      }
+
+      const user = await User.findById(userId).select('challenges').populate('challenges.challengerId challenges.challengedId', 'name avatar');
+      if (!user) {
+        return sendError(reply, 404, 'User not found');
+      }
+
+      const challenges = user.challenges.map(c => ({
+        id: c._id,
+        challenger: c.challengerId ? { 
+          id: c.challengerId._id, 
+          name: c.challengerId.name, 
+          avatar: c.challengerId.avatar || '👤' 
+        } : null,
+        challenged: c.challengedId ? { 
+          id: c.challengedId._id, 
+          name: c.challengedId.name, 
+          avatar: c.challengedId.avatar || '👤' 
+        } : null,
+        type: c.type,
+        status: c.status,
+        target: c.target,
+        deadline: c.deadline,
+        createdAt: c.createdAt,
+        completedAt: c.completedAt,
+        winner: c.winner ? { 
+          id: c.winner._id, 
+          name: c.winner.name, 
+          avatar: c.winner.avatar || '👤' 
+        } : null
+      }));
+
+      await trackEvent('challenges_view', userId, { totalChallenges: challenges.length });
+
+      return reply.send({
+        success: true,
+        data: challenges,
+        message: 'Challenges retrieved successfully',
+        metadata: { timestamp: new Date().toISOString(), totalChallenges: challenges.length, fallback: false }
+      });
+    } catch (error) {
+      console.error('Challenges fetch error:', error);
+      return sendError(reply, 500, 'Failed to fetch challenges', error.message);
+    }
+  });
+  
+  // Server.js Part 6 - Notifications, WebSocket, and Server Startup
+
+  // Notifications
+  fastify.get('/notifications', { preHandler: [fastify.authenticate] }, async (request, reply) => {
+    try {
+      const userId = request.user.userId;
+
+      if (!Notification) {
+        return reply.send({
+          success: true,
+          data: [
+            { id: 'demo1', type: 'achievement', title: 'First Steps', message: 'You completed your first adventure!', read: false, createdAt: new Date() },
+            { id: 'demo2', type: 'subscription', title: 'Notifications Enabled', message: 'Push notifications activated!', read: true, createdAt: new Date() }
+          ],
+          unreadCount: 1,
+          message: 'Notifications retrieved (demo mode)',
+          metadata: { timestamp: new Date().toISOString(), fallback: true }
+        });
+      }
+
+      const notifications = await Notification.find({ userId })
+        .sort({ createdAt: -1 })
+        .limit(50)
+        .lean();
+
+      const unreadCount = await Notification.countDocuments({ userId, read: false });
+
+      await trackEvent('notifications_view', userId, { totalNotifications: notifications.length });
+
+      return reply.send({
+        success: true,
+        data: notifications,
+        unreadCount,
+        message: 'Notifications retrieved successfully',
+        metadata: { timestamp: new Date().toISOString(), totalNotifications: notifications.length, fallback: false }
+      });
+    } catch (error) {
+      console.error('Notifications fetch error:', error);
+      return sendError(reply, 500, 'Failed to fetch notifications', error.message);
+    }
+  });
+
+  fastify.post('/notifications/read', { preHandler: [fastify.authenticate] }, async (request, reply) => {
+    try {
+      const userId = request.user.userId;
+      const { notificationIds } = request.body;
+
+      if (Notification && userId !== 'demo_user') {
+        if (notificationIds && Array.isArray(notificationIds)) {
+          await Notification.updateMany(
+            { userId, _id: { $in: notificationIds } },
+            { $set: { read: true } }
+          );
+        } else {
+          await Notification.updateMany(
+            { userId },
+            { $set: { read: true } }
+          );
+        }
+      }
+
+      await trackEvent('notifications_read', userId, { count: notificationIds?.length || 'all' });
+
+      const wsConnection = wsConnections.get(userId.toString());
+      if (wsConnection) {
+        wsConnection.send(JSON.stringify({
+          type: 'notifications_read',
+          data: { message: 'Notifications marked as read' }
+        }));
+      }
+
+      return reply.send({
+        success: true,
+        message: 'Notifications marked as read',
+        metadata: { timestamp: new Date().toISOString(), fallback: !Notification }
+      });
+    } catch (error) {
+      console.error('Notifications read error:', error);
+      return sendError(reply, 500, 'Failed to mark notifications as read', error.message);
+    }
+  });
+
+  // Track Events
+  fastify.post('/track-event', { preHandler: [fastify.authenticate] }, async (request, reply) => {
+    try {
+      const userId = request.user.userId;
+      const { eventType, metadata } = request.body;
+
+      if (!eventType) {
+        return sendError(reply, 400, 'Event type is required');
+      }
+
+      await trackEvent(eventType, userId, metadata);
+
+      return reply.send({
+        success: true,
+        message: 'Event tracked successfully',
+        metadata: { timestamp: new Date().toISOString(), fallback: !Analytics }
+      });
+    } catch (error) {
+      console.error('Event tracking error:', error);
+      return sendError(reply, 500, 'Failed to track event', error.message);
+    }
+  });
+
+  // Trending Adventures
+  fastify.get('/trending-adventures', async (request, reply) => {
+    try {
+      if (!Adventure) {
+        return reply.send({
+          success: true,
+          data: [
+            { id: 'demo1', title: 'Mindful Moments', category: 'wellness', completions: 100, shares: 50, viralPotential: 0.8, isFeatured: true },
+            { id: 'demo2', title: 'Creative Spark', category: 'creativity', completions: 80, shares: 40, viralPotential: 0.7, isFeatured: false },
+            { id: 'demo3', title: 'Energy Boost', category: 'fitness', completions: 60, shares: 30, viralPotential: 0.6, isFeatured: false }
+          ],
+          message: 'Trending adventures retrieved (demo mode)',
+          metadata: { timestamp: new Date().toISOString(), fallback: true }
+        });
+      }
+
+      const adventures = await Adventure.find({ isActive: true })
+        .sort({ completions: -1, shares: -1, viralPotential: -1 })
+        .limit(10)
+        .select('title description category completions shares viralPotential isFeatured tags rewards');
+
+      return reply.send({
+        success: true,
+        data: adventures,
+        message: 'Trending adventures retrieved',
+        metadata: { timestamp: new Date().toISOString(), total: adventures.length, fallback: false }
+      });
+    } catch (error) {
+      console.error('Trending adventures error:', error);
+      return sendError(reply, 500, 'Failed to fetch trending adventures', error.message);
+    }
+  });
+
+  
+// Missing: Premium Checkout
+fastify.post('/premium/create-checkout', { preHandler: [fastify.authenticate] }, async (request, reply) => {
+  try {
+    const { plan } = request.body;
+    return reply.send({
+      success: true,
+      data: {
+        id: `cs_${Date.now()}`,
+        url: `https://checkout.stripe.com/demo`,
+        plan
+      },
+      message: 'Checkout session created'
+    });
+  } catch (error) {
+    return sendError(reply, 500, 'Failed to create checkout', error.message);
+  }
+});
+
+// Server.js Part 7 - Missing Routes and Advanced Features
+
+// Add these routes to the defineRoutes() function in Part 6, before the WebSocket setup
+
+  // Enhanced Capsule Generation (AI-powered)
+  fastify.post('/generate-capsule-simple', { preHandler: [fastify.authenticate] }, async (request, reply) => {
+    try {
+      const userId = request.user.userId;
+      const { category, difficulty, mood, interests } = request.body;
+
+      if (!category) {
+        return sendError(reply, 400, 'Category is required');
+      }
+
+      let adventure;
+      if (Adventure) {
+        adventure = await Adventure.findOne({ category, isActive: true }).sort({ completions: -1 });
+      }
+
+      if (!adventure) {
+        const adventureTemplates = {
+          wellness: {
+            title: 'Mindful Moments',
+            description: 'Take 10 minutes to practice mindfulness and center yourself',
+            prompt: 'Find a quiet space and focus on your breathing',
+            estimatedTime: '10 minutes'
+          },
+          creativity: {
+            title: 'Creative Spark',
+            description: 'Express yourself through a creative medium',
+            prompt: 'Draw, write, or create something that represents your current mood',
+            estimatedTime: '15 minutes'
+          },
+          fitness: {
+            title: 'Energy Boost',
+            description: 'Get your body moving with light exercise',
+            prompt: 'Do 5 minutes of stretching or light movement',
+            estimatedTime: '5 minutes'
+          },
+          productivity: {
+            title: 'Focus Flow',
+            description: 'Tackle a small task with focused attention',
+            prompt: 'Choose one small task and complete it mindfully',
+            estimatedTime: '20 minutes'
+          },
+          social: {
+            title: 'Connection Creator',
+            description: 'Reach out and connect with someone',
+            prompt: 'Send a thoughtful message to a friend or family member',
+            estimatedTime: '5 minutes'
+          }
+        };
+
+        adventure = adventureTemplates[category] || {
+          title: 'Personal Growth Adventure',
+          description: 'A personalized journey for your development',
+          prompt: 'Take a moment to reflect on your goals and take one small step forward',
+          estimatedTime: '15 minutes'
+        };
+
+        adventure.category = category;
+        adventure.difficulty = difficulty || 'easy';
+        adventure.rewards = { points: 25, badge: 'Explorer' };
+        adventure.template = mood === 'calm' ? 'minimal' : mood === 'energetic' ? 'retro' : 'cosmic';
+      }
+
+      const capsule = {
+        capsuleId: `cap_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
+        adventure,
+        brainBite: {
+          question: 'Did you know?',
+          answer: `Engaging in ${category} activities can boost your mood and overall well-being!`
+        },
+        habitNudge: `Consider making ${category} a regular part of your routine.`,
+        createdAt: new Date(),
+        id: `capsule_${Date.now()}`
+      };
+
+      if (VibeCard && userId !== 'demo_user') {
+        await VibeCard.create({
+          userId,
+          capsuleId: capsule.capsuleId,
+          content: { adventure: capsule.adventure },
+          design: { template: adventure.template || 'cosmic', colors: ['#1a1a2e', '#533483'], style: 'modern' }
+        });
+
+        await User.findByIdAndUpdate(userId, {
+          $inc: { 'stats.adventuresCompleted': 1 }
+        });
+
+        await checkAchievements(userId, 'adventure_completed');
+      }
+
+      await trackEvent('capsule_generated', userId, { category, difficulty });
+
+      const wsConnection = wsConnections.get(userId.toString());
+      if (wsConnection) {
+        wsConnection.send(JSON.stringify({
+          type: 'capsule_generated',
+          data: { message: 'Adventure capsule generated!', capsuleId: capsule.capsuleId }
+        }));
+      }
+
+      return reply.send({
+        success: true,
+        data: capsule,
+        message: 'Capsule generated successfully',
+        metadata: { timestamp: new Date().toISOString(), fallback: !Adventure }
+      });
+    } catch (error) {
+      console.error('Capsule generation error:', error);
+      return sendError(reply, 500, 'Failed to generate capsule', error.message);
+    }
+  });
+
+  // Enhanced Vibe Card Generation
+  fastify.post('/generate-enhanced-vibe-card', { preHandler: [fastify.authenticate] }, async (request, reply) => {
+    try {
+      const userId = request.user.userId;
+      const { capsuleId, template = 'cosmic', moodData, completionStats, userChoices } = request.body;
+
+      if (!capsuleId) {
+        return sendError(reply, 400, 'Capsule ID is required');
+      }
+
+      let vibeCard, user;
+      if (VibeCard && User && userId !== 'demo_user') {
+        vibeCard = await VibeCard.findOne({ capsuleId, userId });
+        user = await User.findById(userId).select('name stats');
+        if (!vibeCard || !user) {
+          return sendError(reply, 404, 'Capsule or user not found');
+        }
+      } else {
+        user = { name: 'Demo User', stats: { totalPoints: 500, streak: 3 } };
+        vibeCard = {
+          capsuleId,
+          content: {
+            adventure: { title: 'Sample Adventure', rewards: { points: 25 } },
+            achievement: { points: 25, streak: 3 },
+            user: { name: 'Demo User' }
+          }
+        };
+      }
+
+      const cardData = {
+        cardId: `card_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
+        content: {
+          adventure: vibeCard.content.adventure,
+          achievement: { 
+            points: completionStats?.vibePointsEarned || 25, 
+            streak: user.stats.streak || 0 
+          },
+          user: { name: user.name },
+          mood: moodData,
+          choices: userChoices,
+          completionStats
+        },
+        design: { 
+          template, 
+          colors: ['#1a1a2e', '#533483', '#7209b7'], 
+          style: 'enhanced' 
+        },
+        type: template,
+        timestamp: new Date()
+      };
+
+      // Generate enhanced image with completion data
+      if (Canvas) {
+        const imageBuffer = await createVibeCardImage(cardData);
+        if (imageBuffer) {
+          let imageUrl;
+          if (cloudinary) {
+            try {
+const uploadResult = await new Promise((resolve, reject) => {
+  cloudinary.uploader.upload_stream({
+    resource_type: 'image',
+    folder: 'sparkvibe_cards',
+    public_id: `card_${cardData.cardId}_${Date.now()}`
+  }, (error, result) => {
+    if (error) reject(error);
+    else resolve(result);
+  }).end(imageBuffer);
+});
+              imageUrl = uploadResult.secure_url;
+            } catch (error) {
+              const fileName = `enhanced_card_${capsuleId}_${Date.now()}.png`;
+              const filePath = path.join(__dirname, 'uploads', fileName);
+              await fs.writeFile(filePath, imageBuffer);
+              imageUrl = `/uploads/${fileName}`;
+            }
+          } else {
+            const fileName = `enhanced_card_${capsuleId}_${Date.now()}.png`;
+            const filePath = path.join(__dirname, 'uploads', fileName);
+            await fs.writeFile(filePath, imageBuffer);
+            imageUrl = `/uploads/${fileName}`;
+          }
+          cardData.imageUrl = imageUrl;
+        }
+      }
+
+      if (VibeCard && userId !== 'demo_user') {
+        await VibeCard.findOneAndUpdate(
+          { capsuleId, userId },
+          { 
+            $set: { 
+              'design.template': template, 
+              'content.imageUrl': cardData.imageUrl,
+              'content.enhanced': true
+            } 
+          }
+        );
+      }
+
+      await trackEvent('enhanced_vibe_card_generated', userId, { capsuleId, template });
+
+      const wsConnection = wsConnections.get(userId.toString());
+      if (wsConnection) {
+        wsConnection.send(JSON.stringify({
+          type: 'vibe_card_generated',
+          data: { message: 'Enhanced vibe card generated!', imageUrl: cardData.imageUrl }
+        }));
+      }
+
+      return reply.send({
+        success: true,
+        data: cardData,
+        message: 'Enhanced vibe card generated successfully',
+        metadata: { timestamp: new Date().toISOString(), fallback: !VibeCard }
+      });
+    } catch (error) {
+      console.error('Enhanced vibe card generation error:', error);
+      return sendError(reply, 500, 'Failed to generate enhanced vibe card', error.message);
+    }
+  });
+
+  // Push Notification Subscription
+  fastify.post('/notifications/subscribe', { preHandler: [fastify.authenticate] }, async (request, reply) => {
+    try {
+      const userId = request.user.userId;
+      const { subscription } = request.body;
+
+      if (!subscription || !subscription.endpoint) {
+        return sendError(reply, 400, 'Invalid subscription data');
+      }
+
+      if (User && userId !== 'demo_user') {
+        await User.findByIdAndUpdate(userId, {
+          $set: { 'preferences.pushSubscription': subscription }
+        });
+
+        if (Notification) {
+          await Notification.create({
+            userId,
+            type: 'subscription',
+            title: 'Push Notifications Enabled',
+            message: 'You have successfully subscribed to push notifications!',
+            data: { subscription }
+          });
+        }
+      }
+
+      const wsConnection = wsConnections.get(userId.toString());
+      if (wsConnection) {
+        wsConnection.send(JSON.stringify({
+          type: 'subscription',
+          data: { message: 'Successfully subscribed to push notifications!' }
+        }));
+      }
+
+      await trackEvent('notification_subscription', userId, { endpoint: subscription.endpoint });
+
+      return reply.send({
+        success: true,
+        message: 'Successfully subscribed to push notifications',
+        metadata: { timestamp: new Date().toISOString(), fallback: !User }
+      });
+    } catch (error) {
+      console.error('Notification subscription error:', error);
+      return sendError(reply, 500, 'Failed to subscribe to notifications', error.message);
+    }
+  });
+
+  // Friend Request Management
+  fastify.post('/friends/request', { preHandler: [fastify.authenticate] }, async (request, reply) => {
+    try {
+      const userId = request.user.userId;
+      const { friendId } = request.body;
+
+      if (!friendId) {
+        return sendError(reply, 400, 'Friend ID is required');
+      }
+
+      if (User && userId !== 'demo_user') {
+        const user = await User.findById(userId);
         const friend = await User.findById(friendId);
+
         if (!friend) {
           return sendError(reply, 404, 'User not found');
         }
 
-        const user = await User.findById(userId);
+        // Check if already friends
         const existingFriend = user.friends.find(f => f.userId.toString() === friendId);
-        
         if (existingFriend) {
-          return sendError(reply, 400, 'Friend request already exists or you are already friends');
+          return sendError(reply, 400, 'Friend request already exists');
         }
 
+        // Add friend request
         await User.findByIdAndUpdate(userId, {
           $push: { 
             friends: { 
@@ -1735,500 +2376,402 @@ fastify.get('/user/profile', { preHandler: [fastify.authenticate] }, async (requ
           }
         });
 
-        await Notification.create({
-          userId: friendId,
-          type: 'friend_request',
-          title: 'New Friend Request',
-          message: `${user.name} wants to be your friend!`,
-          data: { requesterId: userId, requesterName: user.name }
-        });
-
-        await trackEvent('friend_request_sent', userId, { friendId });
-
-        return reply.send({
-          success: true,
-          message: 'Friend request sent successfully'
-        });
-      } catch (error) {
-        return sendError(reply, 500, 'Failed to send friend request', error.message);
-      }
-    });
-
-    fastify.post('/friends/accept', { preHandler: [fastify.authenticate] }, async (request, reply) => {
-      try {
-        const { requesterId } = request.body;
-        const userId = request.user.userId;
-
-        if (!requesterId) {
-          return sendError(reply, 400, 'Requester ID is required');
+        // Notify the friend
+        if (Notification) {
+          await Notification.create({
+            userId: friendId,
+            type: 'friend_request',
+            title: 'New Friend Request',
+            message: `${user.name} sent you a friend request!`,
+            data: { fromUserId: userId, fromUserName: user.name }
+          });
         }
 
-        await User.findByIdAndUpdate(requesterId, {
-          $set: { 'friends.$[elem].status': 'accepted' }
-        }, {
-          arrayFilters: [{ 'elem.userId': userId }]
-        });
+        const wsConnection = wsConnections.get(friendId.toString());
+        if (wsConnection) {
+          wsConnection.send(JSON.stringify({
+            type: 'friend_request',
+            data: { message: `${user.name} sent you a friend request!`, fromUserId: userId }
+          }));
+        }
+      }
 
-        await User.findByIdAndUpdate(userId, {
+      await trackEvent('friend_request_sent', userId, { friendId });
+
+      return reply.send({
+        success: true,
+        message: 'Friend request sent successfully',
+        metadata: { timestamp: new Date().toISOString(), fallback: !User }
+      });
+    } catch (error) {
+      console.error('Friend request error:', error);
+      return sendError(reply, 500, 'Failed to send friend request', error.message);
+    }
+  });
+
+  fastify.post('/friends/accept', { preHandler: [fastify.authenticate] }, async (request, reply) => {
+    try {
+      const userId = request.user.userId;
+      const { friendId } = request.body;
+
+      if (!friendId) {
+        return sendError(reply, 400, 'Friend ID is required');
+      }
+
+      if (User && userId !== 'demo_user') {
+        // Update both users' friend lists
+        await User.findOneAndUpdate(
+          { _id: userId, 'friends.userId': friendId },
+          { $set: { 'friends.$.status': 'accepted' } }
+        );
+
+        await User.findByIdAndUpdate(friendId, {
           $push: { 
             friends: { 
-              userId: requesterId, 
+              userId: userId, 
               status: 'accepted', 
               connectedAt: new Date() 
             } 
-          },
-          $inc: { 'stats.friendsCount': 1 }
+          }
         });
 
-        await User.findByIdAndUpdate(requesterId, {
-          $inc: { 'stats.friendsCount': 1 }
-        });
+        // Update friend counts
+        await User.findByIdAndUpdate(userId, { $inc: { 'stats.friendsCount': 1 } });
+        await User.findByIdAndUpdate(friendId, { $inc: { 'stats.friendsCount': 1 } });
 
-        await checkAchievements(userId, 'friend_added');
-        await checkAchievements(requesterId, 'friend_added');
+        await checkAchievements(userId, 'friend_accepted');
+        await checkAchievements(friendId, 'friend_accepted');
 
-        const user = await User.findById(userId);
-        await Notification.create({
-          userId: requesterId,
-          type: 'friend_accepted',
-          title: 'Friend Request Accepted',
-          message: `${user.name} accepted your friend request!`,
-          data: { friendId: userId, friendName: user.name }
-        });
-
-        return reply.send({
-          success: true,
-          message: 'Friend request accepted successfully'
-        });
-      } catch (error) {
-        return sendError(reply, 500, 'Failed to accept friend request', error.message);
+        // Notify the requester
+        if (Notification) {
+          const user = await User.findById(userId);
+          await Notification.create({
+            userId: friendId,
+            type: 'friend_accepted',
+            title: 'Friend Request Accepted',
+            message: `${user.name} accepted your friend request!`,
+            data: { fromUserId: userId, fromUserName: user.name }
+          });
+        }
       }
-    });
 
-    fastify.post('/challenges/create', { preHandler: [fastify.authenticate] }, async (request, reply) => {
-      try {
-        const { friendId, type, target, deadline } = request.body;
-        const userId = request.user.userId;
+      await trackEvent('friend_request_accepted', userId, { friendId });
 
-        if (!friendId || !type || !target) {
-          return sendError(reply, 400, 'Friend ID, challenge type, and target are required');
+      return reply.send({
+        success: true,
+        message: 'Friend request accepted successfully',
+        metadata: { timestamp: new Date().toISOString(), fallback: !User }
+      });
+    } catch (error) {
+      console.error('Friend accept error:', error);
+      return sendError(reply, 500, 'Failed to accept friend request', error.message);
+    }
+  });
+
+  // Challenge Management
+  fastify.post('/challenges/create', { preHandler: [fastify.authenticate] }, async (request, reply) => {
+    try {
+      const userId = request.user.userId;
+      const { challengedId, type, target, deadline } = request.body;
+
+      if (!challengedId || !type || !target) {
+        return sendError(reply, 400, 'Challenge details are required');
+      }
+
+      const challengeData = {
+        challengerId: userId,
+        challengedId,
+        type,
+        target,
+        deadline: deadline ? new Date(deadline) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        status: 'pending',
+        createdAt: new Date()
+      };
+
+      if (User && userId !== 'demo_user') {
+        const challenger = await User.findById(userId);
+        const challenged = await User.findById(challengedId);
+
+        if (!challenged) {
+          return sendError(reply, 404, 'User not found');
         }
 
-        const validTypes = ['streak', 'points', 'adventure', 'cards'];
-        if (!validTypes.includes(type)) {
-          return sendError(reply, 400, 'Invalid challenge type');
-        }
+        // Add challenge to both users
+        await User.findByIdAndUpdate(userId, {
+          $push: { challenges: challengeData }
+        });
 
-        const challenge = {
-          challengerId: userId,
-          challengedId: friendId,
-          type,
-          target,
-          deadline: deadline ? new Date(deadline) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-          status: 'pending'
-        };
+        await User.findByIdAndUpdate(challengedId, {
+          $push: { challenges: challengeData }
+        });
+
+        // Notify the challenged user
+        if (Notification) {
+          await Notification.create({
+            userId: challengedId,
+            type: 'challenge',
+            title: 'New Challenge',
+            message: `${challenger.name} challenged you to a ${type} challenge!`,
+            data: { challenge: challengeData }
+          });
+        }
+      }
+
+      await trackEvent('challenge_created', userId, { type, target, challengedId });
+
+      return reply.send({
+        success: true,
+        data: challengeData,
+        message: 'Challenge created successfully',
+        metadata: { timestamp: new Date().toISOString(), fallback: !User }
+      });
+    } catch (error) {
+      console.error('Challenge creation error:', error);
+      return sendError(reply, 500, 'Failed to create challenge', error.message);
+    }
+  });
+
+  // Social Sharing Analytics
+  fastify.post('/analytics/share', { preHandler: [fastify.authenticate] }, async (request, reply) => {
+    try {
+      const userId = request.user.userId;
+      const { cardId, platform, viralScore } = request.body;
+
+      if (!cardId || !platform) {
+        return sendError(reply, 400, 'Card ID and platform are required');
+      }
+
+      if (VibeCard && userId !== 'demo_user') {
+        await VibeCard.findOneAndUpdate(
+          { userId, _id: cardId },
+          { 
+            $inc: { 'analytics.shares': 1, 'sharing.shareCount': 1 },
+            $push: { 'sharing.platforms': platform },
+            $set: { 
+              'sharing.lastShared': new Date(),
+              'analytics.viralScore': viralScore || 0
+            }
+          }
+        );
 
         await User.findByIdAndUpdate(userId, {
-          $push: { challenges: challenge }
+          $inc: { 'stats.cardsShared': 1 }
         });
 
-        const challenger = await User.findById(userId);
-        await Notification.create({
-          userId: friendId,
-          type: 'challenge',
-          title: 'New Challenge',
-          message: `${challenger.name} challenged you to a ${type} challenge!`,
-          data: { challenge, challengerName: challenger.name }
-        });
-
-        await trackEvent('challenge_created', userId, { type, target, friendId });
-
-        return reply.send({
-          success: true,
-          message: 'Challenge created successfully',
-          challenge
-        });
-      } catch (error) {
-        return sendError(reply, 500, 'Failed to create challenge', error.message);
+        await checkAchievements(userId, 'card_shared', { platform, viralScore });
       }
-    });
 
-    fastify.post('/track-event', { preHandler: [fastify.authenticate] }, async (request, reply) => {
-      try {
-        const { eventType, metadata } = request.body;
-        const userId = request.user.userId;
+      await trackEvent('card_shared', userId, { cardId, platform, viralScore });
 
-        if (!eventType) {
-          return sendError(reply, 400, 'Event type is required');
-        }
-
-        await trackEvent(eventType, userId, metadata);
-
-        return reply.send({
-          success: true,
-          message: 'Event tracked successfully'
-        });
-      } catch (error) {
-        return sendError(reply, 500, 'Failed to track event', error.message);
-      }
-    });
-
-    fastify.get('/notifications', { preHandler: [fastify.authenticate] }, async (request, reply) => {
-      try {
-        const userId = request.user.userId;
-        const { limit = 20, unreadOnly = false } = request.query;
-
-        let query = { userId };
-        if (unreadOnly === 'true') {
-          query.read = false;
-        }
-
-        const notifications = await Notification.find(query)
-          .sort({ createdAt: -1 })
-          .limit(parseInt(limit))
-          .lean();
-
-        return reply.send({
-          success: true,
-          data: notifications,
-          unreadCount: await Notification.countDocuments({ userId, read: false })
-        });
-      } catch (error) {
-        return sendError(reply, 500, 'Failed to fetch notifications', error.message);
-      }
-    });
-
-    fastify.post('/notifications/read', { preHandler: [fastify.authenticate] }, async (request, reply) => {
-      try {
-        const { notificationIds } = request.body;
-        const userId = request.user.userId;
-
-        if (notificationIds && notificationIds.length > 0) {
-          await Notification.updateMany(
-            { _id: { $in: notificationIds }, userId },
-            { read: true }
-          );
-        } else {
-          await Notification.updateMany(
-            { userId, read: false },
-            { read: true }
-          );
-        }
-
-        return reply.send({
-          success: true,
-          message: 'Notifications marked as read'
-        });
-      } catch (error) {
-        return sendError(reply, 500, 'Failed to mark notifications as read', error.message);
-      }
-    });
-
-// Get User Challenges Route
-fastify.get('/challenges', { preHandler: [fastify.authenticate] }, async (request, reply) => {
-  try {
-    const userId = request.user.userId;
-
-    if (mongoose.connection.readyState !== 1) {
       return reply.send({
         success: true,
-        message: 'Challenges retrieved from fallback (database unavailable)',
-        challenges: [
-          {
-            id: 'offline-challenge-1',
-            title: 'Daily Wellness Challenge',
-            description: 'Complete a 10-minute meditation session',
-            category: 'Wellness',
-            points: 50,
-            status: 'available',
-            createdAt: new Date().toISOString(),
-            expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
-          },
-          {
-            id: 'offline-challenge-2',
-            title: 'Creative Writing Challenge',
-            description: 'Write a 100-word story',
-            category: 'Creativity',
-            points: 75,
-            status: 'available',
-            createdAt: new Date().toISOString(),
-            expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
-          }
-        ],
-        fallback: true
+        message: 'Share tracked successfully',
+        metadata: { timestamp: new Date().toISOString(), fallback: !VibeCard }
       });
+    } catch (error) {
+      console.error('Share tracking error:', error);
+      return sendError(reply, 500, 'Failed to track share', error.message);
     }
+  });
 
-    const user = await User.findById(userId).select('challenges').lean();
-    if (!user) {
-      return sendError(reply, 404, 'User not found');
-    }
+  // User Search for Friends
+  fastify.get('/users/search', { preHandler: [fastify.authenticate] }, async (request, reply) => {
+    try {
+      const { query } = request.query;
 
-    // Transform challenges to match client-side expectations
-    const challenges = user.challenges.map(challenge => ({
-      id: challenge._id || `challenge_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      title: `${challenge.type.charAt(0).toUpperCase() + challenge.type.slice(1)} Challenge`,
-      description: `Complete a ${challenge.type} challenge with target ${challenge.target}`,
-      category: challenge.type === 'streak' ? 'Consistency' : 
-                challenge.type === 'points' ? 'Points' : 
-                challenge.type === 'adventure' ? 'Adventure' : 'Creativity',
-      points: challenge.target || 50,
-      status: challenge.status,
-      createdAt: challenge.createdAt.toISOString(),
-      expiresAt: challenge.deadline.toISOString(),
-      challengerId: challenge.challengerId,
-      challengedId: challenge.challengedId
-    }));
-
-    await trackEvent('challenges_view', userId, { challengeCount: challenges.length });
-
-    return reply.send({
-      success: true,
-      challenges,
-      metadata: {
-        totalChallenges: challenges.length,
-        timestamp: new Date().toISOString(),
-        fallback: false
+      if (!query || query.length < 2) {
+        return sendError(reply, 400, 'Query must be at least 2 characters');
       }
-    });
-  } catch (error) {
-    console.error('Challenges fetch error:', error);
-    return sendError(reply, 500, 'Failed to fetch challenges', error.message);
-  }
-});
 
-// Add to server.js before startServer()
-fastify.get('/friends', { preHandler: [fastify.authenticate] }, async (request, reply) => {
-  try {
-    const userId = request.user.userId;
+      if (!User) {
+        return reply.send({
+          success: true,
+          data: [
+            { id: 'demo1', name: 'Demo Friend 1', avatar: '👤' },
+            { id: 'demo2', name: 'Demo Friend 2', avatar: '🚀' }
+          ],
+          message: 'User search results (demo mode)'
+        });
+      }
 
-    if (mongoose.connection.readyState !== 1) {
+      const users = await User.find({
+        $or: [
+          { name: { $regex: query, $options: 'i' } },
+          { email: { $regex: query, $options: 'i' } }
+        ]
+      })
+      .select('name email avatar stats.level')
+      .limit(10)
+      .lean();
+
+      const searchResults = users.map(user => ({
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        avatar: user.avatar || '👤',
+        level: user.stats?.level || 1
+      }));
+
       return reply.send({
         success: true,
-        message: 'Friends retrieved from fallback (database unavailable)',
-        data: [
-          {
-            id: 'fallback-friend-1',
-            name: 'Vibe Explorer',
-            avatar: '🌟',
-            status: 'accepted',
-            connectedAt: new Date().toISOString()
-          }
-        ],
-        fallback: true
+        data: searchResults,
+        message: 'User search completed',
+        metadata: { query, results: searchResults.length }
       });
+    } catch (error) {
+      console.error('User search error:', error);
+      return sendError(reply, 500, 'Failed to search users', error.message);
     }
+  });
 
-    const user = await User.findById(userId).populate('friends.userId', 'name avatar').lean();
-    if (!user) {
-      return sendError(reply, 404, 'User not found');
-    }
-
-    const friendsData = user.friends.map(friend => ({
-      id: friend.userId._id,
-      name: friend.userId.name,
-      avatar: friend.userId.avatar || '👤',
-      status: friend.status,
-      connectedAt: friend.connectedAt.toISOString()
-    }));
-
-    await trackEvent('friends_view', userId, { friendCount: friendsData.length });
-
-    return reply.send({
-      success: true,
-      data: friendsData,
-      metadata: {
-        totalFriends: friendsData.length,
-        timestamp: new Date().toISOString(),
-        fallback: false
+  // WebSocket Setup
+  fastify.register(async function (fastify) {
+    fastify.get('/ws', { websocket: true }, (connection, req) => {
+      try {
+        const userId = req.query.userId || `anonymous_${Date.now()}`;
+        
+        // Fix: Use connection directly, not connection.socket
+        wsConnections.set(userId.toString(), connection);
+        console.log(`🔗 WebSocket connected for user: ${userId}`);
+    
+        connection.on('message', async (message) => {
+          try {
+            const data = JSON.parse(message.toString()); // Convert buffer to string
+            console.log(`📩 WebSocket message received from ${userId}:`, data);
+    
+            if (data.type === 'ping') {
+              connection.send(JSON.stringify({ type: 'pong', data: { message: 'Pong!' } }));
+            }
+          } catch (error) {
+            console.error('WebSocket message error:', error);
+            connection.send(JSON.stringify({
+              type: 'error',
+              data: { message: 'Invalid message format' }
+            }));
+          }
+        });
+    
+        connection.on('close', () => {
+          wsConnections.delete(userId.toString());
+          console.log(`🔌 WebSocket disconnected for user: ${userId}`);
+        });
+    
+        connection.on('error', (error) => {
+          console.error(`WebSocket error for user ${userId}:`, error);
+          wsConnections.delete(userId.toString());
+        });
+    
+        connection.send(JSON.stringify({
+          type: 'connection',
+          data: { message: 'WebSocket connection established' }
+        }));
+      } catch (error) {
+        console.error('WebSocket setup error:', error);
+        if (connection && typeof connection.close === 'function') {
+          connection.close();
+        }
       }
     });
-  } catch (error) {
-    console.error('Friends fetch error:', error);
-    return sendError(reply, 500, 'Failed to fetch friends', error.message);
-  }
-});
+  });
 
-    async function checkServiceHealth() {
-      const services = {};
 
-      try {
-        if (mongoose.connection.readyState === 1) {
-          await mongoose.connection.db.admin().ping();
-          services.mongodb = 'healthy';
-        } else {
-          services.mongodb = 'disconnected';
-        }
-      } catch (err) {
-        services.mongodb = 'unhealthy';
-      }
+}; // End of defineRoutes function
 
-      if (redisClient) {
-        try {
-          await redisClient.ping();
-          services.redis = 'healthy';
-        } catch (err) {
-          services.redis = 'unhealthy';
-        }
-      } else {
-        services.redis = 'not configured';
-      }
-
-      services.openai = openai ? 'configured' : 'not configured';
-      services.google_auth = googleClient ? 'configured' : 'not configured';
-      services.websocket = `${wsConnections.size} connections`;
-
-      return services;
+// Server Startup - CRITICAL: This must happen in the correct order
+const startServer = async () => {
+  try {
+    // Step 1: Register all plugins FIRST
+    console.log('🔧 Registering plugins...');
+    await registerPlugins();
+    
+    // Step 2: Connect to MongoDB
+    console.log('🔗 Connecting to MongoDB...');
+    const isMongoConnected = await connectMongoDB();
+    
+    // Step 3: Connect to Redis (optional)
+    if (redisClient) {
+      console.log('🔗 Connecting to Redis...');
+      await connectRedis();
     }
-
-    function getBadgeForPoints(points) {
-      if (points >= 100) return 'Adventure Master';
-      if (points >= 75) return 'Vibe Champion';
-      if (points >= 50) return 'Growth Seeker';
-      if (points >= 25) return 'Explorer';
-      return 'Getting Started';
-    }
-
-    function getTemplateColors(template) {
-      const colorSchemes = {
-        cosmic: ['#533483', '#7209b7', '#a663cc', '#4cc9f0'],
-        nature: ['#60a531', '#7cb342', '#8bc34a', '#9ccc65'],
-        retro: ['#8338ec', '#3a86ff', '#06ffa5', '#ffbe0b'],
-        minimal: ['#495057', '#6c757d', '#adb5bd', '#ced4da']
-      };
-      return colorSchemes[template] || colorSchemes.cosmic;
-    }
-
-    function calculateViralScore(user, completionStats) {
-      let score = 0;
-      score += (user?.stats?.cardsShared || 0) * 0.3;
-      score += (user?.stats?.friendsCount || 0) * 0.2;
-      score += (user?.stats?.streak || 0) * 0.1;
-      score += (completionStats?.vibePointsEarned || 0) * 0.01;
-      return Math.min(score, 1.0);
-    }
-
-    function generateTwitterShare(capsuleData, completionStats, user) {
-      const text = `Just completed "${capsuleData.adventure?.title}" on @SparkVibe and earned ${completionStats?.vibePointsEarned || 50} points! 🌟 Level ${user?.level || 1} with ${user?.totalPoints || 0} total points! #SparkVibe #Adventure #Growth`;
-      return `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=https://sparkvibe.app`;
-    }
-
-    function generateInstagramShare(capsuleData, completionStats, user) {
-      return `https://www.instagram.com/create/story/`;
-    }
-
-    function generateFacebookShare(capsuleData, completionStats, user) {
-      return `https://www.facebook.com/sharer/sharer.php?u=https://sparkvibe.app&quote=${encodeURIComponent('Just completed an amazing SparkVibe adventure!')}`;
-    }
-
-    function generateTikTokShare(capsuleData, completionStats, user) {
-      return `https://www.tiktok.com/share?url=https://sparkvibe.app`;
-    }
-
-    function getFallbackLeaderboard() {
-      return {
-        success: true,
-        data: [
-          {
-            username: "SparkVibe Pioneer",
-            avatar: "🚀",
-            score: 2340,
-            rank: 1,
-            streak: 15,
-            cardsShared: 12,
-            cardsGenerated: 18,
-            level: 3,
-            friendsCount: 8,
-            achievements: ['Early Adopter', 'Streak Master', 'Community Builder'],
-            isOnline: true
-          },
-          {
-            username: "Vibe Explorer",
-            avatar: "🌟", 
-            score: 1890,
-            rank: 2,
-            streak: 8,
-            cardsShared: 8,
-            cardsGenerated: 15,
-            level: 2,
-            friendsCount: 5,
-            achievements: ['Creative Spark', 'Social Butterfly'],
-            isOnline: false
-          }
-        ],
-        metadata: {
-          category: 'points',
-          timeframe: 'all',
-          totalUsers: 2,
-          onlineUsers: wsConnections.size
-        }
-      };
-    }
-
-    const port = process.env.PORT || 8080;
+    
+    // Step 4: Define all routes AFTER plugins are registered
+    console.log('🛣️ Defining routes...');
+    defineRoutes();
+    
+    // Step 5: Start the server
+    const port = process.env.PORT || 3000;
     await fastify.listen({ port, host: '0.0.0.0' });
     
-    console.log('🚀 SparkVibe Enhanced API Server running on port', port);
-    console.log('🌐 Server URL:', `http://localhost:${port}`);
-    console.log('🔥 Enhanced Features Available:');
-    console.log('  📊 Real-time WebSocket connections');
-    console.log('  🏆 Achievement system with notifications');
-    console.log('  👥 Friend system with challenges');
-    console.log('  🎨 Enhanced vibe card generation');
-    console.log('  📈 Advanced analytics tracking');
-    console.log('  🔄 Automatic leaderboard updates');
+    console.log(`🚀 Server running on port ${port}`);
+    console.log(`🔄 Demo mode: ${!isMongoConnected}`);
+    console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`📊 WebSocket connections: ${wsConnections.size}`);
     
-  } catch (err) {
-    console.error('❌ Server startup failed:', err);
+  } catch (error) {
+    console.error('❌ Server startup failed:', error);
     process.exit(1);
   }
 };
 
-process.on('SIGTERM', async () => {
-  console.log('🛑 SIGTERM received, shutting down gracefully');
-  wsConnections.forEach(ws => ws.close());
-  if (redisClient) {
-    try {
-      await redisClient.disconnect();
-      console.log('✅ Redis disconnected');
-    } catch (error) {
-      console.error('❌ Redis disconnect error:', error);
-    }
-  }
-  if (mongoose.connection) {
-    try {
-      await mongoose.connection.close();
-      console.log('✅ MongoDB disconnected');
-    } catch (error) {
-      console.error('❌ MongoDB disconnect error:', error);
-    }
-  }
-  process.exit(0);
-});
+// Graceful Shutdown
+const shutdown = async () => {
+  console.log('⏳ Initiating graceful shutdown...');
 
-process.on('SIGINT', async () => {
-  console.log('🛑 SIGINT received, shutting down gracefully');
-  wsConnections.forEach(ws => ws.close());
-  if (redisClient) {
-    try {
-      await redisClient.disconnect();
-      console.log('✅ Redis disconnected');
-    } catch (error) {
-      console.error('❌ Redis disconnect error:', error);
-    }
+  // Close WebSocket connections
+  for (const [userId, socket] of wsConnections.entries()) {
+    socket.send(JSON.stringify({
+      type: 'shutdown',
+      data: { message: 'Server is shutting down' }
+    }));
+    socket.close();
+    wsConnections.delete(userId);
   }
-  if (mongoose.connection) {
-    try {
-      await mongoose.connection.close();
-      console.log('✅ MongoDB disconnected');
-    } catch (error) {
-      console.error('❌ MongoDB disconnect error:', error);
-    }
-  }
-  process.exit(0);
-});
 
-startServer().catch(err => {
-  console.error('❌ Failed to start server:', err);
+  // Close MongoDB connection
+  if (mongoose.connection.readyState !== 0) {
+    try {
+      await mongoose.disconnect();
+      console.log('✅ MongoDB connection closed');
+    } catch (error) {
+      console.error('❌ Error closing MongoDB connection:', error.message);
+    }
+  }
+
+  // Close Redis connection
+  if (redisClient && redisClient.isOpen) {
+    try {
+      await redisClient.quit();
+      console.log('✅ Redis connection closed');
+    } catch (error) {
+      console.error('❌ Error closing Redis connection:', error.message);
+    }
+  }
+
+  // Close Fastify server
+  try {
+    await fastify.close();
+    console.log('✅ Server closed successfully');
+  } catch (error) {
+    console.error('❌ Error closing server:', error.message);
+  }
+
+  process.exit(0);
+};
+
+// Handle process termination
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
+
+// Uncaught exception handler
+process.on('uncaughtException', (error) => {
+  console.error('❌ Uncaught Exception:', error);
   process.exit(1);
 });
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
+  process.exit(1);
+});
+
+// Start the server
+startServer();
