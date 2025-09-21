@@ -1,5 +1,5 @@
-// App.jsx - FULLY FIXED VERSION with all mobile issues resolved
-import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
+// App.jsx - COMPLETE FIXED VERSION - All request flooding issues resolved
+import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { apiGet, apiPost, safeIncludes } from './utils/safeUtils';
 import MoodAnalyzer from './components/MoodAnalyzer';
@@ -22,8 +22,130 @@ import MoodSummary from './components/MoodSummary';
 import CompletionCelebration from './components/CompletionCelebration';
 import ErrorBoundary from './components/ErrorBoundary';
 
+// CRITICAL FIX 1: Request Cache to prevent duplicate API calls
+class RequestCache {
+  constructor(defaultTTL = 60000) {
+    this.cache = new Map();
+    this.pending = new Map();
+    this.defaultTTL = defaultTTL;
+  }
+
+  async get(key, fetcher, ttl = this.defaultTTL) {
+    const cached = this.cache.get(key);
+    if (cached && Date.now() < cached.expiry) {
+      return cached.data;
+    }
+
+    if (this.pending.has(key)) {
+      return this.pending.get(key);
+    }
+
+    const promise = fetcher().then(data => {
+      this.cache.set(key, {
+        data,
+        expiry: Date.now() + ttl
+      });
+      this.pending.delete(key);
+      return data;
+    }).catch(error => {
+      this.pending.delete(key);
+      throw error;
+    });
+
+    this.pending.set(key, promise);
+    return promise;
+  }
+
+  clear() {
+    this.cache.clear();
+    this.pending.clear();
+  }
+
+  delete(key) {
+    this.cache.delete(key);
+    this.pending.delete(key);
+  }
+}
+
+// CRITICAL FIX 2: Debounce utility to prevent spam requests
+const debounce = (func, wait) => {
+  let timeout;
+  return function executedFunction(...args) {
+    const later = () => {
+      clearTimeout(timeout);
+      func(...args);
+    };
+    clearTimeout(timeout);
+    timeout = setTimeout(later, wait);
+  };
+};
+
+// CRITICAL FIX 3: Global request cache instance
+const requestCache = new RequestCache();
+
+// CRITICAL FIX 4: Enhanced API wrapper with built-in rate limiting
+class APIService {
+  constructor() {
+    this.lastRequestTime = 0;
+    this.minInterval = 2000;
+    this.requestQueue = [];
+    this.isProcessing = false;
+  }
+
+  async queueRequest(requestFn) {
+    return new Promise((resolve, reject) => {
+      this.requestQueue.push({
+        fn: requestFn,
+        resolve,
+        reject
+      });
+      this.processQueue();
+    });
+  }
+
+  async processQueue() {
+    if (this.isProcessing || this.requestQueue.length === 0) return;
+    
+    this.isProcessing = true;
+    
+    while (this.requestQueue.length > 0) {
+      const { fn, resolve, reject } = this.requestQueue.shift();
+      
+      const now = Date.now();
+      const timeSinceLastRequest = now - this.lastRequestTime;
+      if (timeSinceLastRequest < this.minInterval) {
+        await new Promise(r => setTimeout(r, this.minInterval - timeSinceLastRequest));
+      }
+      
+      try {
+        const result = await fn();
+        this.lastRequestTime = Date.now();
+        resolve(result);
+      } catch (error) {
+        reject(error);
+      }
+      
+      await new Promise(r => setTimeout(r, 500));
+    }
+    
+    this.isProcessing = false;
+  }
+
+  async get(endpoint, cacheKey = endpoint, cacheTTL = 60000) {
+    return requestCache.get(cacheKey, () => 
+      this.queueRequest(() => apiGet(endpoint)), cacheTTL
+    );
+  }
+
+  async post(endpoint, data) {
+    return this.queueRequest(() => apiPost(endpoint, data));
+  }
+}
+
+const apiService = new APIService();
+
 const App = () => {
-  // Core state - simplified and fixed
+  // Core state
   const [health, setHealth] = useState('Checking...');
   const [currentStep, setCurrentStep] = useState('mood');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -31,7 +153,7 @@ const App = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  // Flow data - properly initialized
+  // Flow data
   const [moodData, setMoodData] = useState(null);
   const [capsuleData, setCapsuleData] = useState(null);
   const [cardData, setCardData] = useState(null);
@@ -54,42 +176,50 @@ const App = () => {
   const [onlineUsers, setOnlineUsers] = useState(0);
   const [showMobileSidebar, setShowMobileSidebar] = useState(false);
 
-  // WebSocket reference
+  // WebSocket and refs
   const wsManager = useRef(null);
-
-  // FIXED: Prevent memory leaks with proper refs
   const mountedRef = useRef(true);
   const fetchTimeoutRef = useRef(null);
+  const lastFetchRef = useRef({
+    notifications: 0,
+    friends: 0,
+    challenges: 0
+  });
 
   console.log('App render - Current step:', currentStep, 'Auth:', isAuthenticated, 'Loading:', loading);
   
-  // FIXED: Mobile viewport height with debounce
+  // CRITICAL FIX 5: Optimized viewport height
   useEffect(() => {
     let resizeTimeout;
+    let rafId;
     
     const setVH = () => {
-      // Debounce resize events
-      clearTimeout(resizeTimeout);
-      resizeTimeout = setTimeout(() => {
-        const vh = window.innerHeight * 0.01;
-        document.documentElement.style.setProperty('--vh', `${vh}px`);
-      }, 100);
+      if (rafId) cancelAnimationFrame(rafId);
+      
+      rafId = requestAnimationFrame(() => {
+        clearTimeout(resizeTimeout);
+        resizeTimeout = setTimeout(() => {
+          const vh = window.innerHeight * 0.01;
+          document.documentElement.style.setProperty('--vh', `${vh}px`);
+        }, 200);
+      });
     };
     
     setVH();
     
-    // Use passive listeners for better performance
-    window.addEventListener('resize', setVH, { passive: true });
-    window.addEventListener('orientationchange', setVH, { passive: true });
-    
-    // Also handle visibility change for mobile browsers
-    document.addEventListener('visibilitychange', setVH, { passive: true });
+    const events = ['resize', 'orientationchange', 'visibilitychange'];
+    events.forEach(event => {
+      const target = event === 'visibilitychange' ? document : window;
+      target.addEventListener(event, setVH, { passive: true });
+    });
     
     return () => {
       clearTimeout(resizeTimeout);
-      window.removeEventListener('resize', setVH);
-      window.removeEventListener('orientationchange', setVH);
-      document.removeEventListener('visibilitychange', setVH);
+      if (rafId) cancelAnimationFrame(rafId);
+      events.forEach(event => {
+        const target = event === 'visibilitychange' ? document : window;
+        target.removeEventListener(event, setVH);
+      });
     };
   }, []);
 
@@ -104,9 +234,9 @@ const App = () => {
     };
   }, []);
 
-  // OAuth redirect handler - FIXED with proper error handling
+  // CRITICAL FIX 6: Debounced OAuth redirect handler
   useEffect(() => {
-    const handleOAuthRedirect = async () => {
+    const handleOAuthRedirect = debounce(async () => {
       const urlParams = new URLSearchParams(window.location.search);
       const code = urlParams.get('code');
       const state = urlParams.get('state');
@@ -117,7 +247,7 @@ const App = () => {
         
         if (state === storedState) {
           try {
-            const result = await apiPost('/auth/google', { code });
+            const result = await apiService.post('/auth/google', { code });
             if (result.success && result.data) {
               AuthService.setAuthData(result.data.token, result.data.user);
               if (mountedRef.current) {
@@ -142,53 +272,70 @@ const App = () => {
         }
         sessionStorage.removeItem('google_oauth_state');
       }
-    };
+    }, 1000);
     
     handleOAuthRedirect();
   }, []);
 
-  // Enhanced user data update - FIXED with proper batching
-  const updateUserData = useCallback(async (updatedUser) => {
-    if (!mountedRef.current) return;
-    
-    console.log('Updating user data:', updatedUser);
-    setUser(updatedUser);
-    localStorage.setItem('sparkvibe_user', JSON.stringify(updatedUser));
-    
-    window.dispatchEvent(new CustomEvent('userDataUpdated', { 
-      detail: { user: updatedUser, timestamp: Date.now() } 
-    }));
+  // CRITICAL FIX 7: Heavily optimized updateUserData with sync throttling
+  const updateUserData = useCallback(
+    debounce(async (updatedUser) => {
+      if (!mountedRef.current) return;
+      
+      console.log('Updating user data:', updatedUser);
+      setUser(updatedUser);
+      localStorage.setItem('sparkvibe_user', JSON.stringify(updatedUser));
+      
+      debounce(() => {
+        window.dispatchEvent(new CustomEvent('userDataUpdated', { 
+          detail: { user: updatedUser, timestamp: Date.now() } 
+        }));
+      }, 2000)();
 
-    if (!updatedUser.isGuest && !updatedUser.provider?.includes('demo')) {
-      try {
-        const syncResult = await apiPost('/user/sync-stats', {
-          userId: updatedUser.id,
-          stats: updatedUser.stats,
-          totalPoints: updatedUser.totalPoints,
-          level: updatedUser.level,
-          streak: updatedUser.streak,
-          cardsGenerated: updatedUser.cardsGenerated,
-          cardsShared: updatedUser.cardsShared
-        });
+      if (!updatedUser.isGuest && !updatedUser.provider?.includes('demo')) {
+        const lastSync = localStorage.getItem('lastUserSync');
+        const now = Date.now();
         
-        if (syncResult.success) {
-          console.log('User stats synced with backend successfully');
+        if (!lastSync || (now - parseInt(lastSync)) > 60000) {
+          try {
+            localStorage.setItem('lastUserSync', now.toString());
+            
+            const syncResult = await apiService.post('/user/sync-stats', {
+              userId: updatedUser.id,
+              stats: updatedUser.stats,
+              totalPoints: updatedUser.totalPoints,
+              level: updatedUser.level,
+              streak: updatedUser.streak,
+              cardsGenerated: updatedUser.cardsGenerated,
+              cardsShared: updatedUser.cardsShared
+            });
+            
+            if (syncResult.success) {
+              console.log('User stats synced with backend successfully');
+            }
+          } catch (error) {
+            console.warn('Failed to sync user stats with backend:', error.message);
+            localStorage.removeItem('lastUserSync');
+          }
         }
-      } catch (error) {
-        console.warn('Failed to sync user stats with backend:', error.message);
       }
-    }
-  }, []);
+    }, 3000),
+    []
+  );
 
-  // FIXED: Memoized fetch functions to prevent re-renders
+  // CRITICAL FIX 8: Optimized fetch functions with caching and rate limiting
   const fetchNotifications = useCallback(async () => {
     if (!isAuthenticated || !user || user.isGuest || !mountedRef.current) return;
     
+    const now = Date.now();
+    if (now - lastFetchRef.current.notifications < 120000) return;
+    
     try {
-      const response = await apiGet('/notifications');
+      const response = await apiService.get('/notifications', 'notifications', 300000);
       if (response.success && mountedRef.current) {
         setNotifications(response.data || []);
         setUnreadCount(response.unreadCount || 0);
+        lastFetchRef.current.notifications = now;
       }
     } catch (error) {
       console.warn('Failed to fetch notifications:', error);
@@ -198,10 +345,14 @@ const App = () => {
   const fetchFriends = useCallback(async () => {
     if (!isAuthenticated || !user || user.isGuest || !mountedRef.current) return;
     
+    const now = Date.now();
+    if (now - lastFetchRef.current.friends < 300000) return;
+    
     try {
-      const response = await apiGet('/friends');
+      const response = await apiService.get('/friends', 'friends', 600000);
       if (response.success && mountedRef.current) {
         setFriends(response.data || []);
+        lastFetchRef.current.friends = now;
       }
     } catch (error) {
       console.warn('Failed to fetch friends:', error);
@@ -214,10 +365,14 @@ const App = () => {
   const fetchChallenges = useCallback(async () => {
     if (!isAuthenticated || !user || user.isGuest || !mountedRef.current) return;
     
+    const now = Date.now();
+    if (now - lastFetchRef.current.challenges < 300000) return;
+    
     try {
-      const response = await apiGet('/challenges');
+      const response = await apiService.get('/challenges', 'challenges', 600000);
       if (response.success && mountedRef.current) {
         setChallenges(response.challenges || response.data || []);
+        lastFetchRef.current.challenges = now;
       }
     } catch (error) {
       console.warn('Failed to fetch challenges:', error);
@@ -227,31 +382,85 @@ const App = () => {
     }
   }, [isAuthenticated, user]);
   
-  const markNotificationsAsRead = useCallback(async (notificationIds = null) => {
-    if (!isAuthenticated || !user || user.isGuest) return;
-    
-    try {
-      await apiPost('/notifications/read', { notificationIds });
-      if (mountedRef.current) {
-        setUnreadCount(0);
-        setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+  // CRITICAL FIX 9: Heavily debounced functions
+  const markNotificationsAsRead = useCallback(
+    debounce(async (notificationIds = null) => {
+      if (!isAuthenticated || !user || user.isGuest) return;
+      
+      try {
+        await apiService.post('/notifications/read', { notificationIds });
+        if (mountedRef.current) {
+          setUnreadCount(0);
+          setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+          requestCache.delete('notifications');
+        }
+      } catch (error) {
+        console.warn('Failed to mark notifications as read:', error);
       }
-    } catch (error) {
-      console.warn('Failed to mark notifications as read:', error);
-    }
-  }, [isAuthenticated, user]);
+    }, 3000),
+    [isAuthenticated, user]
+  );
 
-  const trackEvent = useCallback(async (eventType, metadata = {}) => {
-    if (!isAuthenticated || !user || user.isGuest) return;
+  const trackEvent = useCallback(
+    debounce(async (eventType, metadata = {}) => {
+      if (!isAuthenticated || !user || user.isGuest) return;
+      
+      try {
+        await apiService.post('/track-event', { eventType, metadata });
+      } catch (error) {
+        console.warn('Failed to track event:', error);
+      }
+    }, 2000),
+    [isAuthenticated, user]
+  );
+
+  // CRITICAL FIX 10: Smart polling system
+  const useSmartPolling = useCallback(() => {
+    const pollingIntervalRef = useRef(null);
+    const [isVisible, setIsVisible] = useState(true);
     
-    try {
-      await apiPost('/track-event', { eventType, metadata });
-    } catch (error) {
-      console.warn('Failed to track event:', error);
-    }
-  }, [isAuthenticated, user]);
+    useEffect(() => {
+      const handleVisibilityChange = () => {
+        setIsVisible(!document.hidden);
+      };
+      
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+      return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+    }, []);
+    
+    const startPolling = useCallback(() => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+      }
+      
+      if (!isAuthenticated || !user || user.isGuest || !isVisible) return;
+      if (wsManager.current && wsManager.current.isConnected) return;
+      
+      console.log('Starting fallback polling (WebSocket unavailable)');
+      
+      pollingIntervalRef.current = setInterval(() => {
+        console.log('Fallback polling tick');
+        
+        setTimeout(() => fetchNotifications(), 1000);
+        setTimeout(() => fetchFriends(), 5000);
+        setTimeout(() => fetchChallenges(), 10000);
+      }, 600000);
+    }, [isAuthenticated, user, isVisible]);
+    
+    const stopPolling = useCallback(() => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+        console.log('Stopped fallback polling');
+      }
+    }, []);
+    
+    return { startPolling, stopPolling };
+  }, [isAuthenticated, user, fetchNotifications, fetchFriends, fetchChallenges]);
 
-  // Initialize WebSocket connection - FIXED with proper cleanup
+  const { startPolling, stopPolling } = useSmartPolling();
+
+  // CRITICAL FIX 11: Optimized WebSocket initialization
   useEffect(() => {
     if (isAuthenticated && user && !user.isGuest && user.id) {
       wsManager.current = new WebSocketManager(user.id, {
@@ -264,206 +473,290 @@ const App = () => {
             }
           }, 5000);
         },
-        onLeaderboardUpdate: () => {
+        onLeaderboardUpdate: debounce(() => {
           window.dispatchEvent(new CustomEvent('leaderboardUpdate'));
-        },
+        }, 5000),
         onNotification: (notification) => {
           if (!mountedRef.current) return;
           setNotifications(prev => [notification, ...prev]);
           setUnreadCount(prev => prev + 1);
+          requestCache.delete('notifications');
         },
-        onFriendUpdate: () => {
+        onFriendUpdate: debounce(() => {
           if (mountedRef.current) {
-            fetchFriends();
+            requestCache.delete('friends');
+            setTimeout(() => fetchFriends(), 2000);
           }
-        },
+        }, 3000),
         onChallengeUpdate: (challenge) => {
           if (!mountedRef.current) return;
           setChallenges(prev => prev.map(c => c.id === challenge.id ? challenge : c));
+          requestCache.delete('challenges');
         }
       });
 
+      const checkWebSocketConnection = setTimeout(() => {
+        if (!wsManager.current || !wsManager.current.isConnected) {
+          console.log('WebSocket failed to connect, starting fallback polling');
+          startPolling();
+        } else {
+          console.log('WebSocket connected successfully, no polling needed');
+          stopPolling();
+        }
+      }, 10000);
+
       return () => {
+        clearTimeout(checkWebSocketConnection);
         if (wsManager.current) {
           wsManager.current.disconnect();
           wsManager.current = null;
         }
+        stopPolling();
       };
     }
-  }, [isAuthenticated, user, fetchFriends]);
+  }, [isAuthenticated, user, startPolling, stopPolling]);
 
-  // FIXED: Flow handlers with proper state management
-  const handleMoodAnalysisComplete = useCallback((analysisData) => {
-    if (!mountedRef.current) return;
-    console.log('Mood analysis complete:', analysisData);
-    setMoodData(analysisData);
-    setCurrentStep('capsule');
-    trackEvent('mood_analysis_completed', { 
-      mood: analysisData.primaryMood || analysisData.mood,
-      confidence: analysisData.confidence 
-    });
-  }, [trackEvent]);
+  // CRITICAL FIX 12: Heavily debounced flow handlers
+  const handleMoodAnalysisComplete = useCallback(
+    debounce((analysisData) => {
+      if (!mountedRef.current) return;
+      console.log('Mood analysis complete:', analysisData);
+      setMoodData(analysisData);
+      setCurrentStep('capsule');
+      
+      setTimeout(() => {
+        trackEvent('mood_analysis_completed', { 
+          mood: analysisData.primaryMood || analysisData.mood,
+          confidence: analysisData.confidence 
+        });
+      }, 1000);
+    }, 2000),
+    [trackEvent]
+  );
 
-  const handleCapsuleGenerated = useCallback((generatedCapsuleData) => {
-    if (!mountedRef.current) return;
-    console.log('Capsule generated:', generatedCapsuleData);
-    setCapsuleData(generatedCapsuleData);
-    setCurrentStep('experience');
-    trackEvent('capsule_generated', { 
-      adventureType: generatedCapsuleData.adventure?.category 
-    });
-  }, [trackEvent]);
+  const handleCapsuleGenerated = useCallback(
+    debounce((generatedCapsuleData) => {
+      if (!mountedRef.current) return;
+      console.log('Capsule generated:', generatedCapsuleData);
+      setCapsuleData(generatedCapsuleData);
+      setCurrentStep('experience');
+      
+      setTimeout(() => {
+        trackEvent('capsule_generated', { 
+          adventureType: generatedCapsuleData.adventure?.category 
+        });
+      }, 1000);
+    }, 2000),
+    [trackEvent]
+  );
 
-  const handleExperienceComplete = useCallback(async (stats = {}) => {
-    if (!mountedRef.current) return;
-    console.log('Experience complete:', stats);
-    setCompletionStats(stats);
-    setCurrentStep('vibe-card');
-    
-    if (user) {
-      const completionPoints = stats.vibePointsEarned || 50;
-      const updatedUser = {
-        ...user,
-        totalPoints: (user.totalPoints || 0) + completionPoints,
-        streak: (user.streak || 0) + 1,
-        stats: {
-          ...user.stats,
-          totalPoints: (user.stats?.totalPoints || 0) + completionPoints,
-          streak: (user.stats?.streak || 0) + 1,
-          lastActiveDate: new Date().toISOString(),
-          adventuresCompleted: (user.stats?.adventuresCompleted || 0) + 1
-        }
-      };
-      await updateUserData(updatedUser);
-    }
-    
-    trackEvent('experience_completed', stats);
-  }, [user, updateUserData, trackEvent]);
-
-  // FIXED: Consolidated card generation handler
-  const handleCardGenerated = useCallback(async (generatedCardData) => {
-    if (!mountedRef.current) return;
-    console.log('Card generated:', generatedCardData);
-    setCardData(generatedCardData);
-    setCurrentStep('summary');
-    
-    if (user) {
-      const cardPoints = 25;
-      const updatedUser = {
-        ...user,
-        cardsGenerated: (user.cardsGenerated || 0) + 1,
-        totalPoints: (user.totalPoints || 0) + cardPoints,
-        stats: {
-          ...user.stats,
-          cardsGenerated: (user.stats?.cardsGenerated || 0) + 1,
-          totalPoints: (user.stats?.totalPoints || 0) + cardPoints
-        }
-      };
-      await updateUserData(updatedUser);
-    }
-    
-    trackEvent('card_generated', { 
-      cardType: generatedCardData.type || 'standard',
-      mood: moodData?.primaryMood || moodData?.mood
-    });
-  }, [user, updateUserData, trackEvent, moodData]);
-
-  // FIXED: User choice handler for CapsuleExperience
-  const handleUserChoice = useCallback((choiceType, choiceData) => {
-    if (!mountedRef.current) return;
-    console.log('User choice made:', choiceType, choiceData);
-    setUserChoices(prev => ({
-      ...prev,
-      [choiceType]: choiceData
-    }));
-  }, []);
- 
-  const resetFlow = useCallback(() => {
-    if (!mountedRef.current) return;
-    console.log('Resetting flow');
-    setCurrentStep('mood');
-    setMoodData(null);
-    setCapsuleData(null);
-    setCardData(null);
-    setUserChoices({});
-    setCompletionStats({ vibePointsEarned: 0 });
-  }, []);
-
-  const shareCard = useCallback(async () => {
-    if (!cardData) {
-      console.warn('No card data to share');
-      return;
-    }
-    
-    try {
+  const handleExperienceComplete = useCallback(
+    debounce(async (stats = {}) => {
+      if (!mountedRef.current) return;
+      console.log('Experience complete:', stats);
+      setCompletionStats(stats);
+      setCurrentStep('vibe-card');
+      
       if (user) {
-        const sharePoints = 15;
+        const completionPoints = stats.vibePointsEarned || 50;
         const updatedUser = {
           ...user,
-          cardsShared: (user.cardsShared || 0) + 1,
-          totalPoints: (user.totalPoints || 0) + sharePoints,
+          totalPoints: (user.totalPoints || 0) + completionPoints,
+          streak: (user.streak || 0) + 1,
           stats: {
             ...user.stats,
-            cardsShared: (user.stats?.cardsShared || 0) + 1,
-            totalPoints: (user.stats?.totalPoints || 0) + sharePoints
+            totalPoints: (user.stats?.totalPoints || 0) + completionPoints,
+            streak: (user.stats?.streak || 0) + 1,
+            lastActiveDate: new Date().toISOString(),
+            adventuresCompleted: (user.stats?.adventuresCompleted || 0) + 1
           }
         };
-        await updateUserData(updatedUser);
+        
+        setTimeout(() => {
+          updateUserData(updatedUser);
+        }, 500);
       }
       
-      const shareData = {
-        title: 'Check out my SparkVibe card!',
-        text: `I just created an awesome mood card with SparkVibe! ${cardData.adventure?.title || 'Check it out!'}`,
-        url: window.location.href
-      };
+      setTimeout(() => {
+        trackEvent('experience_completed', stats);
+      }, 1000);
+    }, 3000),
+    [user, updateUserData, trackEvent]
+  );
 
-      if (navigator.share && navigator.canShare && navigator.canShare(shareData)) {
-        await navigator.share(shareData);
-      } else {
-        const shareText = `${shareData.text} - ${shareData.url}`;
-        await navigator.clipboard.writeText(shareText);
-        alert('Share link copied to clipboard!');
+  const handleCardGenerated = useCallback(
+    debounce(async (generatedCardData) => {
+      if (!mountedRef.current) return;
+      console.log('Card generated:', generatedCardData);
+      setCardData(generatedCardData);
+      setCurrentStep('summary');
+      
+      if (user) {
+        const cardPoints = 25;
+        const updatedUser = {
+          ...user,
+          cardsGenerated: (user.cardsGenerated || 0) + 1,
+          totalPoints: (user.totalPoints || 0) + cardPoints,
+          stats: {
+            ...user.stats,
+            cardsGenerated: (user.stats?.cardsGenerated || 0) + 1,
+            totalPoints: (user.stats?.totalPoints || 0) + cardPoints
+          }
+        };
+        
+        setTimeout(() => {
+          updateUserData(updatedUser);
+        }, 500);
       }
       
-      trackEvent('card_shared', { 
-        cardType: cardData.type || 'standard',
-        method: navigator.share ? 'native' : 'clipboard'
-      });
-    } catch (error) {
-      console.error('Failed to share card:', error);
-      // Fallback to copying URL
+      setTimeout(() => {
+        trackEvent('card_generated', { 
+          cardType: generatedCardData.type || 'standard',
+          mood: moodData?.primaryMood || moodData?.mood
+        });
+      }, 1000);
+    }, 3000),
+    [user, updateUserData, trackEvent, moodData]
+  );
+
+  const handleUserChoice = useCallback(
+    debounce((choiceType, choiceData) => {
+      if (!mountedRef.current) return;
+      console.log('User choice made:', choiceType, choiceData);
+      setUserChoices(prev => ({
+        ...prev,
+        [choiceType]: choiceData
+      }));
+    }, 1000),
+    []
+  );
+ 
+  const resetFlow = useCallback(
+    debounce(() => {
+      if (!mountedRef.current) return;
+      console.log('Resetting flow');
+      setCurrentStep('mood');
+      setMoodData(null);
+      setCapsuleData(null);
+      setCardData(null);
+      setUserChoices({});
+      setCompletionStats({ vibePointsEarned: 0 });
+      
+      requestCache.delete('mood_analysis');
+      requestCache.delete('capsule_generation');
+    }, 2000),
+    []
+  );
+
+  const shareCard = useCallback(
+    debounce(async () => {
+      if (!cardData) {
+        console.warn('No card data to share');
+        return;
+      }
+      
       try {
-        await navigator.clipboard.writeText(window.location.href);
-        alert('Link copied to clipboard!');
-      } catch (clipboardError) {
-        console.error('Failed to copy to clipboard:', clipboardError);
-      }
-    }
-  }, [cardData, user, updateUserData, trackEvent]);
+        if (user) {
+          const sharePoints = 15;
+          const updatedUser = {
+            ...user,
+            cardsShared: (user.cardsShared || 0) + 1,
+            totalPoints: (user.totalPoints || 0) + sharePoints,
+            stats: {
+              ...user.stats,
+              cardsShared: (user.stats?.cardsShared || 0) + 1,
+              totalPoints: (user.stats?.totalPoints || 0) + sharePoints
+            }
+          };
+          
+          setTimeout(() => {
+            updateUserData(updatedUser);
+          }, 500);
+        }
+        
+        const shareData = {
+          title: 'Check out my SparkVibe card!',
+          text: `I just created an awesome mood card with SparkVibe! ${cardData.adventure?.title || 'Check it out!'}`,
+          url: window.location.href
+        };
 
-  const handleLogout = useCallback(() => {
-    console.log('Logging out user');
-    AuthService.signOut();
-    if (wsManager.current) {
-      wsManager.current.disconnect();
-      wsManager.current = null;
-    }
-    if (mountedRef.current) {
-      setIsAuthenticated(false);
-      setUser(null);
-      setNotifications([]);
-      setFriends([]);
-      setChallenges([]);
-      setAchievements([]);
-      resetFlow();
-    }
-  }, [resetFlow]);
-  
-  // Check authentication and load user data - FIXED with proper cleanup
+        if (navigator.share && navigator.canShare && navigator.canShare(shareData)) {
+          await navigator.share(shareData);
+        } else {
+          const shareText = `${shareData.text} - ${shareData.url}`;
+          await navigator.clipboard.writeText(shareText);
+          
+          const toast = document.createElement('div');
+          toast.textContent = 'Share link copied to clipboard!';
+          toast.className = 'fixed top-4 right-4 bg-green-500 text-white px-4 py-2 rounded z-50';
+          document.body.appendChild(toast);
+          setTimeout(() => {
+            if (document.body.contains(toast)) {
+              document.body.removeChild(toast);
+            }
+          }, 3000);
+        }
+        
+        setTimeout(() => {
+          trackEvent('card_shared', { 
+            cardType: cardData.type || 'standard',
+            method: navigator.share ? 'native' : 'clipboard'
+          });
+        }, 1000);
+      } catch (error) {
+        console.error('Failed to share card:', error);
+        try {
+          await navigator.clipboard.writeText(window.location.href);
+          
+          const toast = document.createElement('div');
+          toast.textContent = 'Link copied to clipboard!';
+          toast.className = 'fixed top-4 right-4 bg-blue-500 text-white px-4 py-2 rounded z-50';
+          document.body.appendChild(toast);
+          setTimeout(() => {
+            if (document.body.contains(toast)) {
+              document.body.removeChild(toast);
+            }
+          }, 3000);
+        } catch (clipboardError) {
+          console.error('Failed to copy to clipboard:', clipboardError);
+        }
+      }
+    }, 5000),
+    [cardData, user, updateUserData, trackEvent]
+  );
+
+  const handleLogout = useCallback(
+    debounce(() => {
+      console.log('Logging out user');
+      AuthService.signOut();
+      
+      requestCache.clear();
+      
+      if (wsManager.current) {
+        wsManager.current.disconnect();
+        wsManager.current = null;
+      }
+      
+      stopPolling();
+      
+      if (mountedRef.current) {
+        setIsAuthenticated(false);
+        setUser(null);
+        setNotifications([]);
+        setFriends([]);
+        setChallenges([]);
+        setAchievements([]);
+        resetFlow();
+      }
+    }, 2000),
+    [resetFlow, stopPolling]
+  );
+
+  // CRITICAL FIX 13: Optimized initialization
   useEffect(() => {
     let isCancelled = false;
     
-    const initializeApp = async () => {
+    const initializeApp = debounce(async () => {
       try {
         const isAuth = AuthService.isAuthenticated();
         
@@ -501,21 +794,18 @@ const App = () => {
             localStorage.setItem('sparkvibe_user', JSON.stringify(userData));
             
             if (!userData.isGuest && !userData.provider?.includes('demo')) {
-              await Promise.all([
-                fetchNotifications(),
-                fetchFriends(),
-                fetchChallenges()
-              ]);
+              setTimeout(() => fetchNotifications(), 2000);
+              setTimeout(() => fetchFriends(), 5000);
+              setTimeout(() => fetchChallenges(), 8000);
             }
           } else if (mountedRef.current) {
             setIsAuthenticated(false);
           }
         }
         
-        // Health check with timeout
         fetchTimeoutRef.current = setTimeout(async () => {
           try {
-            const healthResponse = await apiGet('/health');
+            const healthResponse = await apiService.get('/health', 'health', 600000);
             if (!isCancelled && mountedRef.current) {
               setHealth(healthResponse.status || 'Online');
             }
@@ -524,7 +814,7 @@ const App = () => {
               setHealth('Offline - Running in Demo Mode');
             }
           }
-        }, 100);
+        }, 3000);
         
       } catch (error) {
         console.error('Failed to initialize app:', error);
@@ -536,7 +826,7 @@ const App = () => {
           setLoading(false);
         }
       }
-    };
+    }, 1000);
 
     initializeApp();
     
@@ -548,13 +838,148 @@ const App = () => {
     };
   }, [fetchNotifications, fetchFriends, fetchChallenges]);
 
-  // Cleanup on unmount
+  // CRITICAL FIX 14: Memoized header components
+  const headerButtonHandlers = useMemo(() => ({
+    notifications: debounce(() => setShowNotifications(prev => !prev), 500),
+    friends: debounce(() => setShowFriends(prev => !prev), 500),
+    leaderboard: debounce(() => setCurrentStep('leaderboard'), 500),
+    logout: handleLogout
+  }), [handleLogout]);
+
+  const HeaderButton = React.memo(({ onClick, children, className, title, ...props }) => (
+    <motion.button
+      onClick={onClick}
+      className={className}
+      whileHover={{ scale: 1.05 }}
+      whileTap={{ scale: 0.95 }}
+      title={title}
+      {...props}
+    >
+      {children}
+    </motion.button>
+  ));
+
+  const optimizedHeaderButtons = useMemo(() => [
+    {
+      key: 'notifications',
+      onClick: headerButtonHandlers.notifications,
+      icon: (
+        <svg className="w-5 h-5 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-5-5v-5a5 5 0 00-10 0v5l-5 5h5m10 0v1a3 3 0 01-6 0v-1m6 0H9" />
+        </svg>
+      ),
+      badge: unreadCount > 0 ? (unreadCount > 9 ? '9+' : unreadCount) : null,
+      title: 'Notifications'
+    },
+    {
+      key: 'friends',
+      onClick: headerButtonHandlers.friends,
+      icon: (
+        <svg className="w-5 h-5 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M17.5 10.5a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z" />
+        </svg>
+      ),
+      badge: null,
+      title: 'Friends'
+    },
+    {
+      key: 'leaderboard',
+      onClick: headerButtonHandlers.leaderboard,
+      icon: (
+        <svg className="w-5 h-5 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+        </svg>
+      ),
+      badge: user?.totalPoints > 0 ? Math.min(Math.floor(user.totalPoints / 100) + 1, 99) : null,
+      title: 'Leaderboard'
+    }
+  ], [headerButtonHandlers, unreadCount, user?.totalPoints]);
+
+  const HeaderSection = React.memo(() => (
+    <header className="relative z-10 p-3 md:p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 safe-area-inset">
+      <motion.div 
+        className="flex items-center space-x-2"
+        initial={{ opacity: 0, x: -20 }}
+        animate={{ opacity: 1, x: 0 }}
+      >
+        <h1 className="text-xl md:text-2xl font-bold text-white">SparkVibe</h1>
+        <ConnectionStatus status={health} />
+      </motion.div>
+      
+      <div className="flex items-center space-x-2 md:space-x-4 w-full sm:w-auto justify-between sm:justify-end">
+        {user && (
+          <div className="flex items-center space-x-2 md:space-x-4">
+            <motion.div 
+              className="text-white text-xs md:text-sm"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.2 }}
+            >
+              <span className="font-medium truncate-mobile">{user.name}</span>
+              <div className="text-xs text-purple-200">
+                Level {user.level || 1} • {user.totalPoints || 0} points
+              </div>
+            </motion.div>
+            
+            {optimizedHeaderButtons.map(button => (
+              <HeaderButton
+                key={button.key}
+                onClick={button.onClick}
+                className="relative p-2 text-white hover:bg-white/10 rounded-full transition-colors touch-target"
+                title={button.title}
+                aria-label={button.title}
+              >
+                {button.icon}
+                {button.badge && (
+                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-4 h-4 md:w-5 md:h-5 flex items-center justify-center">
+                    {button.badge}
+                  </span>
+                )}
+              </HeaderButton>
+            ))}
+            
+            <HeaderButton
+              onClick={headerButtonHandlers.logout}
+              className="px-2 py-1 md:px-3 md:py-1 text-xs md:text-sm text-white bg-white/20 hover:bg-white/30 rounded-full transition-colors touch-target"
+            >
+              Logout
+            </HeaderButton>
+          </div>
+        )}
+      </div>
+    </header>
+  ));
+
+  // CRITICAL FIX 15: Final cleanup
   useEffect(() => {
+    mountedRef.current = true;
+    
+    const handleUnhandledRejection = (event) => {
+      console.error('Unhandled promise rejection:', event.reason);
+      event.preventDefault();
+    };
+    
+    window.addEventListener('unhandledrejection', handleUnhandledRejection);
+    
     return () => {
       mountedRef.current = false;
+      window.removeEventListener('unhandledrejection', handleUnhandledRejection);
+      
+      requestCache.clear();
+      
+      if (fetchTimeoutRef.current) {
+        clearTimeout(fetchTimeoutRef.current);
+      }
+      
+      if (wsManager.current) {
+        wsManager.current.disconnect();
+        wsManager.current = null;
+      }
+      
+      stopPolling();
     };
-  }, []);
-  
+  }, [stopPolling]);
+
   // Loading screen
   if (loading) {
     return (
@@ -587,99 +1012,13 @@ const App = () => {
   return (
     <ErrorBoundary fallback={<div className="text-red-400 text-center p-4">Something went wrong. Please refresh the page.</div>}>
       <div className="min-h-screen min-h-screen-dynamic bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 relative no-scroll-x">
-        {/* Background Effects */}
         <div className="absolute inset-0 opacity-20 pointer-events-none">
           <div className="absolute top-1/4 left-1/4 w-32 h-32 md:w-64 md:h-64 bg-purple-500 rounded-full mix-blend-multiply filter blur-xl animate-pulse"></div>
           <div className="absolute top-3/4 right-1/4 w-32 h-32 md:w-64 md:h-64 bg-blue-500 rounded-full mix-blend-multiply filter blur-xl animate-pulse delay-1000"></div>
         </div>
 
-        {/* Header - FIXED for mobile */}
-        <header className="relative z-10 p-3 md:p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 safe-area-inset">
-          <motion.div 
-            className="flex items-center space-x-2"
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-          >
-            <h1 className="text-xl md:text-2xl font-bold text-white">SparkVibe</h1>
-            <ConnectionStatus status={health} />
-          </motion.div>
-          
-          <div className="flex items-center space-x-2 md:space-x-4 w-full sm:w-auto justify-between sm:justify-end">
-            {user && (
-              <div className="flex items-center space-x-2 md:space-x-4">
-                <motion.div 
-                  className="text-white text-xs md:text-sm"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: 0.2 }}
-                >
-                  <span className="font-medium truncate-mobile">{user.name}</span>
-                  <div className="text-xs text-purple-200">
-                    Level {user.level || 1} • {user.totalPoints || 0} points
-                  </div>
-                </motion.div>
-                
-                <motion.button
-                  onClick={() => setShowNotifications(!showNotifications)}
-                  className="relative p-2 text-white hover:bg-white/10 rounded-full transition-colors touch-target"
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  aria-label="Notifications"
-                >
-                  <svg className="w-5 h-5 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-5-5v-5a5 5 0 00-10 0v5l-5 5h5m10 0v1a3 3 0 01-6 0v-1m6 0H9" />
-                  </svg>
-                  {unreadCount > 0 && (
-                    <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-4 h-4 md:w-5 md:h-5 flex items-center justify-center">
-                      {unreadCount > 9 ? '9+' : unreadCount}
-                    </span>
-                  )}
-                </motion.button>
+        <HeaderSection />
 
-                <motion.button
-                  onClick={() => setShowFriends(!showFriends)}
-                  className="p-2 text-white hover:bg-white/10 rounded-full transition-colors touch-target"
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  aria-label="Friends"
-                >
-                  <svg className="w-5 h-5 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M17.5 10.5a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z" />
-                  </svg>
-                </motion.button>
-
-                <motion.button
-                  onClick={() => setCurrentStep('leaderboard')}
-                  className="relative p-2 text-white hover:bg-white/10 rounded-full transition-colors touch-target"
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  title="View Leaderboard"
-                  aria-label="Leaderboard"
-                >
-                  <svg className="w-5 h-5 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                  </svg>
-                  {user && user.totalPoints > 0 && (
-                    <span className="absolute -top-1 -right-1 bg-purple-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">
-                      {Math.min(Math.floor(user.totalPoints / 100) + 1, 99)}
-                    </span>
-                  )}
-                </motion.button>
-                
-                <motion.button
-                  onClick={handleLogout}
-                  className="px-2 py-1 md:px-3 md:py-1 text-xs md:text-sm text-white bg-white/20 hover:bg-white/30 rounded-full transition-colors touch-target"
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                >
-                  Logout
-                </motion.button>
-              </div>
-            )}
-          </div>
-        </header>
-
-        {/* Notification Center */}
         <NotificationCenter 
           isVisible={showNotifications}
           notifications={notifications}
@@ -687,7 +1026,6 @@ const App = () => {
           onMarkAsRead={markNotificationsAsRead}
         />
 
-        {/* Friends System */}
         <FriendSystem 
           isVisible={showFriends}
           friends={friends}
@@ -695,7 +1033,6 @@ const App = () => {
           user={user}
         />
 
-        {/* Achievement Notifications */}
         <AnimatePresence>
           {newAchievements.map((achievement) => (
             <AchievementDisplay
@@ -706,7 +1043,6 @@ const App = () => {
           ))}
         </AnimatePresence>
 
-        {/* Main Content - FIXED with proper step management */}
         <main className="relative z-10 mobile-container py-4 md:py-8">
           <div className="max-w-4xl mx-auto">
             <ErrorBoundary fallback={<div className="text-red-400 text-center p-4">Something went wrong with this step. Please try again.</div>}>
@@ -744,7 +1080,7 @@ const App = () => {
                       </div>
                       <div className="text-center">
                         <button 
-                          onClick={() => {
+                          onClick={debounce(() => {
                             const mockCapsule = {
                               adventure: {
                                 title: `${moodData?.mood === 'happy' ? 'Joy Amplifier' : moodData?.mood === 'anxious' ? 'Calm Creator' : 'Curiosity Quest'}`,
@@ -761,7 +1097,7 @@ const App = () => {
                               id: `capsule_${Date.now()}`
                             };
                             handleCapsuleGenerated(mockCapsule);
-                          }} 
+                          }, 2000)} 
                           className="btn-mobile w-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600"
                         >
                           Generate Adventure
@@ -783,7 +1119,7 @@ const App = () => {
                       capsuleData={capsuleData || {}}
                       moodData={moodData || {}}
                       onComplete={handleExperienceComplete}
-                      onUserChoice={setUserChoices}
+                      onUserChoice={handleUserChoice}
                       isActive={true}
                     />
                   </motion.div>
@@ -860,7 +1196,6 @@ const App = () => {
           </div>
         </main>
 
-        {/* Mobile-optimized floating action buttons - FIXED positioning */}
         <div className="fixed bottom-4 right-4 z-40 flex flex-col gap-2">
           {currentStep !== 'mood' && (
             <motion.button
@@ -897,7 +1232,6 @@ const App = () => {
           )}
         </div>
 
-        {/* Footer with mobile-friendly navigation */}
         <footer className="relative z-10 border-t border-purple-800/20 bg-black/30 backdrop-blur-sm">
           <div className="mobile-container py-6">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-center md:text-left">
@@ -915,7 +1249,7 @@ const App = () => {
                     New Mood Check
                   </button>
                   <button 
-                    onClick={() => setCurrentStep('vibe-card')}
+                    onClick={debounce(() => setCurrentStep('vibe-card'), 1000)}
                     className="block text-blue-200 hover:text-white text-sm transition-colors mx-auto md:mx-0"
                     disabled={!capsuleData}
                   >
@@ -938,10 +1272,14 @@ const App = () => {
                     </svg>
                   </button>
                   <button 
-                    onClick={() => navigator.share && navigator.share({
-                      title: 'Check out my SparkVibe card!',
-                      url: window.location.href
-                    })}
+                    onClick={debounce(() => {
+                      if (navigator.share) {
+                        navigator.share({
+                          title: 'Check out my SparkVibe card!',
+                          url: window.location.href
+                        });
+                      }
+                    }, 2000)}
                     className="text-blue-200 hover:text-white transition-colors touch-target"
                     title="Share Link"
                     aria-label="Share Link"
