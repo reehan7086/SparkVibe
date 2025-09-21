@@ -1,4 +1,3 @@
-// frontend/src/utils/WebSocketManager.js - Enhanced real-time connection handler
 class WebSocketManager {
   constructor(userId, callbacks = {}) {
     this.userId = userId;
@@ -11,8 +10,8 @@ class WebSocketManager {
     this.maxReconnectInterval = 30000; // Max 30 seconds
     this.pingInterval = null;
     this.pongTimeout = null;
-    this.pingIntervalTime = 30000; // 30 seconds
-    this.pongTimeoutTime = 5000; // 5 seconds to wait for pong
+    this.pingIntervalTime = 15000; // Reduced to 15s for faster detection
+    this.pongTimeoutTime = 3000; // Reduced to 3s for quicker timeout
     this.messageQueue = []; // Queue messages when disconnected
     this.lastPingTime = null;
     this.connectionQuality = 'unknown'; // unknown, good, poor, bad
@@ -323,9 +322,9 @@ class WebSocketManager {
         
         // Set timeout for pong response
         this.pongTimeout = setTimeout(() => {
-          console.warn('⚠️ Pong timeout - connection may be lost');
+          console.warn('⚠️ Pong timeout - attempting reconnect');
           this.updateConnectionQuality('bad');
-          this.ws?.close();
+          this.ws?.close(4001, 'Pong timeout');
         }, this.pongTimeoutTime);
       } else if (this.isConnected && this.ws?.readyState !== WebSocket.OPEN) {
         console.log('🔌 Connection lost during ping, attempting reconnect');

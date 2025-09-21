@@ -2625,54 +2625,44 @@ const uploadResult = await new Promise((resolve, reject) => {
   });
 
   // WebSocket Setup
-  fastify.register(async function (fastify) {
-    fastify.get('/ws', { websocket: true }, (connection, req) => {
+// In defineRoutes() within server.js, update the WebSocket setup
+fastify.register(async function (fastify) {
+  fastify.get('/ws', { websocket: true }, (connection, req) => {
+    const userId = req.query.userId || `anonymous_${Date.now()}`;
+    wsConnections.set(userId.toString(), connection);
+    console.log(`🔗 WebSocket connected for user: ${userId} from ${req.ip}`);
+
+    connection.on('message', async (message) => {
       try {
-        const userId = req.query.userId || `anonymous_${Date.now()}`;
-        
-        // Fix: Use connection directly, not connection.socket
-        wsConnections.set(userId.toString(), connection);
-        console.log(`🔗 WebSocket connected for user: ${userId}`);
-    
-        connection.on('message', async (message) => {
-          try {
-            const data = JSON.parse(message.toString()); // Convert buffer to string
-            console.log(`📩 WebSocket message received from ${userId}:`, data);
-    
-            if (data.type === 'ping') {
-              connection.send(JSON.stringify({ type: 'pong', data: { message: 'Pong!' } }));
-            }
-          } catch (error) {
-            console.error('WebSocket message error:', error);
-            connection.send(JSON.stringify({
-              type: 'error',
-              data: { message: 'Invalid message format' }
-            }));
-          }
-        });
-    
-        connection.on('close', () => {
-          wsConnections.delete(userId.toString());
-          console.log(`🔌 WebSocket disconnected for user: ${userId}`);
-        });
-    
-        connection.on('error', (error) => {
-          console.error(`WebSocket error for user ${userId}:`, error);
-          wsConnections.delete(userId.toString());
-        });
-    
-        connection.send(JSON.stringify({
-          type: 'connection',
-          data: { message: 'WebSocket connection established' }
-        }));
-      } catch (error) {
-        console.error('WebSocket setup error:', error);
-        if (connection && typeof connection.close === 'function') {
-          connection.close();
+        const data = JSON.parse(message.toString());
+        console.log(`📩 WebSocket message from ${userId}:`, data);
+
+        if (data.type === 'ping') {
+          connection.send(JSON.stringify({ type: 'pong', timestamp: Date.now() }));
+        } else if (data.type === 'auth') {
+          // Log authentication success
+          console.log(`🔐 Authenticated ${userId} at ${new Date(data.data.timestamp).toISOString()}`);
+          connection.send(JSON.stringify({ type: 'auth_success' }));
         }
+      } catch (error) {
+        console.error(`❌ WebSocket message error for ${userId}:`, error);
+        connection.send(JSON.stringify({ type: 'error', message: 'Invalid message format' }));
       }
     });
+
+    connection.on('close', (code, reason) => {
+      wsConnections.delete(userId.toString());
+      console.log(`🔌 WebSocket disconnected for ${userId}: Code ${code}, Reason: ${reason || 'No reason'}`);
+    });
+
+    connection.on('error', (error) => {
+      console.error(`❌ WebSocket error for ${userId}:`, error);
+      wsConnections.delete(userId.toString());
+    });
+
+    connection.send(JSON.stringify({ type: 'connection', message: 'Connected' }));
   });
+});
 
 
 }; // End of defineRoutes function
